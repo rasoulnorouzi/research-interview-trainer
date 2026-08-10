@@ -122,6 +122,29 @@ mechanics tie delivery to the disclosure state:
 - **Retreat is audible** — clipped and flat, so a student can *hear* that they
   lost ground rather than being told.
 
+### Pace
+
+The realtime default (`speed: 1.0`) came out too fast for these characters, so
+pacing is controlled in two places, because one of them cannot express the
+important half:
+
+- **`OUTPUT_SPEED = 0.9` in `src/lib/liveSession.ts`** sets the baseline.
+  The accepted range is 0.25–1.5; 0.9 slows the delivery without making it
+  sound artificially dragged. Change this one number to retune globally.
+- **Rules 19–23** cover what a number cannot: leaving a beat before answering,
+  putting pauses *inside* answers rather than only at the end, and above all
+  **taking tempo from the interviewer and staying a little under it**. If the
+  student speeds up or sounds nervous, the persona must not match them — it
+  stays slow and lets them settle.
+
+That last rule is pedagogical, not cosmetic. A rushed interviewee invites a
+rushed interviewer, and rushing is exactly what the rubric penalises. A calm
+one creates the silence a student has to learn to tolerate — which is also what
+opens Layer 2.
+
+Measured on the same line of Elena's dialogue: 9.5s at the old default, 13.1s
+with the prompt and speed change.
+
 Two rules protect this from becoming melodrama. Rule 17: underplay everything,
 because real people describing painful things sound *less* expressive, not
 more. Rule 18: never narrate delivery — no `*pauses*`, no stage directions, no

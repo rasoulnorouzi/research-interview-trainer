@@ -138,6 +138,11 @@ with the truth.
 — preserve it.** Layer 3 (the concealed medication error) was added in the
 rewrite.
 
+Pace is deliberately slow: `OUTPUT_SPEED = 0.9` in `liveSession.ts` (range
+0.25-1.5) plus rules 19-23, which tell the persona to take its tempo from the
+interviewer and stay under it. A rushed interviewee invites a rushed
+interviewer, and rushing is what the rubric penalises.
+
 Voices: Elena `marin`, Tom `cedar`, Jasmine `coral`, custom `alloy` — `marin`
 and `cedar` are OpenAI's most natural realtime voices and go to the two
 personas that must not sound performed. Delivery is directed per persona and

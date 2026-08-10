@@ -7,6 +7,13 @@ const REALTIME_BASE = "https://api.openai.com/v1/realtime";
 // the exact Gemini limitation this migration exists to remove. Do not swap it.
 const INPUT_TRANSCRIPTION_MODEL = "gpt-live-transcribe";
 
+// The realtime default (1.0) is noticeably brisk for these personas — all
+// three are meant to be unhurried, and a rushed interviewee also invites the
+// student to rush, which is the opposite of what the exercise teaches.
+// Accepted range is 0.25–1.5. Prompt-level pacing (rule 19 in personas.ts)
+// handles matching the interviewer's rhythm; this just sets the baseline.
+const OUTPUT_SPEED = 0.9;
+
 export type SessionStatus = "connecting" | "live" | "speaking" | "closed";
 
 export interface InterviewSessionOptions {
@@ -131,7 +138,7 @@ export class InterviewSession {
             model: this.opts.model,
             audio: {
               input: { transcription: { model: INPUT_TRANSCRIPTION_MODEL } },
-              output: { voice: this.opts.persona.voiceName },
+              output: { voice: this.opts.persona.voiceName, speed: OUTPUT_SPEED },
             },
           },
         }),
@@ -180,7 +187,7 @@ export class InterviewSession {
         instructions: this.opts.persona.systemInstruction,
         audio: {
           input: { transcription: { model: INPUT_TRANSCRIPTION_MODEL } },
-          output: { voice: this.opts.persona.voiceName },
+          output: { voice: this.opts.persona.voiceName, speed: OUTPUT_SPEED },
         },
       },
     });
