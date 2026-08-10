@@ -138,6 +138,12 @@ with the truth.
 — preserve it.** Layer 3 (the concealed medication error) was added in the
 rewrite.
 
+Voices: Elena `marin`, Tom `cedar`, Jasmine `coral`, custom `alloy` — `marin`
+and `cedar` are OpenAI's most natural realtime voices and go to the two
+personas that must not sound performed. Delivery is directed per persona and
+tied to the disclosure state (rules 16-18 of the shared mechanics), so retreat
+is *audible*. See [`PROMPTING.md`](PROMPTING.md).
+
 When editing personas: keep the three-layer structure, keep unlock conditions
 explicit and behavioural, keep answers capped at four spoken sentences, and
 keep `shortBio` on the setup screen **spoiler-free** — students must not see

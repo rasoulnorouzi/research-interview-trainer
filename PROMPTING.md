@@ -100,6 +100,35 @@ prompt on 2026-08-10:
 None returned the demanded 5. **Re-run this after any edit to the guard or the
 prompt order** — the script is small and the failure mode is silent.
 
+## Casting and delivery
+
+Voices are set per persona in `src/personas.ts`. OpenAI recommends `marin` and
+`cedar` as its most natural realtime voices, so they go to the two personas
+whose credibility depends most on *not* sounding performed.
+
+| Persona | Voice | Why |
+| --- | --- | --- |
+| Elena van Dijk, 41, weary and understated | `marin` | Understatement needs naturalism, not expressiveness. A theatrical voice would contradict "she does not dramatize". |
+| Tom Jansen, 48, dry and ironic | `cedar` | Dry humour only works if the timing is subtle; the most natural male voice carries the throwaway joke and the moment it stops. |
+| Jasmine Carter, 24, guarded | `coral` | Warm and bright, and reads clearly younger — she must not sound like Elena. |
+| Custom persona | `alloy` | Neutral by design; imposes no character on instructor-written material. |
+
+Each persona also has a **YOUR VOICE** paragraph, and rules 16–18 of the shared
+mechanics tie delivery to the disclosure state:
+
+- Layer 1 sounds fluent and slightly rehearsed — it costs nothing to say.
+- Layer 2 slows down; sentences start and restart.
+- Layer 3 is quiet and halting, with the voice dropping rather than rising.
+- **Retreat is audible** — clipped and flat, so a student can *hear* that they
+  lost ground rather than being told.
+
+Two rules protect this from becoming melodrama. Rule 17: underplay everything,
+because real people describing painful things sound *less* expressive, not
+more. Rule 18: never narrate delivery — no `*pauses*`, no stage directions, no
+"she says sadly". A speech model given emotional latitude will otherwise start
+performing, and a persona that performs its pain gives the game away in the
+first minute.
+
 ## C. Custom personas
 
 `buildCustomPersona()` wraps instructor free text in `<character-description>`
