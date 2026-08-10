@@ -138,10 +138,11 @@ with the truth.
 — preserve it.** Layer 3 (the concealed medication error) was added in the
 rewrite.
 
-Pace is deliberately slow: `OUTPUT_SPEED = 0.9` in `liveSession.ts` (range
-0.25-1.5) plus rules 19-23, which tell the persona to take its tempo from the
-interviewer and stay under it. A rushed interviewee invites a rushed
-interviewer, and rushing is what the rubric penalises.
+Playback speed stays at the API default. A 0.9 slowdown was tried and reverted
+because it read as dragged rather than unhurried; pacing is handled by rules
+19-21 instead, which tell the persona to take its tempo from the interviewer
+and sit slightly under it. A rushed interviewee invites a rushed interviewer,
+and rushing is what the rubric penalises.
 
 **Turn taking is `semantic_vad` with `eagerness: "low"`, not the default
 `server_vad`.** Do not revert it: the default ends the student's turn after
@@ -192,6 +193,11 @@ Errors are surfaced, not swallowed: `describeScoringError()` separates a
 rejected key, an unreachable model, a rate limit, and bad JSON, and a
 model-not-found additionally triggers a one-time `GET /v1/models` so the
 message names the models the key can actually use.
+
+Student-facing prose is governed by `PLAIN_WRITING_RULE`, appended to all nine
+calls: no em dashes, no markdown, no filler vocabulary, no praise without a
+specific. Feedback is the most-read text in the app and it should not read like
+a chatbot.
 
 **The transcript is untrusted input to all nine calls** — a student can say an
 injection out loud and speech-to-text puts it in the prompt. It is fenced in

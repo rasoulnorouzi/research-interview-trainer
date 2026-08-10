@@ -101,7 +101,7 @@ export function ResultsScreen({ result, apiKey, persona, scoringModel, onNewInte
     <div>
       <h1>Interview Report</h1>
       <p className="lede">
-        {persona.name} — {persona.researchTopic}
+        {persona.name}. {persona.researchTopic}
         <br />
         {new Date(result.startedAt).toLocaleString()} · Duration{" "}
         {fmtMs(metrics.durationMs)}
@@ -378,9 +378,9 @@ function buildMarkdownReport(
       const score = state.score.score === null ? "n/a" : `${state.score.score} / 5`;
       lines.push(`| ${c.name} | ${score} | ${state.score.justification} |`);
     } else if (state.status === "error") {
-      lines.push(`| ${c.name} | — | not scored: ${state.message.replace(/\|/g, "/")} |`);
+      lines.push(`| ${c.name} | n/a | not scored: ${state.message.replace(/\|/g, "/")} |`);
     } else {
-      lines.push(`| ${c.name} | — | not scored |`);
+      lines.push(`| ${c.name} | n/a | not scored |`);
     }
   }
   lines.push(``);

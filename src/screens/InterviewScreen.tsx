@@ -13,7 +13,7 @@ interface Props {
 
 const STATUS_TEXT: Record<SessionStatus, string> = {
   connecting: "Connecting…",
-  live: "Listening — ask your question out loud",
+  live: "Listening. Ask your question out loud",
   speaking: "Interviewee is speaking…",
   closed: "Session closed",
 };
@@ -111,13 +111,13 @@ export function InterviewScreen({ apiKey, persona, model, onEnd, onAbort }: Prop
         <span className="timer">{fmtMs(elapsedMs)}</span>
       </div>
       <p className="small">
-        {persona.title} — {persona.researchTopic}
+        {persona.title}. {persona.researchTopic}
       </p>
 
       {connectionLost ? (
         <div className="banner-error">
           {connectionLost} The interview has ended, but your transcript is
-          preserved — you can still view your results.
+          preserved, so you can still view your results.
         </div>
       ) : (
         <div className="status-line">

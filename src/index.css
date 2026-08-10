@@ -290,40 +290,57 @@ textarea {
   font-style: italic;
 }
 
-/* Shown from the moment the mic hears the student until Gemini returns their
-   text, which it only does once they stop speaking. */
+/* Covers the brief gap before the first streamed transcript delta arrives. */
 .transcript .pending {
   color: var(--muted);
   font-style: italic;
 }
 
-/* Model choice */
+/* Model choice: two columns on wide screens, stacked on narrow. */
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
 .model-picker {
   border: 1px solid var(--border);
   border-radius: 3px;
-  padding: 0.5rem 0.75rem 0.75rem;
-  margin: 0 0 0.75rem;
+  padding: 0.25rem 0.75rem 0.5rem;
+  margin: 0;
+  min-width: 0;
 }
 
 .model-picker legend {
-  font-weight: 600;
+  font-family: var(--serif);
+  font-size: 1rem;
   padding: 0 0.35rem;
+  color: var(--muted);
 }
 
 .model-picker label {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr;
   gap: 0.5rem;
   align-items: baseline;
-  padding: 0.3rem 0;
+  padding: 0.4rem 0.35rem;
   cursor: pointer;
+  border-top: 1px solid #ececec;
+}
+
+.model-picker label:first-of-type {
+  border-top: none;
 }
 
 .model-picker label.selected {
   color: var(--accent);
+  font-weight: 600;
 }
 
 .model-picker label.selected .small {
   color: var(--muted);
+  font-weight: normal;
 }
 
 /* Tables (metrics, rubric) */

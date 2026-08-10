@@ -124,26 +124,26 @@ mechanics tie delivery to the disclosure state:
 
 ### Pace
 
-The realtime default (`speed: 1.0`) came out too fast for these characters, so
-pacing is controlled in two places, because one of them cannot express the
-important half:
+**Playback speed is left at the API default.** A `speed: 0.9` slowdown was
+tried and reverted: stretching every syllable by a constant reads as dragged,
+not unhurried. If it is ever revisited the range is 0.25 to 1.5.
 
-- **`OUTPUT_SPEED = 0.9` in `src/lib/liveSession.ts`** sets the baseline.
-  The accepted range is 0.25–1.5; 0.9 slows the delivery without making it
-  sound artificially dragged. Change this one number to retune globally.
-- **Rules 19–23** cover what a number cannot: leaving a beat before answering,
-  putting pauses *inside* answers rather than only at the end, and above all
-  **taking tempo from the interviewer and staying a little under it**. If the
-  student speeds up or sounds nervous, the persona must not match them — it
-  stays slow and lets them settle.
+Pacing lives in rules 19 to 21 instead, where the persona can vary its own
+rhythm with the conversation. The rule that matters is **take tempo from the
+interviewer and sit slightly under it**: if the student speeds up or sounds
+nervous, the persona does not match them, it stays steady and lets them settle.
 
-That last rule is pedagogical, not cosmetic. A rushed interviewee invites a
-rushed interviewer, and rushing is exactly what the rubric penalises. A calm
-one creates the silence a student has to learn to tolerate — which is also what
-opens Layer 2.
+That one is pedagogical, not cosmetic. A rushed interviewee invites a rushed
+interviewer, and rushing is what the rubric penalises.
 
-Measured on the same line of Elena's dialogue: 9.5s at the old default, 13.1s
-with the prompt and speed change.
+### Student-facing prose
+
+`PLAIN_WRITING_RULE` is appended to all nine calls. The justifications and
+feedback are the most-read prose in the app, and left alone the model writes
+like a chatbot: em dashes everywhere, "it's worth noting that", "robust", and a
+closing line of encouragement that carries no information. Marking reads as
+unserious when it looks like that. The rule bans em dashes, markdown and the
+usual filler vocabulary, and requires specifics over praise.
 
 ### Turn taking is semantic, not a silence timer
 

@@ -104,7 +104,7 @@ export function SetupScreen({ onStart, initialError }: Props) {
         Practice qualitative research interviewing by speaking with a simulated
         interviewee. Each interviewee gives a rehearsed account of their reasons
         at first and will only disclose what actually happened to an interviewer
-        who earns it — by following up, noticing what is left unsaid, and not
+        who earns it by following up, noticing what is left unsaid, and not
         judging. When you end the interview you receive a report: speaking
         metrics, and a rubric assessment that includes how far beneath the
         surface account you managed to get.
@@ -132,13 +132,33 @@ export function SetupScreen({ onStart, initialError }: Props) {
           Remember this key on this computer
         </label>
         <p className="small">
-          The key is stored only in this browser and sent only to OpenAI — this
+          The key is stored only in this browser and sent only to OpenAI. This
           app has no server to send it to. Create one at
           platform.openai.com/api-keys.
         </p>
       </div>
 
-      <h2>2. Choose an interviewee</h2>
+      <h2>2. Models</h2>
+      <p className="small">
+        Both run on your own API credit. The interviewee model is the larger
+        cost by far; scoring adds a few cents either way.
+      </p>
+      <div className="model-grid">
+        <ModelPicker
+          legend="Interviewee voice"
+          choices={INTERVIEW_MODELS}
+          value={interviewModel}
+          onChange={setInterviewModel}
+        />
+        <ModelPicker
+          legend="Scoring"
+          choices={SCORING_MODELS}
+          value={scoringModel}
+          onChange={setScoringModel}
+        />
+      </div>
+
+      <h2>3. Choose an interviewee</h2>
       <div className="persona-list">
         {PERSONAS.map((p) => (
           <label
@@ -152,7 +172,7 @@ export function SetupScreen({ onStart, initialError }: Props) {
               onChange={() => setSelectedId(p.id)}
             />
             <span>
-              <span className="name">{p.name}</span> — {p.title}
+              <span className="name">{p.name}</span>. {p.title}
               <br />
               <span className="topic">Research topic: {p.researchTopic}</span>
               <br />
@@ -168,12 +188,12 @@ export function SetupScreen({ onStart, initialError }: Props) {
             onChange={() => setSelectedId("custom")}
           />
           <span>
-            <span className="name">Custom interviewee</span> — write your own
+            <span className="name">Custom interviewee</span>. Write your own
             <br />
             <span className="small">
               Describe the person to be interviewed: who they are, their story,
-              how they behave — and, for a scenario with real depth, what they
-              hold back and what it takes to earn it.
+              how they behave, and, for a scenario with any depth, what they hold
+              back and what it takes to earn it.
             </span>
           </span>
         </label>
@@ -204,24 +224,6 @@ export function SetupScreen({ onStart, initialError }: Props) {
           />
         </div>
       )}
-
-      <h2>3. Models</h2>
-      <p className="small">
-        These run on your own API credit. The interviewee model is by far the
-        larger cost; scoring is a few cents either way.
-      </p>
-      <ModelPicker
-        legend="Interviewee voice"
-        choices={INTERVIEW_MODELS}
-        value={interviewModel}
-        onChange={setInterviewModel}
-      />
-      <ModelPicker
-        legend="Scoring"
-        choices={SCORING_MODELS}
-        value={scoringModel}
-        onChange={setScoringModel}
-      />
 
       <div className="btn-row">
         <button className="btn" onClick={handleStart} disabled={!canStart}>

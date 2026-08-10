@@ -156,6 +156,21 @@ When you return 0, use the justification to say what would have been needed to a
 
 const EVIDENCE_RULE = `Base every statement strictly on what appears in the transcript. Do not infer behaviour that was not transcribed, and do not invent or paraphrase anything as though it were said.`;
 
+/**
+ * The feedback and justifications are read by students, so they are the app's
+ * most visible prose. Left alone, the model writes in the house style of a
+ * chatbot: em dashes everywhere, "it's worth noting that", "robust", and a
+ * closing line of encouragement that says nothing. Marking sounds unserious
+ * when it reads like that.
+ */
+const PLAIN_WRITING_RULE = `WRITE PLAINLY. A tutor is speaking to a student, not a chatbot producing content.
+- Never use em dashes or double hyphens. Use a comma, a full stop, or two sentences.
+- No bold, no markdown, no bullet characters, no emoji inside the text you return.
+- Cut filler openers: "it's worth noting that", "importantly", "notably", "interestingly", "let's", "overall", "in conclusion".
+- Avoid the words: delve, robust, comprehensive, leverage, seamless, crucial, pivotal, holistic, actionable, nuanced, insightful, impactful, showcase, underscore, foster, elevate.
+- No vague praise and no encouragement that carries no information. "Good job overall" and "keep up the great work" are worthless to a student. Say the specific thing.
+- Prefer short, direct sentences. Name what was said and what it did.`;
+
 interface ResponsesRequest {
   model: string;
   input: string;
@@ -232,6 +247,8 @@ ${NOT_ASSESSABLE_RULE}
 
 ${EVIDENCE_RULE}
 
+${PLAIN_WRITING_RULE}
+
 Give the score and a justification of at most two sentences that references what the student actually said.`;
 
   const parsed = (await callResponses(apiKey, {
@@ -287,7 +304,9 @@ Provide qualitative feedback on the student's interviewing technique (do NOT giv
 - "missedDepth": what remained undiscovered, and the specific opening that could have got there. Address the student directly and describe the undisclosed material only in general terms — enough to show what was at stake without handing over the whole story, since they may interview this person again. If the student reached the underlying reason, say so here instead.
 - "summary": a 2-3 sentence overall impression addressed to the student.
 
-${EVIDENCE_RULE}`;
+${EVIDENCE_RULE}
+
+${PLAIN_WRITING_RULE}`;
 
   const parsed = (await callResponses(apiKey, {
     model,
