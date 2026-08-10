@@ -143,6 +143,12 @@ Pace is deliberately slow: `OUTPUT_SPEED = 0.9` in `liveSession.ts` (range
 interviewer and stay under it. A rushed interviewee invites a rushed
 interviewer, and rushing is what the rubric penalises.
 
+**Turn taking is `semantic_vad` with `eagerness: "low"`, not the default
+`server_vad`.** Do not revert it: the default ends the student's turn after
+500 ms of silence, which cuts off anyone thinking mid-question and actively
+punishes leaving space after a disclosure — behaviour the `rapport` criterion
+rewards.
+
 Voices: Elena `marin`, Tom `cedar`, Jasmine `coral`, custom `alloy` — `marin`
 and `cedar` are OpenAI's most natural realtime voices and go to the two
 personas that must not sound performed. Delivery is directed per persona and

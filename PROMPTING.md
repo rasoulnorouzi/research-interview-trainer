@@ -145,6 +145,24 @@ opens Layer 2.
 Measured on the same line of Elena's dialogue: 9.5s at the old default, 13.1s
 with the prompt and speed change.
 
+### Turn taking is semantic, not a silence timer
+
+`TURN_DETECTION` in `liveSession.ts` is `semantic_vad` with `eagerness: "low"`,
+so a model decides when the student has finished a *thought* rather than a
+timer deciding they have stopped making noise.
+
+The default would be `server_vad` with `silence_duration_ms: 500`. Half a
+second of quiet and the interviewee starts talking. Two reasons that is wrong
+for this app specifically:
+
+1. Students formulating a research question pause mid-sentence to choose
+   words. Being cut off teaches them to rush — the behaviour the rubric
+   penalises.
+2. **Tolerating silence is itself assessed.** The `rapport` criterion rewards a
+   student who leaves space after a difficult disclosure. A silence timer would
+   punish exactly that by filling the gap, so the interface would be marking
+   down the behaviour the rubric marks up.
+
 Two rules protect this from becoming melodrama. Rule 17: underplay everything,
 because real people describing painful things sound *less* expressive, not
 more. Rule 18: never narrate delivery — no `*pauses*`, no stage directions, no

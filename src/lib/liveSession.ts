@@ -14,6 +14,23 @@ const INPUT_TRANSCRIPTION_MODEL = "gpt-live-transcribe";
 // handles matching the interviewer's rhythm; this just sets the baseline.
 const OUTPUT_SPEED = 0.9;
 
+/**
+ * Semantic turn detection: a model decides when the student has finished a
+ * thought, instead of a silence timer deciding they have stopped making noise.
+ *
+ * The default is `server_vad` with `silence_duration_ms: 500` — half a second
+ * of quiet and the interviewee starts talking. That is disastrous here.
+ * Students formulating a research question pause mid-sentence to choose words,
+ * and being cut off teaches them to rush, which is exactly what the rubric
+ * penalises. Worse, tolerating silence is itself an assessed skill: a student
+ * who leaves space after a difficult disclosure scores well for it, and a
+ * silence timer would punish them for it by talking over the gap.
+ *
+ * `eagerness: "low"` makes the model wait longest before deciding the turn is
+ * over. Valid values: low, medium, high, auto.
+ */
+const TURN_DETECTION = { type: "semantic_vad", eagerness: "low" } as const;
+
 export type SessionStatus = "connecting" | "live" | "speaking" | "closed";
 
 export interface InterviewSessionOptions {
@@ -137,7 +154,10 @@ export class InterviewSession {
             type: "realtime",
             model: this.opts.model,
             audio: {
-              input: { transcription: { model: INPUT_TRANSCRIPTION_MODEL } },
+              input: {
+                transcription: { model: INPUT_TRANSCRIPTION_MODEL },
+                turn_detection: TURN_DETECTION,
+              },
               output: { voice: this.opts.persona.voiceName, speed: OUTPUT_SPEED },
             },
           },
@@ -186,7 +206,10 @@ export class InterviewSession {
         type: "realtime",
         instructions: this.opts.persona.systemInstruction,
         audio: {
-          input: { transcription: { model: INPUT_TRANSCRIPTION_MODEL } },
+          input: {
+            transcription: { model: INPUT_TRANSCRIPTION_MODEL },
+            turn_detection: TURN_DETECTION,
+          },
           output: { voice: this.opts.persona.voiceName, speed: OUTPUT_SPEED },
         },
       },
