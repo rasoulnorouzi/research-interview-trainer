@@ -18,6 +18,13 @@ original had an Express + WebSocket backend, Tailwind/motion/lucide, an email
 exporter, a "fact injector", a text-question mode, and **no scoring at all**.
 All of that is gone.
 
+**A provider migration is agreed but not started.** The instructor has decided
+to replace Gemini entirely with the OpenAI API — not to support both. The
+research, the verified findings, the component mapping and the open questions
+are in **[`OPENAI-MIGRATION.md`](OPENAI-MIGRATION.md); read it before touching
+`liveSession.ts`, `audio.ts` or `scoring.ts`.** Everything below still describes
+the Gemini implementation that is live today.
+
 ## Architecture
 
 **Pure client-side React + Vite. There is no backend and no build step beyond
@@ -79,15 +86,22 @@ side and must not be unified:
    radii. It should look like a research instrument, not a SaaS landing page.
 3. **Voice only.** No text-question fallback. The student speaks; the
    interviewee speaks back.
-   *Consequence to live with:* the student's own words cannot appear as they
-   speak. Gemini emits `outputTranscription` while generating the interviewee's
-   audio, but `inputTranscription` only once the student's utterance ends. The
-   app covers the gap with a mic-driven "speaking…/transcribing…" placeholder.
-   Closing it properly would need a second ASR (Web Speech API) running
-   alongside — a whole parallel recognition path, Chrome-only, for cosmetics.
-   Don't.
+   *Consequence to live with, on Gemini:* the student's own words cannot appear
+   as they speak. Gemini emits `outputTranscription` while generating the
+   interviewee's audio, but `inputTranscription` only once the student's
+   utterance ends. The app covers the gap with a mic-driven
+   "speaking…/transcribing…" placeholder. Do not close it by bolting on a second
+   ASR (Web Speech API) — a whole parallel recognition path, Chrome-only.
+   **This limitation is the main reason for the OpenAI migration**: OpenAI's
+   `gpt-live-transcribe` streams input-transcript deltas as speech arrives, so
+   the placeholder disappears rather than being worked around.
 4. **If a backend ever becomes necessary, it must be FastAPI + Python** — not
    Node, not Express. Client-side React is preferred while it suffices.
+   The OpenAI migration does **not** require one: browser-direct calls to the
+   realtime and scoring endpoints are CORS-permitted, verified 2026-08-10. The
+   only scenario that would need a backend is OpenAI closing that path, in which
+   case FastAPI's entire job is minting ephemeral tokens. See
+   [`OPENAI-MIGRATION.md`](OPENAI-MIGRATION.md) §2.
 5. **Audio quality and latency matter.** Going through the browser directly
    (rather than relaying via a server) is deliberate.
 
@@ -259,6 +273,16 @@ Verified: TypeScript and production build clean; setup-screen validation and
 localStorage round-trip across reload; mic-denial path; results screen renders
 metrics, all rubric rows, per-criterion retry, and transcript when every AI call
 fails.
+
+Found in the first real-key run and since fixed: student speaking time was
+always 0:00 (transcript-derived timing, see Metrics), and rubric failures were
+swallowed into a bare "Scoring failed."
+
+**Still unresolved:** all nine scoring calls fail against at least one real key
+while the voice session works, which points at `gemini-3.6-flash` being
+unreachable for that key. The error path now reports the cause and lists
+reachable models. This is one of the reasons for the migration in
+[`OPENAI-MIGRATION.md`](OPENAI-MIGRATION.md).
 
 **Not yet verified with a real API key**: the live voice conversation itself
 (latency, transcription fidelity, interruption handling), whether the Layer 3
