@@ -24,12 +24,20 @@ export interface SessionResult {
   endedByError?: string;
 }
 
+/** A model the student can pick on the setup screen. */
+export interface ModelChoice {
+  id: string;
+  label: string;
+  note: string;
+}
+
 export interface Persona {
   id: string;
   name: string;
   title: string;
   researchTopic: string;
   shortBio: string;
+  /** An OpenAI realtime voice: alloy ash ballad coral echo sage shimmer verse marin cedar. */
   voiceName: string;
   systemInstruction: string;
   /**

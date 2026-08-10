@@ -1,116 +1,99 @@
 /**
- * Utility functions for browser audio recording (16kHz PCM)
- * and low-latency gapless playback (24kHz PCM).
+ * Speech measurement.
+ *
+ * WebRTC carries the microphone and the interviewee's voice natively, so this
+ * file no longer encodes, decodes or schedules any audio — the PCM helpers and
+ * the hand-rolled player that the Gemini build needed are gone.
+ *
+ * What remains is measurement. Speaking time must never be derived from
+ * transcript timestamps: that produced a permanent 0:00 for the student and a
+ * 0%/100% talk ratio. Both sides are measured from their audio instead, with
+ * the same energy gate, so the two numbers are comparable.
  */
 
-// Convert Float32Array mic samples to 16-bit Int16 PCM Base64
-export function pcmFloat32ToBase64(float32Array: Float32Array): string {
-  const buffer = new ArrayBuffer(float32Array.length * 2);
-  const view = new DataView(buffer);
-  for (let i = 0; i < float32Array.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32Array[i]));
-    // 16-bit signed PCM
-    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-  }
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
+// Amplitude above which a frame counts as speech, and how long speech keeps
+// counting after energy drops, so gaps between words inside one sentence are
+// not shaved off.
+const VOICE_RMS_THRESHOLD = 0.015;
+const VOICE_HANGOVER_MS = 400;
+const SAMPLE_INTERVAL_MS = 50;
 
-// Root-mean-square amplitude of a mic buffer, 0..1. Used as a cheap local
-// voice-activity gate: Gemini tells us nothing about when the student is
-// speaking, so we measure it ourselves.
 export function rms(samples: Float32Array): number {
   let sum = 0;
   for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
   return Math.sqrt(sum / samples.length);
 }
 
-// Convert Base64 16-bit PCM (24kHz or 16kHz) to Float32Array for Web Audio API
-export function base64ToFloat32Pcm(base64: string): Float32Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  const int16Array = new Int16Array(bytes.buffer);
-  const float32Array = new Float32Array(int16Array.length);
-  for (let i = 0; i < int16Array.length; i++) {
-    float32Array[i] = int16Array[i] / 32768.0;
-  }
-  return float32Array;
+export interface SpeechMeter {
+  /** Total voiced milliseconds observed on this stream so far. */
+  readonly speechMs: number;
+  readonly speaking: boolean;
+  stop(): void;
 }
 
-// Duration in ms of a base64-encoded 16-bit mono PCM chunk.
-// base64 length * 3/4 bytes, 2 bytes per sample.
-export function base64PcmDurationMs(base64: string, sampleRate: number): number {
-  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
-  const bytes = (base64.length * 3) / 4 - padding;
-  const samples = bytes / 2;
-  return (samples / sampleRate) * 1000;
-}
+/**
+ * Watch a MediaStream and accumulate how long it carried speech. Used for both
+ * the local microphone and the remote track.
+ *
+ * Note for the remote stream: the track must also be attached to an <audio>
+ * element or Chrome delivers no samples to the Web Audio graph, and this meter
+ * silently reads zero.
+ */
+export function createSpeechMeter(
+  stream: MediaStream,
+  onSpeakingChange?: (speaking: boolean) => void
+): SpeechMeter {
+  const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+  const ctx: AudioContext = new AudioCtxClass();
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  source.connect(analyser);
 
-// Audio Player Manager for 24kHz audio streams
-export class PcmAudioPlayer {
-  private audioCtx: AudioContext | null = null;
-  private nextStartTime = 0;
+  const buf = new Float32Array(analyser.fftSize);
+  let speechMs = 0;
+  let speaking = false;
+  let msSinceVoice = Infinity;
+  let stopped = false;
 
-  constructor(private sampleRate = 24000) {}
+  const setSpeaking = (next: boolean) => {
+    if (speaking === next) return;
+    speaking = next;
+    onSpeakingChange?.(next);
+  };
 
-  public init() {
-    if (!this.audioCtx) {
-      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      this.audioCtx = new AudioCtxClass({ sampleRate: this.sampleRate });
+  const timer = setInterval(() => {
+    if (stopped) return;
+    analyser.getFloatTimeDomainData(buf);
+    if (rms(buf) >= VOICE_RMS_THRESHOLD) {
+      msSinceVoice = 0;
+      speechMs += SAMPLE_INTERVAL_MS;
+      setSpeaking(true);
+    } else {
+      msSinceVoice += SAMPLE_INTERVAL_MS;
+      if (msSinceVoice < VOICE_HANGOVER_MS) speechMs += SAMPLE_INTERVAL_MS;
+      else setSpeaking(false);
     }
-    if (this.audioCtx!.state === "suspended") {
-      this.audioCtx!.resume();
-    }
-  }
+  }, SAMPLE_INTERVAL_MS);
 
-  public playChunk(base64Pcm: string) {
-    this.init();
-    if (!this.audioCtx) return;
-
-    try {
-      const pcmData = base64ToFloat32Pcm(base64Pcm);
-      if (pcmData.length === 0) return;
-
-      const buffer = this.audioCtx.createBuffer(1, pcmData.length, this.sampleRate);
-      buffer.getChannelData(0).set(pcmData);
-
-      const source = this.audioCtx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(this.audioCtx.destination);
-
-      const currentTime = this.audioCtx.currentTime;
-      if (this.nextStartTime < currentTime) {
-        this.nextStartTime = currentTime;
-      }
-
-      source.start(this.nextStartTime);
-      this.nextStartTime += buffer.duration;
-    } catch (err) {
-      console.error("Error playing PCM chunk:", err);
-    }
-  }
-
-  public stop() {
-    if (this.audioCtx) {
+  return {
+    get speechMs() {
+      return speechMs;
+    },
+    get speaking() {
+      return speaking;
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+      setSpeaking(false);
       try {
-        this.audioCtx.close();
+        source.disconnect();
       } catch {
         // ignore
       }
-      this.audioCtx = null;
-    }
-    this.nextStartTime = 0;
-  }
-
-  public isCurrentlyPlaying(): boolean {
-    return this.audioCtx ? this.audioCtx.currentTime < this.nextStartTime : false;
-  }
+      void ctx.close().catch(() => {});
+    },
+  };
 }

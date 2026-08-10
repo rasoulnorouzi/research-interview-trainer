@@ -297,6 +297,35 @@ textarea {
   font-style: italic;
 }
 
+/* Model choice */
+.model-picker {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.5rem 0.75rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.model-picker legend {
+  font-weight: 600;
+  padding: 0 0.35rem;
+}
+
+.model-picker label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.3rem 0;
+  cursor: pointer;
+}
+
+.model-picker label.selected {
+  color: var(--accent);
+}
+
+.model-picker label.selected .small {
+  color: var(--muted);
+}
+
 /* Tables (metrics, rubric) */
 table {
   width: 100%;

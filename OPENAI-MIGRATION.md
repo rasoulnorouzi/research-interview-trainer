@@ -1,11 +1,27 @@
 # Moving the trainer from Gemini to the OpenAI API
 
-**Status: researched and agreed, not implemented.** The instructor has decided
-to replace Gemini entirely with OpenAI rather than support both providers. No
-application code has been changed. This file is the record of *why*, and of
-what a future implementation must check before trusting anything below.
+**Status: done.** Gemini was removed entirely and the app now runs on OpenAI.
+This file is the record of *why*, and of what was measured rather than assumed.
+Prompt-safety design lives in [`PROMPTING.md`](PROMPTING.md).
 
-Researched 2026-08-10.
+Researched and implemented 2026-08-10.
+
+### What changed against the plan, once tested with a real key
+
+- **Backend-free is confirmed, not merely permitted.** The *actual* POST to
+  `/v1/realtime/client_secrets` from a browser Origin returns
+  `access-control-allow-origin: *` and a usable token — the caveat in §2 about
+  only having tested the preflight is resolved.
+- **Event names were transcribed from a live session**, not taken from docs:
+  `conversation.item.input_audio_transcription.delta` / `.completed` for the
+  student, `response.output_audio_transcript.delta` / `.done` for the
+  interviewee. 14 streaming input deltas arrived during a single utterance.
+- **Model ids are now fact, not [indicative]:** `gpt-realtime-2.1`,
+  `gpt-realtime-2.1-mini`, `gpt-live-transcribe`, and `gpt-5.6-sol` /
+  `-terra` / `-luna`, all confirmed present via `GET /v1/models`. Both choices
+  are exposed to the student on the setup screen rather than hardcoded.
+- **The bundle shrank from 644 KB to 262 KB** (gzip 151 → 85 KB) because the
+  Gemini SDK is gone and nothing replaced it.
 
 ## Evidence grading
 
@@ -30,11 +46,11 @@ mic-driven "speaking… / transcribing…" placeholder. For a tool whose whole
 purpose is teaching people to *notice how they ask things*, not seeing your own
 question form is a genuine pedagogical loss, not a cosmetic one.
 
-**Scoring is currently broken for at least one real API key.** Every one of the
-nine evaluator calls fails while the voice session works, which points at the
-`gemini-3.6-flash` scoring model being unreachable for that key. Unresolved at
-time of writing — see `describeScoringError()` in `src/lib/scoring.ts`, which
-now surfaces the real cause and lists the models the key can reach.
+**Scoring was broken for the instructor's real API key.** Every one of the nine
+evaluator calls failed while the voice session worked, pointing at the
+`gemini-3.6-flash` scoring model being unreachable for that key. It was never
+diagnosed further, because the migration removed it — but it is a fair warning
+about depending on a single vendor's model naming.
 
 Neither is fatal on its own. Together they made it worth checking whether the
 other vendor does this better. It does.
@@ -70,13 +86,14 @@ All five permit a cross-origin browser call carrying an `Authorization` header.
 The browser can therefore mint its own ephemeral token with the student's key
 and complete the handshake itself. **No backend.** [verified]
 
-### Two caveats a future implementer must not skip
+The table above was measured with `OPTIONS` preflights before a key was
+available. It has since been **confirmed with a real POST**: minting an
+ephemeral token from a browser Origin returns 200, `access-control-allow-origin: *`
+and a working `ek_…` value.
 
-1. **A 200 on the preflight is not proof the actual POST returns the header.**
-   Only an `OPTIONS` preflight was exercised, because verifying the real request
-   needs a funded OpenAI key, which was not available. Confirm with one real
-   call before committing to the architecture.
-2. **This path is permitted, not blessed.** OpenAI documents the
+### The remaining caveat
+
+1. **This path is permitted, not blessed.** OpenAI documents the
    server-mediated flow and does not advertise browser-direct use. The CORS
    headers are real and deliberate, but they could be tightened. Constraint 4 in
    `CLAUDE.md` already names the fallback: a **FastAPI** service whose entire job
@@ -100,13 +117,13 @@ scheduling — all the work `src/lib/audio.ts` currently does by hand.
 
 This is a real simplification, in the direction hard constraint 1 asks for.
 
-### Kept, with one open question
+### Kept — and now used for both sides
 
-`rms()` and the voice-activity gate exist because Gemini's transcript timing
-could not tell us how long the student spoke. Under OpenAI, streaming
-transcription deltas carry their own timing, so the gate **may** become
-unnecessary — but that is unconfirmed. Decide only after seeing real delta
-timestamps. Whatever happens, do not go back to `tEnd - tStart` on transcript
+`rms()` and the voice-activity gate were kept and generalised into
+`createSpeechMeter(stream)`, applied to the microphone *and* the remote track.
+Transcript deltas could have supplied rough student timing, but measuring both
+sides the same way makes the two numbers directly comparable, and it keeps
+`metrics.ts` untouched. Do not go back to `tEnd - tStart` on transcript
 entries; that is what produced the 0:00 speaking time and the 0%/100% talk ratio.
 
 ### Unchanged

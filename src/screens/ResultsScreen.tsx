@@ -19,6 +19,7 @@ interface Props {
   result: SessionResult;
   apiKey: string;
   persona: Persona;
+  scoringModel: string;
   onNewInterview: () => void;
 }
 
@@ -32,7 +33,7 @@ type FeedbackState =
   | { status: "done"; feedback: QualitativeFeedback }
   | { status: "error"; message: string };
 
-export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props) {
+export function ResultsScreen({ result, apiKey, persona, scoringModel, onNewInterview }: Props) {
   const metrics = useMemo(() => computeMetrics(result), [result]);
   const [criterionStates, setCriterionStates] = useState<Record<string, CriterionState>>(
     () => Object.fromEntries(CRITERIA.map((c) => [c.id, { status: "loading" }]))
@@ -43,7 +44,7 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
     setCriterionStates((prev) => ({ ...prev, [id]: state }));
 
   useEffect(() => {
-    const handles = startScoring(apiKey, result.transcript, persona);
+    const handles = startScoring(apiKey, result.transcript, persona, scoringModel);
     for (const [id, promise] of handles.criterionPromises) {
       promise
         .then((score) => setCriterion(id, { status: "done", score }))
@@ -57,14 +58,14 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
 
   const handleRetryCriterion = (id: string) => {
     setCriterion(id, { status: "loading" });
-    retryCriterion(apiKey, result.transcript, persona, id)
+    retryCriterion(apiKey, result.transcript, persona, id, scoringModel)
       .then((score) => setCriterion(id, { status: "done", score }))
       .catch((err) => setCriterion(id, { status: "error", message: describeScoringError(err) }));
   };
 
   const handleRetryFeedback = () => {
     setFeedbackState({ status: "loading" });
-    retryFeedback(apiKey, result.transcript, persona)
+    retryFeedback(apiKey, result.transcript, persona, scoringModel)
       .then((feedback) => setFeedbackState({ status: "done", feedback }))
       .catch((err) => setFeedbackState({ status: "error", message: describeScoringError(err) }));
   };

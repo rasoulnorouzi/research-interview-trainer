@@ -1,25 +1,20 @@
 import { useState } from "react";
-import { Persona, SessionResult } from "./types";
-import { SetupScreen } from "./screens/SetupScreen";
+import { SessionResult } from "./types";
+import { SetupScreen, StartConfig } from "./screens/SetupScreen";
 import { InterviewScreen } from "./screens/InterviewScreen";
 import { ResultsScreen } from "./screens/ResultsScreen";
 
 type Phase = "setup" | "interview" | "results";
 
-interface Config {
-  apiKey: string;
-  persona: Persona;
-}
-
 export default function App() {
   const [phase, setPhase] = useState<Phase>("setup");
-  const [config, setConfig] = useState<Config | null>(null);
+  const [config, setConfig] = useState<StartConfig | null>(null);
   const [result, setResult] = useState<SessionResult | null>(null);
   const [setupError, setSetupError] = useState<string | null>(null);
 
-  const handleStart = (apiKey: string, persona: Persona) => {
+  const handleStart = (next: StartConfig) => {
     setSetupError(null);
-    setConfig({ apiKey, persona });
+    setConfig(next);
     setResult(null);
     setPhase("interview");
   };
@@ -47,6 +42,7 @@ export default function App() {
         <InterviewScreen
           apiKey={config.apiKey}
           persona={config.persona}
+          model={config.interviewModel}
           onEnd={handleEnd}
           onAbort={handleAbort}
         />
@@ -56,6 +52,7 @@ export default function App() {
           result={result}
           apiKey={config.apiKey}
           persona={config.persona}
+          scoringModel={config.scoringModel}
           onNewInterview={handleNewInterview}
         />
       )}

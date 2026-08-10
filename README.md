@@ -2,16 +2,17 @@
 
 **▶ Live: https://rasoulnorouzi.github.io/research-interview-trainer/**
 
-Nothing to install — students open the link, paste their own Gemini API key,
+Nothing to install — students open the link, paste their own OpenAI API key,
 and start. The site is served over HTTPS, which the browser requires before it
 will grant microphone access.
 
 A simple client-side React app for teaching students how to conduct
 qualitative research interviews. The student speaks (voice only) with an
-AI-simulated interviewee via the Gemini Live API. When the interview ends,
-the app produces a detailed report:
+AI-simulated interviewee via the OpenAI Realtime API. Their own words appear
+as they say them. When the interview ends, the app produces a detailed report:
 
-- **Speaking metrics** (computed locally): duration, talk ratio, questions
+- **Speaking metrics** (computed locally from the audio itself): duration,
+  per-side speaking time and turn averages, silence, talk ratio, questions
   asked, words spoken, turn counts, longest turn.
 - **Rubric assessment** (AI-scored): eight interviewing-skills criteria —
   open vs. closed questions, follow-up probing, noticing and pursuing cues,
@@ -29,18 +30,20 @@ left university), plus a free-text box to define a fully custom persona.
 
 ## Using the hosted version
 
-1. Get a Gemini API key from https://aistudio.google.com
+1. Get an OpenAI API key from https://platform.openai.com/api-keys
 2. Open https://rasoulnorouzi.github.io/research-interview-trainer/
-3. Paste the key, choose an interviewee, allow microphone access, and start.
+3. Paste the key, choose an interviewee and your models, allow microphone
+   access, and start.
 
-The key is held in your browser and sent only to Google — this app has no
-server to send it to. If you would rather it could not be used elsewhere at
-all, you can restrict the key to this site's address under
-*API key → Application restrictions → Websites* in Google Cloud Console.
+The key is held in your browser and sent only to OpenAI — this app has no
+server to send it to. It is used there only to mint a short-lived token for the
+voice session. Both models are chosen on the setup screen, so you control what
+each interview costs; the interviewee model dominates, and scoring is a few
+cents either way.
 
 ## Running it locally
 
-1. Get a Gemini API key from https://aistudio.google.com
+1. Get an OpenAI API key from https://platform.openai.com/api-keys
 2. Install and run:
 
    ```bash
@@ -52,8 +55,9 @@ all, you can restrict the key to this site's address under
    Only `localhost` counts as a secure context, so the microphone is silently
    blocked on `http://192.168.x.x:5173`.
 4. Paste your API key (optionally tick "Remember this key" — it is stored only
-   in your browser's localStorage and sent only to Google), choose an
-   interviewee, and start. The browser will ask for microphone access.
+   in your browser's localStorage and sent only to OpenAI), choose an
+   interviewee and your models, and start. The browser will ask for microphone
+   access.
 
 ## Scripts
 
@@ -62,7 +66,12 @@ all, you can restrict the key to this site's address under
 - `npm run preview` — serve the production build
 - `npm run lint` — TypeScript check
 
-There is no backend: the browser talks to the Gemini API directly.
+There is no backend: the browser talks to the OpenAI API directly over WebRTC,
+and there is no OpenAI SDK — only `react` and `react-dom`.
+
+Prompt design and the anti-injection rules are documented in
+[PROMPTING.md](PROMPTING.md); the migration from Gemini in
+[OPENAI-MIGRATION.md](OPENAI-MIGRATION.md).
 
 ## Deployment
 

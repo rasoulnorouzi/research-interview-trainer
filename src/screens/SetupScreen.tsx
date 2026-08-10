@@ -1,14 +1,63 @@
 import { useState } from "react";
-import { Persona } from "../types";
+import { ModelChoice, Persona } from "../types";
 import { PERSONAS, buildCustomPersona } from "../personas";
+import {
+  DEFAULT_INTERVIEW_MODEL,
+  DEFAULT_SCORING_MODEL,
+  INTERVIEW_MODELS,
+  SCORING_MODELS,
+} from "../models";
 
 const LS_KEY = "riv.apiKey";
 const LS_REMEMBER = "riv.rememberKey";
 const LS_PERSONA = "riv.lastPersona";
+const LS_INTERVIEW_MODEL = "riv.interviewModel";
+const LS_SCORING_MODEL = "riv.scoringModel";
+
+export interface StartConfig {
+  apiKey: string;
+  persona: Persona;
+  interviewModel: string;
+  scoringModel: string;
+}
 
 interface Props {
-  onStart: (apiKey: string, persona: Persona) => void;
+  onStart: (config: StartConfig) => void;
   initialError: string | null;
+}
+
+/** Radio group of model options, each with its tradeoff spelled out. */
+function ModelPicker({
+  legend,
+  choices,
+  value,
+  onChange,
+}: {
+  legend: string;
+  choices: ModelChoice[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <fieldset className="model-picker">
+      <legend>{legend}</legend>
+      {choices.map((c) => (
+        <label key={c.id} className={value === c.id ? "selected" : ""}>
+          <input
+            type="radio"
+            name={legend}
+            checked={value === c.id}
+            onChange={() => onChange(c.id)}
+          />
+          <span>
+            {c.label}
+            <br />
+            <span className="small">{c.note}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
 }
 
 export function SetupScreen({ onStart, initialError }: Props) {
@@ -19,6 +68,12 @@ export function SetupScreen({ onStart, initialError }: Props) {
     localStorage.getItem(LS_PERSONA) ?? PERSONAS[0].id
   );
   const [customText, setCustomText] = useState("");
+  const [interviewModel, setInterviewModel] = useState(
+    localStorage.getItem(LS_INTERVIEW_MODEL) ?? DEFAULT_INTERVIEW_MODEL
+  );
+  const [scoringModel, setScoringModel] = useState(
+    localStorage.getItem(LS_SCORING_MODEL) ?? DEFAULT_SCORING_MODEL
+  );
 
   const isCustom = selectedId === "custom";
   const canStart =
@@ -34,10 +89,12 @@ export function SetupScreen({ onStart, initialError }: Props) {
       localStorage.removeItem(LS_REMEMBER);
     }
     localStorage.setItem(LS_PERSONA, selectedId);
+    localStorage.setItem(LS_INTERVIEW_MODEL, interviewModel);
+    localStorage.setItem(LS_SCORING_MODEL, scoringModel);
     const persona = isCustom
       ? buildCustomPersona(customText)
       : PERSONAS.find((p) => p.id === selectedId)!;
-    onStart(apiKey.trim(), persona);
+    onStart({ apiKey: apiKey.trim(), persona, interviewModel, scoringModel });
   };
 
   return (
@@ -55,7 +112,7 @@ export function SetupScreen({ onStart, initialError }: Props) {
 
       {initialError && <div className="banner-error">{initialError}</div>}
 
-      <h2>1. Gemini API key</h2>
+      <h2>1. OpenAI API key</h2>
       <div className="field">
         <label htmlFor="apiKey">API key</label>
         <input
@@ -63,7 +120,7 @@ export function SetupScreen({ onStart, initialError }: Props) {
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder="Paste your Gemini API key"
+          placeholder="sk-…"
           autoComplete="off"
         />
         <label className="checkbox-row">
@@ -75,8 +132,9 @@ export function SetupScreen({ onStart, initialError }: Props) {
           Remember this key on this computer
         </label>
         <p className="small">
-          The key is stored only in this browser and sent only to Google. You can
-          get a free key at aistudio.google.com.
+          The key is stored only in this browser and sent only to OpenAI — this
+          app has no server to send it to. Create one at
+          platform.openai.com/api-keys.
         </p>
       </div>
 
@@ -146,6 +204,24 @@ export function SetupScreen({ onStart, initialError }: Props) {
           />
         </div>
       )}
+
+      <h2>3. Models</h2>
+      <p className="small">
+        These run on your own API credit. The interviewee model is by far the
+        larger cost; scoring is a few cents either way.
+      </p>
+      <ModelPicker
+        legend="Interviewee voice"
+        choices={INTERVIEW_MODELS}
+        value={interviewModel}
+        onChange={setInterviewModel}
+      />
+      <ModelPicker
+        legend="Scoring"
+        choices={SCORING_MODELS}
+        value={scoringModel}
+        onChange={setScoringModel}
+      />
 
       <div className="btn-row">
         <button className="btn" onClick={handleStart} disabled={!canStart}>

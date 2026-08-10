@@ -18,18 +18,19 @@ original had an Express + WebSocket backend, Tailwind/motion/lucide, an email
 exporter, a "fact injector", a text-question mode, and **no scoring at all**.
 All of that is gone.
 
-**A provider migration is agreed but not started.** The instructor has decided
-to replace Gemini entirely with the OpenAI API — not to support both. The
-research, the verified findings, the component mapping and the open questions
-are in **[`OPENAI-MIGRATION.md`](OPENAI-MIGRATION.md); read it before touching
-`liveSession.ts`, `audio.ts` or `scoring.ts`.** Everything below still describes
-the Gemini implementation that is live today.
+**Migrated from Gemini to OpenAI (2026-08-10).** Gemini is entirely gone. The
+reasoning and the verified API findings are in
+[`OPENAI-MIGRATION.md`](OPENAI-MIGRATION.md); the prompt-safety design is in
+[`PROMPTING.md`](PROMPTING.md) — **read that before editing any persona or
+evaluator prompt**, several lines that look like boilerplate are load-bearing.
 
 ## Architecture
 
 **Pure client-side React + Vite. There is no backend and no build step beyond
-Vite.** The browser talks to the Gemini API directly with a user-supplied API
-key. Three dependencies total: `react`, `react-dom`, `@google/genai`.
+Vite.** The browser talks to the OpenAI API directly with a user-supplied API
+key. **Two dependencies total: `react`, `react-dom`** — there is no OpenAI SDK.
+WebRTC is native to the browser and scoring is one `fetch`, so every network
+call is plain visible HTTP.
 
 ```
 src/
@@ -38,9 +39,10 @@ src/
   types.ts                    All shared types
   personas.ts                 3 layered personas + buildCustomPersona()
   index.css                   The entire stylesheet, plain CSS
+  models.ts                   The two user-selectable model lists
   lib/
-    audio.ts                  PCM encode/decode, PcmAudioPlayer, base64PcmDurationMs
-    liveSession.ts            InterviewSession class — Gemini Live + mic + transcript/timing
+    audio.ts                  createSpeechMeter() — voiced-time measurement only
+    liveSession.ts            InterviewSession class — WebRTC + transcript/timing
     metrics.ts                computeMetrics() and formatters, pure functions
     scoring.ts                Rubric definitions + independent evaluator calls
   screens/
@@ -51,29 +53,30 @@ src/
 
 No router (three screens, one state variable). No state library. No test suite.
 
-Models: `gemini-3.1-flash-live-preview` for the voice session,
-`gemini-3.6-flash` for scoring.
+Models are **chosen by the student on the setup screen** and listed in
+`src/models.ts`: `gpt-realtime-2.1-mini` / `gpt-realtime-2.1` for the voice
+session, and `gpt-5.6-terra` / `-sol` / `-luna` for scoring. Input transcription
+is pinned to `gpt-live-transcribe` in `liveSession.ts` — see the voice-only
+constraint for why that one is not negotiable.
 
 The report "export" is a client-side Markdown download: `buildMarkdownReport()`
 in `ResultsScreen.tsx` renders metrics + rubric + feedback + full transcript
 into a `Blob` saved as `interview-report-<date>.md`. No email, no server.
 
-## Audio pipeline
+## Audio
 
-Two sample rates, deliberately — they are what the Live API expects on each
-side and must not be unified:
+**WebRTC carries the audio; the app does not touch samples.** Capture,
+encoding, jitter buffering, echo cancellation, playback and barge-in are all
+handled by the browser. The hand-rolled PCM codec, the gapless player and the
+deprecated `ScriptProcessorNode` chain the Gemini build needed are gone.
 
-- **Uplink 16 kHz.** `AudioContext({sampleRate: 16000})` → `ScriptProcessorNode`
-  (2048 frames) → `pcmFloat32ToBase64()` → `sendRealtimeInput` with
-  `mimeType: "audio/pcm;rate=16000"`.
-- **Downlink 24 kHz.** `PcmAudioPlayer` schedules each received chunk at
-  `nextStartTime` (advanced by `buffer.duration`) so playback is gapless
-  instead of one-`AudioBufferSourceNode`-per-chunk stutter.
-- **Barge-in.** `serverContent.interrupted` calls `player.stop()`, which closes
-  the playback `AudioContext` outright — that is how queued-but-unplayed chunks
-  are discarded. The context is lazily recreated on the next `playChunk()`.
-  Changing `stop()` to something gentler will make the interviewee keep talking
-  over the student.
+What remains in `audio.ts` is measurement: `createSpeechMeter(stream)` runs an
+`AnalyserNode` energy gate and is applied to **both** the local mic and the
+remote track, so the two speaking times are directly comparable.
+
+One trap: the remote stream must also be attached to an `<audio>` element or
+Chrome delivers no samples to the Web Audio graph and the meter silently reads
+zero. `liveSession.ts` attaches it in `ontrack` for exactly this reason.
 
 ## Hard design constraints (from the instructor — do not drift)
 
@@ -86,21 +89,16 @@ side and must not be unified:
    radii. It should look like a research instrument, not a SaaS landing page.
 3. **Voice only.** No text-question fallback. The student speaks; the
    interviewee speaks back.
-   *Consequence to live with, on Gemini:* the student's own words cannot appear
-   as they speak. Gemini emits `outputTranscription` while generating the
-   interviewee's audio, but `inputTranscription` only once the student's
-   utterance ends. The app covers the gap with a mic-driven
-   "speaking…/transcribing…" placeholder. Do not close it by bolting on a second
-   ASR (Web Speech API) — a whole parallel recognition path, Chrome-only.
-   **This limitation is the main reason for the OpenAI migration**: OpenAI's
-   `gpt-live-transcribe` streams input-transcript deltas as speech arrives, so
-   the placeholder disappears rather than being worked around.
+   The student's words stream as they speak, via `gpt-live-transcribe` and
+   `conversation.item.input_audio_transcription.delta`. **Do not swap that
+   transcription model for `gpt-transcribe`**, which only transcribes after a
+   committed turn — that is the exact Gemini limitation this migration removed.
 4. **If a backend ever becomes necessary, it must be FastAPI + Python** — not
-   Node, not Express. Client-side React is preferred while it suffices.
-   The OpenAI migration does **not** require one: browser-direct calls to the
-   realtime and scoring endpoints are CORS-permitted, verified 2026-08-10. The
-   only scenario that would need a backend is OpenAI closing that path, in which
-   case FastAPI's entire job is minting ephemeral tokens. See
+   Node, not Express. None is necessary today: the browser mints its own
+   ephemeral token at `/v1/realtime/client_secrets` with the student's key, and
+   that endpoint returns `access-control-allow-origin: *` (verified against the
+   live API, 2026-08-10). If OpenAI ever closes that path, FastAPI's entire job
+   is minting the token — it would never see the student's key. See
    [`OPENAI-MIGRATION.md`](OPENAI-MIGRATION.md) §2.
 5. **Audio quality and latency matter.** Going through the browser directly
    (rather than relaying via a server) is deliberate.
@@ -150,7 +148,7 @@ what they are supposed to discover.
 The instructor specifically requires that rubric scoring be free of anchoring
 bias. Therefore:
 
-- **Eight criteria, eight separate `generateContent` calls.** Each evaluator is
+- **Eight criteria, eight separate `/v1/responses` calls.** Each evaluator is
   a fresh context that sees the transcript and *one* criterion definition with
   its 1/3/5 anchors — never the other criteria, never another score, never the
   persona's system instruction.
@@ -175,8 +173,14 @@ silently punishes students for a short session.
 
 Errors are surfaced, not swallowed: `describeScoringError()` separates a
 rejected key, an unreachable model, a rate limit, and bad JSON, and a
-model-not-found additionally triggers a one-time `ai.models.list()` so the
+model-not-found additionally triggers a one-time `GET /v1/models` so the
 message names the models the key can actually use.
+
+**The transcript is untrusted input to all nine calls** — a student can say an
+injection out loud and speech-to-text puts it in the prompt. It is fenced in
+`<transcript>` tags with an explicit guard, the instructions come after it, and
+`strict: true` bounds the output. See [`PROMPTING.md`](PROMPTING.md) §B, which
+includes the tested result for all three scoring models.
 
 Criteria: `open_questions`, `probing`, `cue_pursuit`, `depth_reached`,
 `leading`, `rapport`, `neutrality`, `structure`. The two discovery criteria
@@ -191,18 +195,14 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
 
 - **Interviewee speaking time is exact**: summed from the sample count of every
   received audio chunk (`base64PcmDurationMs`).
-- **Student speaking time is measured from the microphone**, not from the
-  transcript. An RMS energy gate (`VOICE_RMS_THRESHOLD`, with
-  `VOICE_HANGOVER_MS` so inter-word gaps aren't shaved off) counts voiced
-  buffers in `onaudioprocess`. **Do not go back to deriving it from
-  transcript timestamps** — Gemini delivers the student's input transcription
-  as a single blob after they stop talking, so `tEnd - tStart` was 0 and every
-  interview reported 0:00 and a 0%/100% talk ratio.
-- Per-turn `speechMs` is banked as audio happens and attributed to a turn when
-  that turn's text appears (`takeSpeechMs`), which is why it survives text and
-  audio arriving out of step.
-- Turn clustering merges same-speaker transcription chunks less than
-  `TURN_GAP_MS` (2000 ms) apart into one entry.
+- **Both sides are measured from audio**, via `createSpeechMeter`. **Never go
+  back to deriving speaking time from transcript timestamps** — that produced a
+  permanent 0:00 for the student and a 0%/100% talk ratio.
+- Per-turn `speechMs` is the meter's advance since that turn opened, so it
+  survives text and audio arriving out of step.
+- **Turns are keyed by the server's `item_id`**, so the old `TURN_GAP_MS`
+  time-gap guessing is gone. A `.completed` / `.done` event replaces the
+  accumulated deltas with the corrected final transcript.
 - Question counting is an acknowledged heuristic: `?` marks, falling back to an
   interrogative opening word.
 - `avgQuestionWords` is student words ÷ student *turns*, not ÷ questions. The
@@ -211,19 +211,16 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
 ## Gotchas
 
 - **`main.tsx` must not use `StrictMode`.** Its dev-mode double-mount opens the
-  Gemini Live session and the microphone twice.
-- **Never set `httpOptions.headers["User-Agent"]`** on `GoogleGenAI` in the
-  browser — browsers forbid setting that header. (The deleted server did this.)
+  realtime session and the microphone twice.
+- **The remote audio track must be attached to an `<audio>` element**, or the
+  speech meter reads zero in Chrome even though you can hear the audio fine.
 - **`getUserMedia` requires a secure context.** `http://localhost:5173` works;
   the LAN address Vite also prints (`http://192.168.x.x:5173`) does **not** —
   the mic is silently blocked there.
-- `ScriptProcessorNode` is deprecated but retained deliberately: it works
-  everywhere and AudioWorklet would add a module file and message plumbing for
-  no user-visible gain. Buffer is 2048 @ 16 kHz (~128 ms) for low latency.
-- Mic permission is requested **before** connecting to Gemini, so a denial
-  fails fast without burning an API call.
-- `setMuted` goes through the session object, not React state, to avoid the
-  stale-closure bug the original app had in its `onaudioprocess` handler.
+- Mic permission is requested **before** minting a token, so a denial fails
+  fast without burning an API call.
+- `setMuted` disables the outgoing track rather than gating a send loop, so
+  there is no stale-closure hazard.
 - A mid-interview disconnect preserves the transcript and offers "View
   results"; only a failure with an empty transcript sends the user back to
   setup.
@@ -262,31 +259,46 @@ actions, so the three-dependency constraint holds.
 - The API key stays a per-student runtime input. Publishing the site adds no
   secret to the repo, and there is deliberately nothing in CI that injects one.
 
-The student pastes their own Gemini API key on the setup screen. "Remember this
-key" stores it in `localStorage` (`riv.apiKey`, `riv.rememberKey`,
-`riv.lastPersona`). The key never leaves the browser except to Google. There is
-no `.env` file and no server-side key.
+The student pastes their own OpenAI API key (`sk-…`) on the setup screen.
+"Remember this key" stores it in `localStorage` (`riv.apiKey`,
+`riv.rememberKey`, `riv.lastPersona`, `riv.interviewModel`,
+`riv.scoringModel`). The key never leaves the browser except to OpenAI, and is
+used there only to mint a short-lived ephemeral token for the voice session.
+There is no `.env` file and no server-side key.
 
 ## Verified / not verified
 
-Verified: TypeScript and production build clean; setup-screen validation and
-localStorage round-trip across reload; mic-denial path; results screen renders
-metrics, all rubric rows, per-criterion retry, and transcript when every AI call
-fails.
+**Verified against the live OpenAI API with a real key (2026-08-10):**
 
-Found in the first real-key run and since fixed: student speaking time was
-always 0:00 (transcript-derived timing, see Metrics), and rubric failures were
-swallowed into a bare "Scoring failed."
+- Browser-origin `POST /v1/realtime/client_secrets` → 200 with
+  `access-control-allow-origin: *` and a usable `ek_…` token. This is what
+  makes the backend-free design legitimate rather than hopeful.
+- A full realtime session driven with synthesized speech: **14 streaming
+  `conversation.item.input_audio_transcription.delta` events** during one
+  utterance, then `.completed`. Interviewee text arrives as
+  `response.output_audio_transcript.delta` / `.done`. Event names in
+  `liveSession.ts` are transcribed from that run, not guessed.
+- `/v1/responses` with `strict: true` returns clean scored JSON on all three
+  scoring models.
+- The prompt-injection guard holds on all three scoring models — see
+  [`PROMPTING.md`](PROMPTING.md) §B for the transcript used and the results.
+- TypeScript and production build clean.
 
-**Still unresolved:** all nine scoring calls fail against at least one real key
-while the voice session works, which points at `gemini-3.6-flash` being
-unreachable for that key. The error path now reports the cause and lists
-reachable models. This is one of the reasons for the migration in
-[`OPENAI-MIGRATION.md`](OPENAI-MIGRATION.md).
+Also verified earlier and still true: setup-screen validation and localStorage
+round-trip, mic-denial path, and the results screen rendering metrics, all
+rubric rows and the transcript when every AI call fails.
 
-**Not yet verified with a real API key**: the live voice conversation itself
-(latency, transcription fidelity, interruption handling), whether the Layer 3
-unlock conditions are reachable within a realistic 10-minute interview, and
-whether the rubric scores are calibrated sensibly. If the gates prove too tight
-in practice, loosen the unlock conditions in `personas.ts` rather than weakening
-the rubric.
+**Not yet verified — needs a human with a microphone:**
+
+- The live conversation end to end: latency, transcription fidelity, and
+  whether barge-in feels right through WebRTC.
+- **Whether the layered personas still behave under the OpenAI realtime models.**
+  The gating instructions were tuned against Gemini. This is the biggest open
+  risk, because the personas *are* the product. Check `gpt-realtime-2.1-mini`
+  especially — if it will not hold Layer 1, that is an argument for defaulting
+  to the flagship, not for weakening the rubric.
+- Whether Layer 3 is reachable in a realistic 10-minute interview. If the gates
+  prove too tight, loosen the unlock conditions in `personas.ts` rather than
+  weakening the rubric.
+- Speaking-time plausibility: the energy gate uses a fixed threshold, so a
+  noisy room may over-count.

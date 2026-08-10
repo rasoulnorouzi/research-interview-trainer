@@ -6,6 +6,7 @@ import { fmtMs } from "../lib/metrics";
 interface Props {
   apiKey: string;
   persona: Persona;
+  model: string;
   onEnd: (result: SessionResult) => void;
   onAbort: (message: string) => void;
 }
@@ -17,7 +18,7 @@ const STATUS_TEXT: Record<SessionStatus, string> = {
   closed: "Session closed",
 };
 
-export function InterviewScreen({ apiKey, persona, onEnd, onAbort }: Props) {
+export function InterviewScreen({ apiKey, persona, model, onEnd, onAbort }: Props) {
   const sessionRef = useRef<InterviewSession | null>(null);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [status, setStatus] = useState<SessionStatus>("connecting");
@@ -36,13 +37,13 @@ export function InterviewScreen({ apiKey, persona, onEnd, onAbort }: Props) {
     const session = new InterviewSession({
       apiKey,
       persona,
+      model,
       onTranscript: setTranscript,
       onStatus: setStatus,
       onStudentSpeaking: (speaking) => {
         setStudentSpeaking(speaking);
-        // Gemini only transcribes the student once they stop talking, so from
-        // the moment they start we owe them a visible "heard you, still
-        // transcribing" placeholder until the text actually lands.
+        // Text now streams while the student talks, but the first delta still
+        // takes a moment; this covers only that gap.
         if (speaking) setAwaitingStudentText(true);
       },
       onFatalError: (message) => {
@@ -151,17 +152,10 @@ export function InterviewScreen({ apiKey, persona, onEnd, onAbort }: Props) {
         {awaitingStudentText && (
           <div className="entry">
             <span className="speaker student">You</span>
-            <div className="pending">
-              {studentSpeaking ? "speaking…" : "transcribing…"}
-            </div>
+            <div className="pending">listening…</div>
           </div>
         )}
       </div>
-      <p className="small">
-        Your own words are transcribed once you finish speaking, so they appear
-        a moment after you stop. The interviewee's appear as they are spoken.
-      </p>
-
       <div className="btn-row">
         {!connectionLost && (
           <button className="btn btn-secondary" onClick={toggleMute}>
