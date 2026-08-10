@@ -24,9 +24,10 @@ export function computeMetrics(result: SessionResult): Metrics {
   const student = result.transcript.filter((e) => e.speaker === "student");
   const interviewee = result.transcript.filter((e) => e.speaker === "interviewee");
 
-  // Student speaking time from input-transcription streaming timestamps;
-  // interviewee speaking time is exact (from received audio sample counts).
-  const studentSpeakingMs = student.reduce((sum, e) => sum + (e.tEnd - e.tStart), 0);
+  // Both sides are now measured from audio, not from transcript timestamps:
+  // the student from the microphone energy gate, the interviewee from the
+  // sample count of every received chunk.
+  const studentSpeakingMs = result.studentSpeechMs;
   const intervieweeSpeakingMs = result.intervieweeAudioMs;
   const totalSpeaking = studentSpeakingMs + intervieweeSpeakingMs;
 
@@ -42,7 +43,7 @@ export function computeMetrics(result: SessionResult): Metrics {
     studentWords,
     intervieweeWords,
     avgQuestionWords: student.length > 0 ? Math.round(studentWords / student.length) : 0,
-    longestStudentMonologueMs: student.reduce((max, e) => Math.max(max, e.tEnd - e.tStart), 0),
+    longestStudentMonologueMs: student.reduce((max, e) => Math.max(max, e.speechMs), 0),
     studentTurns: student.length,
     intervieweeTurns: interviewee.length,
   };

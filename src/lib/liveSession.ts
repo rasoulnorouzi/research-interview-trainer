@@ -1,11 +1,21 @@
 import { GoogleGenAI, Modality, LiveServerMessage, Session } from "@google/genai";
-import { Persona, SessionResult, TranscriptEntry } from "../types";
-import { PcmAudioPlayer, base64PcmDurationMs, pcmFloat32ToBase64 } from "./audio";
+import { Persona, SessionResult, Speaker, TranscriptEntry } from "../types";
+import { PcmAudioPlayer, base64PcmDurationMs, pcmFloat32ToBase64, rms } from "./audio";
 
 const LIVE_MODEL = "gemini-3.1-flash-live-preview";
 // Consecutive transcription chunks from the same speaker closer together
 // than this are merged into one transcript entry (one "turn").
 const TURN_GAP_MS = 2000;
+
+// Local voice-activity gate on the microphone. Gemini delivers the student's
+// input transcription as a single blob once they stop talking, so transcript
+// timestamps cannot tell us how long they spoke — every turn would measure
+// 0 ms. Measuring the mic directly is both accurate and instant, which is
+// also what drives the live "you are speaking" indicator.
+const VOICE_RMS_THRESHOLD = 0.015;
+// Keep counting as speech for a moment after energy drops, so the natural
+// gaps between words inside one sentence are not shaved off.
+const VOICE_HANGOVER_MS = 400;
 
 export type SessionStatus = "connecting" | "live" | "speaking" | "closed";
 
@@ -14,6 +24,12 @@ export interface InterviewSessionOptions {
   persona: Persona;
   onTranscript: (entries: TranscriptEntry[]) => void;
   onStatus: (status: SessionStatus) => void;
+  /**
+   * Fires the instant mic energy crosses the voice gate, long before Gemini
+   * returns any text. The interview screen uses it to show that the student
+   * is being heard while their transcription is still pending.
+   */
+  onStudentSpeaking: (speaking: boolean) => void;
   onFatalError: (message: string) => void;
 }
 
@@ -32,6 +48,17 @@ export class InterviewSession {
   private t0 = 0;
   private startedAt = 0;
   private intervieweeAudioMs = 0;
+
+  // Voiced-audio accounting. Each side's speech is measured as it happens and
+  // banked here; when a transcript entry for that side appears, everything
+  // banked since the last hand-off is attributed to it. This works even
+  // though text and audio arrive out of step with each other.
+  private studentVoicedMs = 0;
+  private studentVoicedMsAssigned = 0;
+  private intervieweeAudioMsAssigned = 0;
+  private lastVoiceMs = -Infinity;
+  private studentSpeaking = false;
+
   private entries: TranscriptEntry[] = [];
   private openEntry: { student: TranscriptEntry | null; interviewee: TranscriptEntry | null } = {
     student: null,
@@ -91,6 +118,7 @@ export class InterviewSession {
     this.processor.onaudioprocess = (e) => {
       if (this.stopped || this.muted || !this.session) return;
       const chunk = e.inputBuffer.getChannelData(0);
+      this.measureStudentVoice(chunk, (chunk.length / 16000) * 1000);
       try {
         this.session.sendRealtimeInput({
           audio: { data: pcmFloat32ToBase64(chunk), mimeType: "audio/pcm;rate=16000" },
@@ -107,6 +135,40 @@ export class InterviewSession {
 
   setMuted(muted: boolean) {
     this.muted = muted;
+    if (muted) this.setStudentSpeaking(false);
+  }
+
+  // Called for every mic buffer (~128 ms). Counts the buffer as speech if it
+  // is above the energy gate, or within the hangover window after speech.
+  private measureStudentVoice(chunk: Float32Array, bufferMs: number) {
+    const now = performance.now() - this.t0;
+    if (rms(chunk) >= VOICE_RMS_THRESHOLD) {
+      this.lastVoiceMs = now;
+      this.studentVoicedMs += bufferMs;
+      this.setStudentSpeaking(true);
+    } else if (now - this.lastVoiceMs < VOICE_HANGOVER_MS) {
+      this.studentVoicedMs += bufferMs;
+    } else {
+      this.setStudentSpeaking(false);
+    }
+  }
+
+  private setStudentSpeaking(speaking: boolean) {
+    if (this.studentSpeaking === speaking) return;
+    this.studentSpeaking = speaking;
+    this.opts.onStudentSpeaking(speaking);
+  }
+
+  /** Voiced ms banked for `speaker` since the last time it was handed off. */
+  private takeSpeechMs(speaker: Speaker): number {
+    if (speaker === "student") {
+      const ms = this.studentVoicedMs - this.studentVoicedMsAssigned;
+      this.studentVoicedMsAssigned = this.studentVoicedMs;
+      return Math.max(0, ms);
+    }
+    const ms = this.intervieweeAudioMs - this.intervieweeAudioMsAssigned;
+    this.intervieweeAudioMsAssigned = this.intervieweeAudioMs;
+    return Math.max(0, ms);
   }
 
   stop(): SessionResult {
@@ -129,6 +191,7 @@ export class InterviewSession {
       startedAt: this.startedAt || Date.now(),
       endedAt: Date.now(),
       intervieweeAudioMs: Math.round(this.intervieweeAudioMs),
+      studentSpeechMs: Math.round(this.studentVoicedMs),
     };
   }
 
@@ -171,14 +234,26 @@ export class InterviewSession {
     }
   }
 
-  private appendChunk(speaker: "student" | "interviewee", text: string) {
+  private appendChunk(speaker: Speaker, text: string) {
     const now = performance.now() - this.t0;
+    const speechMs = this.takeSpeechMs(speaker);
     const open = this.openEntry[speaker];
     if (open && now - open.tEnd < TURN_GAP_MS) {
       open.text = (open.text + text).trimStart();
       open.tEnd = now;
+      open.speechMs += speechMs;
     } else {
-      const entry: TranscriptEntry = { speaker, text: text.trimStart(), tStart: now, tEnd: now };
+      // The student's text arrives only once they have stopped talking, so
+      // date the turn back to when they actually started speaking rather
+      // than to the moment the transcription landed.
+      const tStart = speaker === "student" ? Math.max(0, now - speechMs) : now;
+      const entry: TranscriptEntry = {
+        speaker,
+        text: text.trimStart(),
+        tStart,
+        tEnd: now,
+        speechMs,
+      };
       this.entries.push(entry);
       this.openEntry[speaker] = entry;
     }
@@ -207,6 +282,7 @@ export class InterviewSession {
   }
 
   private cleanupMedia() {
+    this.setStudentSpeaking(false);
     if (this.processor) {
       try {
         this.processor.disconnect();

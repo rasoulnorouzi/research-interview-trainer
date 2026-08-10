@@ -23,6 +23,8 @@ export function InterviewScreen({ apiKey, persona, onEnd, onAbort }: Props) {
   const [status, setStatus] = useState<SessionStatus>("connecting");
   const [muted, setMuted] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [studentSpeaking, setStudentSpeaking] = useState(false);
+  const [awaitingStudentText, setAwaitingStudentText] = useState(false);
   const [connectionLost, setConnectionLost] = useState<string | null>(null);
   const transcriptBoxRef = useRef<HTMLDivElement | null>(null);
 
@@ -36,6 +38,13 @@ export function InterviewScreen({ apiKey, persona, onEnd, onAbort }: Props) {
       persona,
       onTranscript: setTranscript,
       onStatus: setStatus,
+      onStudentSpeaking: (speaking) => {
+        setStudentSpeaking(speaking);
+        // Gemini only transcribes the student once they stop talking, so from
+        // the moment they start we owe them a visible "heard you, still
+        // transcribing" placeholder until the text actually lands.
+        if (speaking) setAwaitingStudentText(true);
+      },
       onFatalError: (message) => {
         if (session.transcript.length > 0) {
           setConnectionLost(message);
@@ -60,10 +69,17 @@ export function InterviewScreen({ apiKey, persona, onEnd, onAbort }: Props) {
     return () => clearInterval(t);
   }, []);
 
+  // The placeholder is resolved by the student's text arriving, which shows up
+  // as a new student entry.
+  const studentEntryCount = transcript.filter((e) => e.speaker === "student").length;
+  useEffect(() => {
+    setAwaitingStudentText(false);
+  }, [studentEntryCount]);
+
   useEffect(() => {
     const box = transcriptBoxRef.current;
     if (box) box.scrollTop = box.scrollHeight;
-  }, [transcript]);
+  }, [transcript, studentSpeaking, awaitingStudentText]);
 
   const toggleMute = () => {
     const next = !muted;
@@ -105,12 +121,18 @@ export function InterviewScreen({ apiKey, persona, onEnd, onAbort }: Props) {
       ) : (
         <div className="status-line">
           <span className={`rec-dot ${status === "connecting" || muted ? "idle" : ""}`} />
-          <span>{muted ? "Microphone muted" : STATUS_TEXT[status]}</span>
+          <span>
+            {muted
+              ? "Microphone muted"
+              : studentSpeaking
+                ? "Hearing you…"
+                : STATUS_TEXT[status]}
+          </span>
         </div>
       )}
 
       <div className="transcript" ref={transcriptBoxRef}>
-        {transcript.length === 0 ? (
+        {transcript.length === 0 && !awaitingStudentText ? (
           <p className="placeholder">
             The transcript will appear here as you speak. Begin by introducing
             yourself and your research, as you would in a real interview.
@@ -126,7 +148,19 @@ export function InterviewScreen({ apiKey, persona, onEnd, onAbort }: Props) {
             </div>
           ))
         )}
+        {awaitingStudentText && (
+          <div className="entry">
+            <span className="speaker student">You</span>
+            <div className="pending">
+              {studentSpeaking ? "speaking…" : "transcribing…"}
+            </div>
+          </div>
+        )}
       </div>
+      <p className="small">
+        Your own words are transcribed once you finish speaking, so they appear
+        a moment after you stop. The interviewee's appear as they are spoken.
+      </p>
 
       <div className="btn-row">
         {!connectionLost && (

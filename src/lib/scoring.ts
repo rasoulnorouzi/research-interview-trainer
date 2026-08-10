@@ -97,6 +97,77 @@ export const CRITERIA: CriterionDefinition[] = [
   },
 ];
 
+function isModelNotFound(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : String(err);
+  return /not found|NOT_FOUND|\b404\b/i.test(raw);
+}
+
+/**
+ * Asked once per page load, and only when a call has already failed with
+ * "model not found": which models can this key actually reach? Google renames
+ * models between semesters, and without this the instructor sees an opaque
+ * failure with no way to work out the replacement.
+ */
+let modelHintPromise: Promise<string> | null = null;
+function availableModelHint(ai: GoogleGenAI): Promise<string> {
+  modelHintPromise ??= (async () => {
+    try {
+      const pager = await ai.models.list({ config: { pageSize: 100 } });
+      const names: string[] = [];
+      for await (const m of pager) {
+        const name = (m.name ?? "").replace(/^models\//, "");
+        if (!name) continue;
+        if (m.supportedActions && !m.supportedActions.includes("generateContent")) continue;
+        names.push(name);
+      }
+      if (names.length === 0) return "";
+      return ` Models this key can use for scoring: ${names.join(", ")}.`;
+    } catch {
+      return "";
+    }
+  })();
+  return modelHintPromise;
+}
+
+/** generateContent, with the model list attached if the model name is wrong. */
+async function generateWithDiagnostics(
+  ai: GoogleGenAI,
+  params: Parameters<GoogleGenAI["models"]["generateContent"]>[0]
+) {
+  try {
+    return await ai.models.generateContent(params);
+  } catch (err) {
+    if (isModelNotFound(err)) {
+      const hint = await availableModelHint(ai);
+      throw new Error(`${err instanceof Error ? err.message : String(err)}${hint}`);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Turn whatever the SDK threw into something the user can act on. Swallowing
+ * these into a bare "Scoring failed." hid the difference between a rejected
+ * key, a model the key cannot reach, and a rate limit — all of which need
+ * different responses from the user.
+ */
+export function describeScoringError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/API key not valid|API_KEY_INVALID|PERMISSION_DENIED|\b401\b|\b403\b/i.test(raw)) {
+    return `Your API key was rejected for scoring, though the interview itself worked. Check that the key has access to the Gemini API. (${raw})`;
+  }
+  if (/not found|NOT_FOUND|\b404\b/i.test(raw)) {
+    return `The scoring model "${SCORING_MODEL}" is not available to this API key. The interview model works, so the key is fine — this model name needs changing in src/lib/scoring.ts. (${raw})`;
+  }
+  if (/quota|RESOURCE_EXHAUSTED|\b429\b/i.test(raw)) {
+    return `Gemini rate-limited the scoring calls. Wait a moment, then retry. (${raw})`;
+  }
+  if (/JSON|Unexpected token/i.test(raw)) {
+    return `The evaluator returned something that was not valid JSON. Retrying usually fixes this. (${raw})`;
+  }
+  return raw;
+}
+
 export function formatTranscript(transcript: TranscriptEntry[], personaName: string): string {
   return transcript
     .map(
@@ -152,9 +223,11 @@ Score anchors:
 5 = ${criterion.anchor5}
 (2 and 4 are intermediate.)
 
-Give an integer score from 1 to 5 and a justification of at most two sentences that references what the student actually said.`;
+IF THERE IS NOT ENOUGH TO JUDGE: return a score of 0. A score of 0 means "not assessable" — the interview never contained enough of the relevant behaviour to form a view (for example it ended after a turn or two, or the student never got far enough for this criterion to apply). Absence of evidence is NOT poor performance: do not award a 1 because the student had no opportunity. A 1 is for a student who did this badly, not for one who barely spoke. When you return 0, use the justification to say what would have been needed to assess it.
 
-  const response = await ai.models.generateContent({
+Otherwise give an integer score from 1 to 5 and a justification of at most two sentences that references what the student actually said.`;
+
+  const response = await generateWithDiagnostics(ai, {
     model: SCORING_MODEL,
     contents: prompt,
     config: {
@@ -172,10 +245,12 @@ Give an integer score from 1 to 5 and a justification of at most two sentences t
   });
 
   const parsed = JSON.parse(response.text ?? "") as { score: number; justification: string };
+  const raw = Math.round(Number(parsed.score));
   return {
     id: criterion.id,
     name: criterion.name,
-    score: Math.min(5, Math.max(1, Math.round(parsed.score))),
+    // 0 (or anything below 1) means the evaluator judged this not assessable.
+    score: Number.isFinite(raw) && raw >= 1 ? Math.min(5, raw) : null,
     justification: String(parsed.justification ?? ""),
   };
 }
@@ -195,7 +270,7 @@ Provide qualitative feedback on the student's interviewing technique (do NOT giv
 - "missedDepth": what remained undiscovered, and the specific opening that could have got there. Address the student directly and describe the undisclosed material only in general terms — enough to show what was at stake without handing over the whole story, since they may interview this person again. If the student reached the underlying reason, say so here instead.
 - "summary": a 2-3 sentence overall impression addressed to the student.`;
 
-  const response = await ai.models.generateContent({
+  const response = await generateWithDiagnostics(ai, {
     model: SCORING_MODEL,
     contents: prompt,
     config: {

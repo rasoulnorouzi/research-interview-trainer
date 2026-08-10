@@ -21,6 +21,15 @@ export function pcmFloat32ToBase64(float32Array: Float32Array): string {
   return btoa(binary);
 }
 
+// Root-mean-square amplitude of a mic buffer, 0..1. Used as a cheap local
+// voice-activity gate: Gemini tells us nothing about when the student is
+// speaking, so we measure it ourselves.
+export function rms(samples: Float32Array): number {
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+  return Math.sqrt(sum / samples.length);
+}
+
 // Convert Base64 16-bit PCM (24kHz or 16kHz) to Float32Array for Web Audio API
 export function base64ToFloat32Pcm(base64: string): Float32Array {
   const binary = atob(base64);

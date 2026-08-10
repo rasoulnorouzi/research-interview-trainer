@@ -79,6 +79,13 @@ side and must not be unified:
    radii. It should look like a research instrument, not a SaaS landing page.
 3. **Voice only.** No text-question fallback. The student speaks; the
    interviewee speaks back.
+   *Consequence to live with:* the student's own words cannot appear as they
+   speak. Gemini emits `outputTranscription` while generating the interviewee's
+   audio, but `inputTranscription` only once the student's utterance ends. The
+   app covers the gap with a mic-driven "speaking…/transcribing…" placeholder.
+   Closing it properly would need a second ASR (Web Speech API) running
+   alongside — a whole parallel recognition path, Chrome-only, for cosmetics.
+   Don't.
 4. **If a backend ever becomes necessary, it must be FastAPI + Python** — not
    Node, not Express. Client-side React is preferred while it suffices.
 5. **Audio quality and latency matter.** Going through the browser directly
@@ -144,6 +151,19 @@ bias. Therefore:
 **Do not "optimise" this into a single call that scores everything at once.**
 That would reintroduce exactly the bias the design exists to prevent.
 
+**Score 0 means "not assessable", and is stored as `score: null`.** A short or
+aborted interview gives some criteria nothing to judge; the evaluators are told
+explicitly that absence of evidence is not poor performance and that a 1 is for
+doing the thing badly, not for never having had the chance. Not-assessable
+criteria render as `n/a` and are excluded from the overall mean rather than
+counted as zero. Keep this distinction — collapsing it back into a low score
+silently punishes students for a short session.
+
+Errors are surfaced, not swallowed: `describeScoringError()` separates a
+rejected key, an unreachable model, a rate limit, and bad JSON, and a
+model-not-found additionally triggers a one-time `ai.models.list()` so the
+message names the models the key can actually use.
+
 Criteria: `open_questions`, `probing`, `cue_pursuit`, `depth_reached`,
 `leading`, `rapport`, `neutrality`, `structure`. The two discovery criteria
 (`cue_pursuit`, `depth_reached`) carry `needsGroundTruth: true` and receive the
@@ -157,8 +177,16 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
 
 - **Interviewee speaking time is exact**: summed from the sample count of every
   received audio chunk (`base64PcmDurationMs`).
-- **Student speaking time is a proxy**: the span of input-transcription
-  timestamps, which stream near-real-time.
+- **Student speaking time is measured from the microphone**, not from the
+  transcript. An RMS energy gate (`VOICE_RMS_THRESHOLD`, with
+  `VOICE_HANGOVER_MS` so inter-word gaps aren't shaved off) counts voiced
+  buffers in `onaudioprocess`. **Do not go back to deriving it from
+  transcript timestamps** — Gemini delivers the student's input transcription
+  as a single blob after they stop talking, so `tEnd - tStart` was 0 and every
+  interview reported 0:00 and a 0%/100% talk ratio.
+- Per-turn `speechMs` is banked as audio happens and attributed to a turn when
+  that turn's text appears (`takeSpeechMs`), which is why it survives text and
+  audio arriving out of step.
 - Turn clustering merges same-speaker transcription chunks less than
   `TURN_GAP_MS` (2000 ms) apart into one entry.
 - Question counting is an acknowledged heuristic: `?` marks, falling back to an

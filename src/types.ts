@@ -5,6 +5,14 @@ export interface TranscriptEntry {
   text: string;
   tStart: number; // ms since interview start
   tEnd: number;
+  /**
+   * How long this turn was actually voiced, in ms — not tEnd - tStart.
+   * For the student it is measured from the microphone (see liveSession's
+   * energy gate), because Gemini delivers input transcription in one blob
+   * after the utterance ends, which would make every student turn 0 ms long.
+   * For the interviewee it is the summed duration of that turn's audio.
+   */
+  speechMs: number;
 }
 
 export interface SessionResult {
@@ -12,6 +20,7 @@ export interface SessionResult {
   startedAt: number; // epoch ms
   endedAt: number;
   intervieweeAudioMs: number; // exact, from received audio sample counts
+  studentSpeechMs: number; // measured from the microphone, not from transcript timing
   endedByError?: string;
 }
 
@@ -61,7 +70,12 @@ export interface CriterionDefinition {
 export interface CriterionScore {
   id: string;
   name: string;
-  score: number; // 1..5
+  /**
+   * 1..5, or null when the transcript contains too little of the relevant
+   * behaviour to judge. "Not assessable" is not the same as 1: a 1 means the
+   * student did the thing badly, null means they never had the chance.
+   */
+  score: number | null;
   justification: string;
 }
 

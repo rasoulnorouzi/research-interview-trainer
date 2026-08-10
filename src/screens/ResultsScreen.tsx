@@ -7,7 +7,13 @@ import {
   SessionResult,
 } from "../types";
 import { computeMetrics, fmtMs, fmtPercent } from "../lib/metrics";
-import { CRITERIA, retryCriterion, retryFeedback, startScoring } from "../lib/scoring";
+import {
+  CRITERIA,
+  describeScoringError,
+  retryCriterion,
+  retryFeedback,
+  startScoring,
+} from "../lib/scoring";
 
 interface Props {
   result: SessionResult;
@@ -19,12 +25,12 @@ interface Props {
 type CriterionState =
   | { status: "loading" }
   | { status: "done"; score: CriterionScore }
-  | { status: "error" };
+  | { status: "error"; message: string };
 
 type FeedbackState =
   | { status: "loading" }
   | { status: "done"; feedback: QualitativeFeedback }
-  | { status: "error" };
+  | { status: "error"; message: string };
 
 export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props) {
   const metrics = useMemo(() => computeMetrics(result), [result]);
@@ -41,11 +47,11 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
     for (const [id, promise] of handles.criterionPromises) {
       promise
         .then((score) => setCriterion(id, { status: "done", score }))
-        .catch(() => setCriterion(id, { status: "error" }));
+        .catch((err) => setCriterion(id, { status: "error", message: describeScoringError(err) }));
     }
     handles.feedbackPromise
       .then((feedback) => setFeedbackState({ status: "done", feedback }))
-      .catch(() => setFeedbackState({ status: "error" }));
+      .catch((err) => setFeedbackState({ status: "error", message: describeScoringError(err) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -53,23 +59,31 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
     setCriterion(id, { status: "loading" });
     retryCriterion(apiKey, result.transcript, persona, id)
       .then((score) => setCriterion(id, { status: "done", score }))
-      .catch(() => setCriterion(id, { status: "error" }));
+      .catch((err) => setCriterion(id, { status: "error", message: describeScoringError(err) }));
   };
 
   const handleRetryFeedback = () => {
     setFeedbackState({ status: "loading" });
     retryFeedback(apiKey, result.transcript, persona)
       .then((feedback) => setFeedbackState({ status: "done", feedback }))
-      .catch(() => setFeedbackState({ status: "error" }));
+      .catch((err) => setFeedbackState({ status: "error", message: describeScoringError(err) }));
   };
 
-  const doneScores = CRITERIA.map((c) => criterionStates[c.id])
+  const settled = CRITERIA.map((c) => criterionStates[c.id]).filter(
+    (s) => s.status !== "loading"
+  );
+  // Not-assessable criteria are excluded from the mean rather than counted as
+  // zero — a criterion the interview gave no chance to demonstrate should not
+  // drag the average down.
+  const numericScores = CRITERIA.map((c) => criterionStates[c.id])
     .filter((s): s is Extract<CriterionState, { status: "done" }> => s.status === "done")
-    .map((s) => s.score.score);
+    .map((s) => s.score.score)
+    .filter((n): n is number => n !== null);
   const overall =
-    doneScores.length === CRITERIA.length
-      ? (doneScores.reduce((a, b) => a + b, 0) / doneScores.length).toFixed(1)
+    settled.length === CRITERIA.length && numericScores.length > 0
+      ? (numericScores.reduce((a, b) => a + b, 0) / numericScores.length).toFixed(1)
       : null;
+  const notAssessedCount = settled.length - numericScores.length;
 
   const downloadMarkdown = () => {
     const md = buildMarkdownReport(result, metrics, persona, criterionStates, feedbackState, overall);
@@ -108,11 +122,42 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
           </tr>
           <tr>
             <th>Your speaking time</th>
-            <td className="num">{fmtMs(metrics.studentSpeakingMs)}</td>
+            <td className="num">
+              {fmtMs(metrics.studentSpeakingMs)}
+              {metrics.studentTurns > 0 && (
+                <span className="small">
+                  {" "}
+                  ({metrics.studentTurns} turns, avg{" "}
+                  {fmtMs(metrics.studentSpeakingMs / metrics.studentTurns)})
+                </span>
+              )}
+            </td>
           </tr>
           <tr>
             <th>Interviewee speaking time</th>
-            <td className="num">{fmtMs(metrics.intervieweeSpeakingMs)}</td>
+            <td className="num">
+              {fmtMs(metrics.intervieweeSpeakingMs)}
+              {metrics.intervieweeTurns > 0 && (
+                <span className="small">
+                  {" "}
+                  ({metrics.intervieweeTurns} turns, avg{" "}
+                  {fmtMs(metrics.intervieweeSpeakingMs / metrics.intervieweeTurns)})
+                </span>
+              )}
+            </td>
+          </tr>
+          <tr>
+            <th>Silence / thinking time</th>
+            <td className="num">
+              {fmtMs(
+                Math.max(
+                  0,
+                  metrics.durationMs -
+                    metrics.studentSpeakingMs -
+                    metrics.intervieweeSpeakingMs
+                )
+              )}
+            </td>
           </tr>
           <tr>
             <th>Talk ratio (you : interviewee)</th>
@@ -156,9 +201,22 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
       <p className="small">
         Each criterion is scored 1–5 by an independent evaluator that sees only
         the transcript and that single criterion, to avoid anchoring bias
-        between scores.
+        between scores. A criterion the interview gave no opportunity to
+        demonstrate is marked <strong>n/a</strong> rather than scored low, and
+        is left out of the overall figure.
       </p>
-      {overall && <p className="overall-score">Overall score: {overall} / 5</p>}
+      {overall && (
+        <p className="overall-score">
+          Overall score: {overall} / 5
+          {notAssessedCount > 0 && (
+            <span className="small">
+              {" "}
+              (over {CRITERIA.length - notAssessedCount} of {CRITERIA.length}{" "}
+              criteria; {notAssessedCount} not assessable)
+            </span>
+          )}
+        </p>
+      )}
       <table>
         <thead>
           <tr>
@@ -175,7 +233,13 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
                 <td>{c.name}</td>
                 {state.status === "done" ? (
                   <>
-                    <td className="score-cell">{state.score.score} / 5</td>
+                    <td className="score-cell">
+                      {state.score.score === null ? (
+                        <span className="not-assessed">n/a</span>
+                      ) : (
+                        `${state.score.score} / 5`
+                      )}
+                    </td>
                     <td>{state.score.justification}</td>
                   </>
                 ) : state.status === "loading" ? (
@@ -184,7 +248,7 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
                   </td>
                 ) : (
                   <td colSpan={2}>
-                    <span className="small">Scoring failed. </span>
+                    <span className="small">{state.message} </span>
                     <button
                       className="btn btn-secondary no-print"
                       onClick={() => handleRetryCriterion(c.id)}
@@ -203,7 +267,7 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
       {feedbackState.status === "loading" && <p className="small">Preparing feedback…</p>}
       {feedbackState.status === "error" && (
         <p>
-          <span className="small">Feedback could not be generated. </span>
+          <span className="small">{feedbackState.message} </span>
           <button className="btn btn-secondary no-print" onClick={handleRetryFeedback}>
             Retry
           </button>
@@ -243,7 +307,9 @@ export function ResultsScreen({ result, apiKey, persona, onNewInterview }: Props
           <div className="entry" key={i}>
             <span className={`speaker ${e.speaker}`}>
               {e.speaker === "student" ? "You" : persona.name}
-              <span className="t">{fmtMs(e.tStart)}</span>
+              <span className="t">
+                {fmtMs(e.tStart)} · spoke {fmtMs(e.speechMs)}
+              </span>
             </span>
             <div>{e.text}</div>
           </div>
@@ -288,6 +354,9 @@ function buildMarkdownReport(
   lines.push(`| Your speaking time | ${fmtMs(metrics.studentSpeakingMs)} |`);
   lines.push(`| Interviewee speaking time | ${fmtMs(metrics.intervieweeSpeakingMs)} |`);
   lines.push(
+    `| Silence / thinking time | ${fmtMs(Math.max(0, metrics.durationMs - metrics.studentSpeakingMs - metrics.intervieweeSpeakingMs))} |`
+  );
+  lines.push(
     `| Talk ratio (you : interviewee) | ${fmtPercent(metrics.talkRatioStudent)} : ${fmtPercent(1 - metrics.talkRatioStudent)} |`
   );
   lines.push(`| Questions asked | ${metrics.questionsAsked} |`);
@@ -305,7 +374,10 @@ function buildMarkdownReport(
   for (const c of CRITERIA) {
     const state = criterionStates[c.id];
     if (state.status === "done") {
-      lines.push(`| ${c.name} | ${state.score.score} / 5 | ${state.score.justification} |`);
+      const score = state.score.score === null ? "n/a" : `${state.score.score} / 5`;
+      lines.push(`| ${c.name} | ${score} | ${state.score.justification} |`);
+    } else if (state.status === "error") {
+      lines.push(`| ${c.name} | — | not scored: ${state.message.replace(/\|/g, "/")} |`);
     } else {
       lines.push(`| ${c.name} | — | not scored |`);
     }
@@ -339,7 +411,7 @@ function buildMarkdownReport(
   lines.push(``);
   for (const e of result.transcript) {
     lines.push(
-      `**[${fmtMs(e.tStart)}] ${e.speaker === "student" ? "You" : persona.name}:** ${e.text}`
+      `**[${fmtMs(e.tStart)}, spoke ${fmtMs(e.speechMs)}] ${e.speaker === "student" ? "You" : persona.name}:** ${e.text}`
     );
     lines.push(``);
   }

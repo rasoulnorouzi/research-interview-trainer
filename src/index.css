@@ -290,6 +290,13 @@ textarea {
   font-style: italic;
 }
 
+/* Shown from the moment the mic hears the student until Gemini returns their
+   text, which it only does once they stop speaking. */
+.transcript .pending {
+  color: var(--muted);
+  font-style: italic;
+}
+
 /* Tables (metrics, rubric) */
 table {
   width: 100%;
@@ -319,6 +326,13 @@ td.num {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* "Not assessable" — deliberately unemphatic, so it does not read as a bad
+   score. It isn't one. */
+.not-assessed {
+  color: var(--muted);
+  font-weight: normal;
 }
 
 .overall-score {
