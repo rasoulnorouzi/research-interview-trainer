@@ -22,7 +22,7 @@
   "vars": {
     "ACCESS_TEAM_DOMAIN": "rasouldns.cloudflareaccess.com",
     "ACCESS_AUD": "f9bb9a4af8edd275dc920609a2c79290dcb1a79a41842fb324e25a0e2c6ad8f5",
-    "EMAIL_FROM": "onboarding@resend.dev"
+    "EMAIL_FROM": "Research Interview Trainer <trainer@rslnorouzi.site>"
   },
   "observability": { "enabled": true }
 }
