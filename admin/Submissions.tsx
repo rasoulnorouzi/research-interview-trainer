@@ -69,6 +69,7 @@ export function Submissions({ onApiError }: Props) {
   const [detail, setDetail] = useState<SubmissionDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const buildQuery = (): string => {
     const params = new URLSearchParams();
@@ -112,6 +113,23 @@ export function Submissions({ onApiError }: Props) {
       .finally(() => setDetailLoading(false));
   };
 
+  const removeDetail = () => {
+    if (!detail) return;
+    if (!confirm("Delete this submission permanently? The emailed copies are not affected.")) return;
+    setDetailError(null);
+    setDeleting(true);
+    api<{ deleted: boolean }>(`/submissions/${encodeURIComponent(detail.id)}`, { method: "DELETE" })
+      .then(() => {
+        setDetail(null);
+        load();
+      })
+      .catch((err) => {
+        setDetailError(err instanceof Error ? err.message : "Could not delete this submission.");
+        onApiError(err);
+      })
+      .finally(() => setDeleting(false));
+  };
+
   if (detailLoading || detail || detailError) {
     return (
       <div>
@@ -122,7 +140,7 @@ export function Submissions({ onApiError }: Props) {
         </p>
         {detailLoading && <p className="small">Loading…</p>}
         {detailError && <div className="banner-error">{detailError}</div>}
-        {detail && <SubmissionDetailView detail={detail} />}
+        {detail && <SubmissionDetailView detail={detail} deleting={deleting} onDelete={removeDetail} />}
       </div>
     );
   }
@@ -206,7 +224,13 @@ export function Submissions({ onApiError }: Props) {
   );
 }
 
-function SubmissionDetailView({ detail }: { detail: SubmissionDetail }) {
+interface SubmissionDetailViewProps {
+  detail: SubmissionDetail;
+  deleting: boolean;
+  onDelete: () => void;
+}
+
+function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailViewProps) {
   const assessed = detail.scores.filter((s) => s.score !== null).length;
   const notAssessedCount = detail.scores.length - assessed;
 
@@ -340,6 +364,20 @@ function SubmissionDetailView({ detail }: { detail: SubmissionDetail }) {
             <div>{e.text}</div>
           </div>
         ))}
+      </div>
+
+      {/* Below everything else, so it is never the button a hurried hand
+          reaches for. There is no per-row delete in the list above: opening
+          this view first is what makes sure the instructor sees what they
+          are about to remove. */}
+      <div style={{ marginTop: "3rem", borderTop: "1px solid var(--border)", paddingTop: "1.5rem" }}>
+        <button className="btn btn-danger" type="button" disabled={deleting} onClick={onDelete}>
+          {deleting ? "Deleting…" : "Delete submission"}
+        </button>
+        <p className="admin-help">
+          Removes this report and its transcript from the dashboard. Emailed copies already sent
+          to the student and instructors are not affected.
+        </p>
       </div>
     </div>
   );

@@ -184,9 +184,26 @@ export function Settings({ onApiError }: Props) {
       .finally(() => setSaving(false));
   };
 
+  const removeKey = () => {
+    if (!window.confirm("Remove the stored key? Students cannot start or submit interviews until a new key is saved.")) return;
+    setSaving(true);
+    setError(null);
+    api<{ settings: SettingsView }>("/settings", {
+      method: "PUT",
+      body: JSON.stringify({ openai_api_key: null }),
+    })
+      .then(({ settings }) => {
+        setSettings(settings);
+        setApiKeyInput("");
+        setSaved(true);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Could not remove the key."))
+      .finally(() => setSaving(false));
+  };
+
   if (loading) return <p className="small">Loading settings…</p>;
 
-  const keyPlaceholder = settings?.openai_api_key?.value ?? "Not set";
+  const keyEntry = settings?.openai_api_key ?? null;
 
   return (
     <div>
@@ -268,10 +285,21 @@ export function Settings({ onApiError }: Props) {
 
         <div className="field">
           <label htmlFor="openai_api_key">OpenAI API key</label>
+          {keyEntry ? (
+            <p className="admin-help">
+              A key is set: {keyEntry.value}. Saved by {keyEntry.updatedBy ?? "unknown"} on{" "}
+              {new Date(keyEntry.updatedAt * 1000).toISOString().slice(0, 10)}. For safety the
+              full key is never shown again.
+            </p>
+          ) : (
+            <p className="admin-help">
+              No key is set. Students cannot start or submit interviews until one is saved.
+            </p>
+          )}
           <input
             id="openai_api_key"
             type="password"
-            placeholder={keyPlaceholder}
+            placeholder={keyEntry ? "Enter a new key to replace the current one" : "sk-..."}
             value={apiKeyInput}
             onChange={(e) => {
               setSaved(false);
@@ -280,8 +308,19 @@ export function Settings({ onApiError }: Props) {
             autoComplete="off"
           />
           <p className="admin-help">
-            Write only. The stored key is never shown. Leave empty to keep the current key.
+            Type a key here and click Save to store it. The key is tested against OpenAI
+            before it is stored. Leave this field empty to keep the current key.
           </p>
+          {keyEntry && (
+            <button
+              className="btn btn-danger"
+              type="button"
+              disabled={saving}
+              onClick={removeKey}
+            >
+              Remove key
+            </button>
+          )}
         </div>
 
         <div className="btn-row">

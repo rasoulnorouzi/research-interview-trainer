@@ -129,8 +129,9 @@ export async function handleAdmin(
         return await listSubmissions(env, url);
       }
       if (path.length === 2) {
-        if (method !== "GET") return methodNotAllowed();
-        return await getSubmission(env, path[1]);
+        if (method === "GET") return await getSubmission(env, path[1]);
+        if (method === "DELETE") return await deleteSubmission(env, path[1]);
+        return methodNotAllowed();
       }
       break;
 
@@ -205,6 +206,15 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
       return json(400, { error: `Unknown setting: ${key}.` });
     }
 
+    // Explicit null removes the stored key. An empty value renders as "not
+    // set" (settingsView) and every student mint/report returns 503 until a
+    // new key is saved, which is the point: this is the revoke control.
+    // Only the key supports removal; the other settings always need a value.
+    if (key === "openai_api_key" && raw === null) {
+      updates.push([key, ""]);
+      continue;
+    }
+
     if (NUMERIC_SETTING_KEYS.includes(key)) {
       const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw.trim()) : NaN;
       if (!Number.isInteger(n) || n <= 0) {
@@ -255,7 +265,7 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
   // that does not work. Saving a broken key silently is how you discover the
   // problem during a class. The key itself never enters the response below.
   const apiKey = updates.find(([key]) => key === "openai_api_key")?.[1];
-  if (apiKey !== undefined) {
+  if (apiKey !== undefined && apiKey !== "") {
     let works = false;
     try {
       works = await validateApiKey(apiKey);
@@ -1049,6 +1059,21 @@ async function getSubmission(env: Env, id: string): Promise<Response> {
     emailedAt: row.emailed_at,
     createdAt: row.created_at,
   });
+}
+
+/**
+ * DELETE /api/admin/submissions/:id, a plain delete. Unlike the roster and
+ * persona hard-deletes above, nothing references a submission (§7): it is the
+ * leaf of the data model, not a row other rows point at. Deleting it is the
+ * instructor destroying their own record, not orphaning anyone else's, so
+ * there is no reference count to check and no deactivate-instead option.
+ */
+async function deleteSubmission(env: Env, id: string): Promise<Response> {
+  const row = await env.DB.prepare("SELECT id FROM submissions WHERE id = ?").bind(id).first<{ id: string }>();
+  if (!row) return json(404, { error: "No submission with that ID." });
+
+  await env.DB.prepare("DELETE FROM submissions WHERE id = ?").bind(id).run();
+  return json(200, { id, deleted: true });
 }
 
 /**
