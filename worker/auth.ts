@@ -126,7 +126,10 @@ export async function handleAuthRequest(request: Request, env: Env): Promise<Res
   const limited = await consumeRateLimits(env, now, [
     { key: `email:60:${email}`, windowSeconds: 60, max: 1 },
     { key: `email:3600:${email}`, windowSeconds: 3600, max: 5 },
-    { key: `ip:3600:${ip}`, windowSeconds: 3600, max: 10 },
+    // A whole computer lab or campus WiFi can sit behind one NAT address, so
+    // the IP ceiling must fit a classroom logging in together, not a single
+    // person. 120/hour still stops bulk probing and email bombing cold.
+    { key: `ip:3600:${ip}`, windowSeconds: 3600, max: 120 },
   ]);
   if (limited) return json(429, { error: "Too many attempts. Wait a minute and try again." });
 
