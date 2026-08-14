@@ -1,0 +1,22 @@
+{
+  // Type-checks the Worker (worker/, shared/) plus the two src files the
+  // Worker imports persona and shared-type data from. Separate from
+  // tsconfig.json because the Worker runs under workers-types, not DOM, and
+  // `npm run lint` runs both (see package.json).
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true
+  },
+  "include": ["worker", "shared", "src/personas.ts", "src/types.ts"],
+  // genseed.ts runs under Node via esbuild (see npm run seed:gen), not in the
+  // Worker — it has its own header comment saying so and is excluded here so
+  // a Node-only script isn't type-checked against workers-types.
+  "exclude": ["worker/genseed.ts"]
+}

@@ -228,3 +228,33 @@ matters, price both before committing.
 - [Realtime API pricing](https://www.layer3labs.io/guides/openai-realtime-api-pricing) [indicative]
 - [OpenAI API pricing, Aug 2026](https://www.aipricing.guru/openai-pricing/) [indicative]
 - [OpenAI API pricing tables](https://www.morphllm.com/openai-api-pricing) [indicative]
+
+## 7. Backend-plan section 2 checks (verified 2026-08-14, university key)
+
+These are the two mint-time checks that BACKEND-PLAN.md section 2 requires
+before the Worker build.
+
+**(a) `instructions` at mint time: YES.**
+`POST /v1/realtime/client_secrets` with `session.instructions` set returned
+HTTP 200. The response echoed the instructions in the session object, together
+with the transcription model (`gpt-live-transcribe`), the turn detection
+(`semantic_vad`, `eagerness: "low"`), and the voice. Consequence: the Worker
+sets the persona instructions at mint time. The persona text never reaches the
+browser, and the client `session.update` instructions payload can be removed.
+
+**(b) A maximum session duration at mint time: NO.**
+`session.max_session_duration` returns `unknown_parameter`. The session object
+in the mint response contains no duration field. Two partial controls exist:
+
+- `expires_after: {anchor: "created_at", seconds: N}` on the client secret is
+  accepted (tested with 840 seconds; the token `expires_at` moved to match).
+  This bounds when a token can start a session. It does not stop a session
+  that already runs.
+- The Realtime API has its own default session ceiling (OpenAI documents about
+  60 minutes). We did not hold a session open to measure it.
+
+Consequence: the interview time limit is enforced by the plan's fallback
+stack: short token validity at mint (limit plus 2 minutes), the client-side
+countdown with a hard stop, and the per-student daily session quota
+(`session_grants`). Record from BACKEND-PLAN.md section 5 stands: the quota is
+the real backstop.

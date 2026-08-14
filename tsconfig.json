@@ -22,5 +22,11 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  // shared/ holds the API contract types src/, worker/ and admin/ all import;
+  // src/ re-exports them from src/types.ts. worker/ has its own
+  // tsconfig.worker.json (workers-types, strict) and is excluded here. admin/
+  // is the instructor dashboard SPA (BACKEND-PLAN.md §7) and shares this
+  // config with src/ since both are plain browser React code.
+  "include": ["src", "shared", "admin"]
 }

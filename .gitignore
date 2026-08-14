@@ -7,3 +7,10 @@ coverage/
 .env*
 !.env.example
 voice-auditions/
+
+# backend secrets and generated seeds
+set-key.sql
+seed-personas.sql
+.genseed.mjs
+.dev.vars
+.wrangler/

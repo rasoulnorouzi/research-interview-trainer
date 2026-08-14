@@ -1,93 +1,54 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  CriterionScore,
   Metrics,
-  Persona,
-  QualitativeFeedback,
+  PersonaSummary,
+  ReportResponse,
   SessionResult,
 } from "../types";
 import { computeMetrics, fmtMs, fmtPercent } from "../lib/metrics";
-import {
-  CRITERIA,
-  describeScoringError,
-  retryCriterion,
-  retryFeedback,
-  startScoring,
-} from "../lib/scoring";
+import { api } from "../api";
 
 interface Props {
   result: SessionResult;
-  apiKey: string;
-  persona: Persona;
-  scoringModel: string;
+  persona: PersonaSummary;
   onNewInterview: () => void;
 }
 
-type CriterionState =
-  | { status: "loading" }
-  | { status: "done"; score: CriterionScore }
+type ReportState =
+  | { status: "pending" }
+  | { status: "done"; report: ReportResponse }
   | { status: "error"; message: string };
 
-type FeedbackState =
-  | { status: "loading" }
-  | { status: "done"; feedback: QualitativeFeedback }
-  | { status: "error"; message: string };
-
-export function ResultsScreen({ result, apiKey, persona, scoringModel, onNewInterview }: Props) {
+export function ResultsScreen({ result, persona, onNewInterview }: Props) {
   const metrics = useMemo(() => computeMetrics(result), [result]);
-  const [criterionStates, setCriterionStates] = useState<Record<string, CriterionState>>(
-    () => Object.fromEntries(CRITERIA.map((c) => [c.id, { status: "loading" }]))
-  );
-  const [feedbackState, setFeedbackState] = useState<FeedbackState>({ status: "loading" });
+  const [state, setState] = useState<ReportState>({ status: "pending" });
 
-  const setCriterion = (id: string, state: CriterionState) =>
-    setCriterionStates((prev) => ({ ...prev, [id]: state }));
-
-  useEffect(() => {
-    const handles = startScoring(apiKey, result.transcript, persona, scoringModel);
-    for (const [id, promise] of handles.criterionPromises) {
-      promise
-        .then((score) => setCriterion(id, { status: "done", score }))
-        .catch((err) => setCriterion(id, { status: "error", message: describeScoringError(err) }));
-    }
-    handles.feedbackPromise
-      .then((feedback) => setFeedbackState({ status: "done", feedback }))
-      .catch((err) => setFeedbackState({ status: "error", message: describeScoringError(err) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleRetryCriterion = (id: string) => {
-    setCriterion(id, { status: "loading" });
-    retryCriterion(apiKey, result.transcript, persona, id, scoringModel)
-      .then((score) => setCriterion(id, { status: "done", score }))
-      .catch((err) => setCriterion(id, { status: "error", message: describeScoringError(err) }));
+  // One call: the nine independent evaluators now run on the server, so the
+  // browser sees a finished report rather than nine promises.
+  const submit = () => {
+    setState({ status: "pending" });
+    api<ReportResponse>("/api/report", {
+      method: "POST",
+      body: JSON.stringify({
+        personaId: persona.id,
+        transcript: result.transcript,
+        startedAt: result.startedAt,
+        endedAt: result.endedAt,
+        metrics,
+      }),
+    })
+      .then((report) => setState({ status: "done", report }))
+      .catch((err: Error) => setState({ status: "error", message: err.message }));
   };
 
-  const handleRetryFeedback = () => {
-    setFeedbackState({ status: "loading" });
-    retryFeedback(apiKey, result.transcript, persona, scoringModel)
-      .then((feedback) => setFeedbackState({ status: "done", feedback }))
-      .catch((err) => setFeedbackState({ status: "error", message: describeScoringError(err) }));
-  };
+  useEffect(submit, []);
 
-  const settled = CRITERIA.map((c) => criterionStates[c.id]).filter(
-    (s) => s.status !== "loading"
-  );
-  // Not-assessable criteria are excluded from the mean rather than counted as
-  // zero — a criterion the interview gave no chance to demonstrate should not
-  // drag the average down.
-  const numericScores = CRITERIA.map((c) => criterionStates[c.id])
-    .filter((s): s is Extract<CriterionState, { status: "done" }> => s.status === "done")
-    .map((s) => s.score.score)
-    .filter((n): n is number => n !== null);
-  const overall =
-    settled.length === CRITERIA.length && numericScores.length > 0
-      ? (numericScores.reduce((a, b) => a + b, 0) / numericScores.length).toFixed(1)
-      : null;
-  const notAssessedCount = settled.length - numericScores.length;
+  const report = state.status === "done" ? state.report : null;
+  const assessed = report ? report.scores.filter((s) => s.score !== null).length : 0;
+  const notAssessedCount = report ? report.scores.length - assessed : 0;
 
   const downloadMarkdown = () => {
-    const md = buildMarkdownReport(result, metrics, persona, criterionStates, feedbackState, overall);
+    const md = buildMarkdownReport(result, metrics, persona, report);
     const blob = new Blob([md], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -206,100 +167,92 @@ export function ResultsScreen({ result, apiKey, persona, scoringModel, onNewInte
         demonstrate is marked <strong>n/a</strong> rather than scored low, and
         is left out of the overall figure.
       </p>
-      {overall && (
-        <p className="overall-score">
-          Overall score: {overall} / 5
-          {notAssessedCount > 0 && (
-            <span className="small">
-              {" "}
-              (over {CRITERIA.length - notAssessedCount} of {CRITERIA.length}{" "}
-              criteria; {notAssessedCount} not assessable)
-            </span>
-          )}
-        </p>
-      )}
-      <table>
-        <thead>
-          <tr>
-            <th>Criterion</th>
-            <th>Score</th>
-            <th>Justification</th>
-          </tr>
-        </thead>
-        <tbody>
-          {CRITERIA.map((c) => {
-            const state = criterionStates[c.id];
-            return (
-              <tr key={c.id}>
-                <td>{c.name}</td>
-                {state.status === "done" ? (
-                  <>
-                    <td className="score-cell">
-                      {state.score.score === null ? (
-                        <span className="not-assessed">n/a</span>
-                      ) : (
-                        `${state.score.score} / 5`
-                      )}
-                    </td>
-                    <td>{state.score.justification}</td>
-                  </>
-                ) : state.status === "loading" ? (
-                  <td colSpan={2} className="small">
-                    Scoring…
-                  </td>
-                ) : (
-                  <td colSpan={2}>
-                    <span className="small">{state.message} </span>
-                    <button
-                      className="btn btn-secondary no-print"
-                      onClick={() => handleRetryCriterion(c.id)}
-                    >
-                      Retry
-                    </button>
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
 
-      <h2>Feedback</h2>
-      {feedbackState.status === "loading" && <p className="small">Preparing feedback…</p>}
-      {feedbackState.status === "error" && (
+      {state.status === "pending" && (
+        <p className="small">Scoring your interview. This takes 10 to 20 seconds.</p>
+      )}
+
+      {/* Retry exists only in the error branch: a second POST after a success
+          would store and email the report twice. */}
+      {state.status === "error" && (
         <p>
-          <span className="small">{feedbackState.message} </span>
-          <button className="btn btn-secondary no-print" onClick={handleRetryFeedback}>
+          <span className="small">{state.message} </span>
+          <button className="btn btn-secondary no-print" onClick={submit}>
             Retry
           </button>
         </p>
       )}
-      {feedbackState.status === "done" && (
-        <div>
+
+      {report && (
+        <>
+          {report.overall !== null && (
+            <p className="overall-score">
+              Overall score: {report.overall.toFixed(1)} / 5
+              {notAssessedCount > 0 && (
+                <span className="small">
+                  {" "}
+                  (over {assessed} of {report.scores.length} criteria;{" "}
+                  {notAssessedCount} not assessable)
+                </span>
+              )}
+            </p>
+          )}
+          <table>
+            <thead>
+              <tr>
+                <th>Criterion</th>
+                <th>Score</th>
+                <th>Justification</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.scores.map((s) => (
+                <tr key={s.id}>
+                  <td>{s.name}</td>
+                  <td className="score-cell">
+                    {s.score === null ? (
+                      <span className="not-assessed">n/a</span>
+                    ) : (
+                      `${s.score} / 5`
+                    )}
+                  </td>
+                  <td>{s.justification}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h2>Feedback</h2>
           <h3>Strengths</h3>
           <ul>
-            {feedbackState.feedback.strengths.map((s, i) => (
+            {report.feedback.strengths.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ul>
           <h3>Areas to improve</h3>
           <ul>
-            {feedbackState.feedback.improvements.map((s, i) => (
+            {report.feedback.improvements.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ul>
           <h3>Notable moments</h3>
-          {feedbackState.feedback.moments.map((m, i) => (
+          {report.feedback.moments.map((m, i) => (
             <div key={i}>
               <blockquote>“{m.quote}”</blockquote>
               <p className="small">{m.comment}</p>
             </div>
           ))}
           <h3>What you did not reach</h3>
-          <p>{feedbackState.feedback.missedDepth}</p>
+          <p>{report.feedback.missedDepth}</p>
           <h3>Summary</h3>
-          <p>{feedbackState.feedback.summary}</p>
-        </div>
+          <p>{report.feedback.summary}</p>
+
+          {report.emailed && (
+            <p className="small">
+              A copy of this report has been emailed to you and your instructor.
+            </p>
+          )}
+        </>
       )}
 
       <h2>Transcript</h2>
@@ -335,10 +288,8 @@ export function ResultsScreen({ result, apiKey, persona, scoringModel, onNewInte
 function buildMarkdownReport(
   result: SessionResult,
   metrics: Metrics,
-  persona: Persona,
-  criterionStates: Record<string, CriterionState>,
-  feedbackState: FeedbackState,
-  overall: string | null
+  persona: PersonaSummary,
+  report: ReportResponse | null
 ): string {
   const lines: string[] = [];
   lines.push(`# Interview Report`);
@@ -368,24 +319,20 @@ function buildMarkdownReport(
   lines.push(``);
   lines.push(`## Rubric assessment`);
   lines.push(``);
-  if (overall) lines.push(`Overall score: **${overall} / 5**`);
-  lines.push(``);
-  lines.push(`| Criterion | Score | Justification |`);
-  lines.push(`| --- | --- | --- |`);
-  for (const c of CRITERIA) {
-    const state = criterionStates[c.id];
-    if (state.status === "done") {
-      const score = state.score.score === null ? "n/a" : `${state.score.score} / 5`;
-      lines.push(`| ${c.name} | ${score} | ${state.score.justification} |`);
-    } else if (state.status === "error") {
-      lines.push(`| ${c.name} | n/a | not scored: ${state.message.replace(/\|/g, "/")} |`);
-    } else {
-      lines.push(`| ${c.name} | n/a | not scored |`);
+  if (!report) {
+    lines.push(`The interview was not scored.`);
+    lines.push(``);
+  } else {
+    if (report.overall !== null) lines.push(`Overall score: **${report.overall.toFixed(1)} / 5**`);
+    lines.push(``);
+    lines.push(`| Criterion | Score | Justification |`);
+    lines.push(`| --- | --- | --- |`);
+    for (const s of report.scores) {
+      const score = s.score === null ? "n/a" : `${s.score} / 5`;
+      lines.push(`| ${s.name} | ${score} | ${s.justification} |`);
     }
-  }
-  lines.push(``);
-  if (feedbackState.status === "done") {
-    const f = feedbackState.feedback;
+    lines.push(``);
+    const f = report.feedback;
     lines.push(`## Feedback`);
     lines.push(``);
     lines.push(`### Strengths`);

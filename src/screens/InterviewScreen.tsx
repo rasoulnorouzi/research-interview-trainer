@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { Persona, SessionResult, TranscriptEntry } from "../types";
+import { PersonaSummary, SessionResult, TranscriptEntry } from "../types";
 import { InterviewSession, SessionStatus } from "../lib/liveSession";
 import { fmtMs } from "../lib/metrics";
 
 interface Props {
-  apiKey: string;
-  persona: Persona;
-  model: string;
+  persona: PersonaSummary;
   onEnd: (result: SessionResult) => void;
   onAbort: (message: string) => void;
+}
+
+/** Instructor-set interview limits, from POST /api/session. Never hardcoded. */
+interface Limits {
+  limitMinutes: number;
+  warnMinutes: number;
 }
 
 const STATUS_TEXT: Record<SessionStatus, string> = {
@@ -18,12 +22,13 @@ const STATUS_TEXT: Record<SessionStatus, string> = {
   closed: "Session closed",
 };
 
-export function InterviewScreen({ apiKey, persona, model, onEnd, onAbort }: Props) {
+export function InterviewScreen({ persona, onEnd, onAbort }: Props) {
   const sessionRef = useRef<InterviewSession | null>(null);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [status, setStatus] = useState<SessionStatus>("connecting");
   const [muted, setMuted] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [limits, setLimits] = useState<Limits | null>(null);
   const [studentSpeaking, setStudentSpeaking] = useState(false);
   const [awaitingStudentText, setAwaitingStudentText] = useState(false);
   const [connectionLost, setConnectionLost] = useState<string | null>(null);
@@ -35,9 +40,8 @@ export function InterviewScreen({ apiKey, persona, model, onEnd, onAbort }: Prop
 
   useEffect(() => {
     const session = new InterviewSession({
-      apiKey,
-      persona,
-      model,
+      personaId: persona.id,
+      onLimits: setLimits,
       onTranscript: setTranscript,
       onStatus: setStatus,
       onStudentSpeaking: (speaking) => {
@@ -88,31 +92,54 @@ export function InterviewScreen({ apiKey, persona, model, onEnd, onAbort }: Prop
     sessionRef.current?.setMuted(next);
   };
 
-  const endInterview = () => {
+  const endedRef = useRef(false);
+
+  const endInterview = (reachedLimit = false) => {
     const session = sessionRef.current;
-    if (!session) return;
-    if (session.transcript.length === 0 && !connectionLost) {
+    if (!session || endedRef.current) return;
+    if (session.transcript.length === 0 && !connectionLost && !reachedLimit) {
       if (!window.confirm("Nothing has been said yet. End the interview and return to setup?")) {
         return;
       }
+      endedRef.current = true;
       session.stop();
       onAbort("");
       return;
     }
+    endedRef.current = true;
     const result = session.stop();
     if (connectionLost) result.endedByError = connectionLost;
     onEnd(result);
   };
 
+  // The hard stop takes exactly the path the "End interview" button takes, so
+  // the transcript is preserved and the student goes to their report as if
+  // they had closed the interview themselves. Only the confirm dialog is
+  // skipped, since there is nobody to answer it once the time is up.
+  const endRef = useRef(endInterview);
+  endRef.current = endInterview;
+  useEffect(() => {
+    if (!limits || endedRef.current) return;
+    if (elapsedMs >= limits.limitMinutes * 60_000) endRef.current(true);
+  }, [elapsedMs, limits]);
+
+  const remainingMs = limits ? limits.limitMinutes * 60_000 - elapsedMs : 0;
+  const counting = limits !== null && elapsedMs >= limits.warnMinutes * 60_000;
+
   return (
     <div>
       <div className="interview-header">
         <h1>Interview: {persona.name}</h1>
-        <span className="timer">{fmtMs(elapsedMs)}</span>
+        <span className={`timer ${counting ? "counting-down" : ""}`}>
+          {counting ? `${fmtMs(Math.max(0, remainingMs))} left` : fmtMs(elapsedMs)}
+        </span>
       </div>
       <p className="small">
         {persona.title}. {persona.researchTopic}
       </p>
+      {counting && !connectionLost && (
+        <p className="small">Real interviews are time-boxed. Plan your closing.</p>
+      )}
 
       {connectionLost ? (
         <div className="banner-error">
@@ -162,7 +189,7 @@ export function InterviewScreen({ apiKey, persona, model, onEnd, onAbort }: Prop
             {muted ? "Unmute microphone" : "Mute microphone"}
           </button>
         )}
-        <button className="btn btn-danger" onClick={endInterview}>
+        <button className="btn btn-danger" onClick={() => endInterview()}>
           {connectionLost ? "View results" : "End interview"}
         </button>
       </div>

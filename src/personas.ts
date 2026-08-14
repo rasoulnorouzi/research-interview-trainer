@@ -8,7 +8,7 @@ import { Persona } from "./types";
  * rehearsed surface account, a skilled one reaches the real reason.
  */
 
-const SHARED_DISCLOSURE_MECHANICS = `
+export const SHARED_DISCLOSURE_MECHANICS = `
 DISCLOSURE MECHANICS (THIS GOVERNS EVERYTHING YOU SAY):
 1. Never volunteer a deeper layer. Answer only at the layer the interviewer has earned.
 2. Never summarize your own story or explain your own reasons in an organized way. You are a person in a conversation, not a narrator.

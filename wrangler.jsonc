@@ -1,0 +1,28 @@
+// Cloudflare Worker config. See BACKEND-PLAN.md for the full design.
+//
+// Secrets are NOT here. Set with `wrangler secret put <NAME>`:
+//   SESSION_SECRET   HMAC key for the signed session cookie (§6)
+//   RESEND_API_KEY   email dispatch
+// The university OpenAI key is NOT a secret either: it lives in the
+// `settings` table (row `openai_api_key`), write-only from /api/admin, so it
+// can be rotated from the dashboard without a deploy. See BACKEND-PLAN.md §7.
+{
+  "name": "research-interview-trainer",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-14",
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "riv-trainer", "database_id": "33a29bc2-6efd-4d16-a214-467084202acc" }
+  ],
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    "EMAIL_FROM": "onboarding@resend.dev"
+  },
+  "observability": { "enabled": true }
+}

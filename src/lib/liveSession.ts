@@ -1,10 +1,13 @@
-import { Persona, SessionResult, Speaker, TranscriptEntry } from "../types";
+import { SessionResponse, SessionResult, Speaker, TranscriptEntry } from "../types";
+import { api, ApiError } from "../api";
 import { SpeechMeter, createSpeechMeter } from "./audio";
 
 const REALTIME_BASE = "https://api.openai.com/v1/realtime";
 // Streams the student's transcript while they are still speaking. The other
 // option, "gpt-transcribe", only transcribes after a committed turn — which is
 // the exact Gemini limitation this migration exists to remove. Do not swap it.
+// The Worker sets this at mint time; the copy here is only for the fallback
+// session.update below, and the two must not drift apart.
 const INPUT_TRANSCRIPTION_MODEL = "gpt-live-transcribe";
 
 // Playback speed is left at the API default (1.0). A 0.9 slowdown was tried
@@ -33,14 +36,15 @@ const TURN_DETECTION = { type: "semantic_vad", eagerness: "low" } as const;
 export type SessionStatus = "connecting" | "live" | "speaking" | "closed";
 
 export interface InterviewSessionOptions {
-  apiKey: string;
-  persona: Persona;
-  /** Realtime model id chosen on the setup screen. */
-  model: string;
+  /** Which interviewee to open. The persona text, the voice and the model all
+   *  stay server-side; the browser never sees them. */
+  personaId: string;
   onTranscript: (entries: TranscriptEntry[]) => void;
   onStatus: (status: SessionStatus) => void;
   onStudentSpeaking: (speaking: boolean) => void;
   onFatalError: (message: string) => void;
+  /** The interview time limit, as configured by the instructor. Never hardcoded. */
+  onLimits?: (limits: { limitMinutes: number; warnMinutes: number }) => void;
 }
 
 /** Events the app acts on. Names verified against a live session, not guessed. */
@@ -64,6 +68,8 @@ export class InterviewSession {
   private muted = false;
   private stopped = false;
   private connected = false;
+  /** Set only when the server could not apply the persona at mint time. */
+  private fallbackInstructions: string | null = null;
 
   private t0 = 0;
   private startedAt = 0;
@@ -90,8 +96,8 @@ export class InterviewSession {
       );
     }
 
-    // 2. Mint an ephemeral token with the student's own key. The key stays in
-    //    this browser; only the short-lived token is used for the call.
+    // 2. Ask our own backend to mint an ephemeral token with the university
+    //    key. The browser never holds a key, only the short-lived ek_ token.
     const ephemeral = await this.createEphemeralToken();
     if (this.stopped) return;
 
@@ -120,7 +126,10 @@ export class InterviewSession {
 
     this.dc = pc.createDataChannel("oai-events");
     this.dc.onmessage = (e) => this.handleEvent(JSON.parse(e.data) as RealtimeEvent);
-    this.dc.onopen = () => this.configureSession();
+    // Normally the persona is applied at mint time and there is nothing to
+    // configure from here. The data channel only carries a session.update on
+    // the fallback path (see createEphemeralToken).
+    if (this.fallbackInstructions) this.dc.onopen = () => this.configureSession();
 
     pc.onconnectionstatechange = () => {
       if (this.stopped) return;
@@ -140,44 +149,31 @@ export class InterviewSession {
   }
 
   private async createEphemeralToken(): Promise<string> {
-    let res: Response;
+    let session: SessionResponse;
     try {
-      res = await fetch(`${REALTIME_BASE}/client_secrets`, {
+      session = await api<SessionResponse>("/api/session", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.opts.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          session: {
-            type: "realtime",
-            model: this.opts.model,
-            audio: {
-              input: {
-                transcription: { model: INPUT_TRANSCRIPTION_MODEL },
-                turn_detection: TURN_DETECTION,
-              },
-              output: { voice: this.opts.persona.voiceName },
-            },
-          },
-        }),
+        body: JSON.stringify({ personaId: this.opts.personaId }),
       });
-    } catch {
+    } catch (err) {
       this.cleanup();
-      throw new Error("Could not reach OpenAI. Check your network connection.");
+      const status = err instanceof ApiError ? err.status : 0;
+      if (status === 401) throw new Error("Your login expired. Log in again.");
+      // 429 is the daily session quota; the server's own message says how many
+      // and when, so pass it through rather than paraphrasing it.
+      throw new Error((err as Error).message);
     }
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "");
+    if (typeof session.token !== "string" || session.token.length === 0) {
       this.cleanup();
-      throw new Error(describeConnectError(res.status, detail, this.opts.model));
+      throw new Error("The server did not return a session token.");
     }
-    const body = await res.json();
-    const token = body?.value;
-    if (typeof token !== "string") {
-      this.cleanup();
-      throw new Error("OpenAI did not return a session token.");
-    }
-    return token;
+    // Present only if the persona could not be applied at mint time.
+    this.fallbackInstructions = session.instructions ?? null;
+    this.opts.onLimits?.({
+      limitMinutes: session.limitMinutes,
+      warnMinutes: session.warnMinutes,
+    });
+    return session.token;
   }
 
   private async negotiate(pc: RTCPeerConnection, ephemeral: string): Promise<void> {
@@ -192,24 +188,28 @@ export class InterviewSession {
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       this.cleanup();
-      throw new Error(`Could not open the voice session. ${detail.slice(0, 200)}`);
+      throw new Error(describeConnectError(res.status, detail));
     }
     await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
   }
 
-  /** Persona instructions go over the data channel once it is open. */
+  /**
+   * Fallback only: applies the persona over the data channel when the server
+   * could not set it at mint time. On the normal path there is nothing to send
+   * and this never runs, so the persona text never reaches the browser.
+   */
   private configureSession() {
+    if (!this.fallbackInstructions) return;
     this.send({
       type: "session.update",
       session: {
         type: "realtime",
-        instructions: this.opts.persona.systemInstruction,
+        instructions: this.fallbackInstructions,
         audio: {
           input: {
             transcription: { model: INPUT_TRANSCRIPTION_MODEL },
             turn_detection: TURN_DETECTION,
           },
-          output: { voice: this.opts.persona.voiceName },
         },
       },
     });
@@ -359,15 +359,17 @@ export class InterviewSession {
   }
 }
 
-function describeConnectError(status: number, detail: string, model: string): string {
+/**
+ * The OpenAI-side failures that remain now that minting has moved to our
+ * server: this covers the direct WebRTC negotiation, which still goes to
+ * OpenAI with the ephemeral token so the audio never relays through us.
+ */
+function describeConnectError(status: number, detail: string): string {
   if (status === 401 || status === 403) {
-    return "Your OpenAI API key was rejected. Check that you pasted it correctly and that it has API access.";
-  }
-  if (status === 404) {
-    return `The interview model "${model}" is not available to this API key.`;
+    return "The voice session token was rejected by OpenAI. Start the interview again.";
   }
   if (status === 429) {
-    return "OpenAI rate-limited the request, or the account has no available quota. Check your billing and try again.";
+    return "OpenAI rate-limited the request. Wait a moment and start the interview again.";
   }
-  return `Could not start the interview (HTTP ${status}). ${detail.slice(0, 200)}`;
+  return `Could not open the voice session (HTTP ${status}). ${detail.slice(0, 200)}`;
 }

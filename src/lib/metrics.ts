@@ -1,4 +1,7 @@
 import { Metrics, SessionResult, TranscriptEntry } from "../types";
+import { fmtMs } from "../../shared/format";
+
+export { fmtMs };
 
 const INTERROGATIVE_START =
   /^(who|what|when|where|why|how|which|can|could|would|will|do|does|did|is|are|was|were|have|has|tell me|walk me|describe|explain)\b/i;
@@ -47,13 +50,6 @@ export function computeMetrics(result: SessionResult): Metrics {
     studentTurns: student.length,
     intervieweeTurns: interviewee.length,
   };
-}
-
-export function fmtMs(ms: number): string {
-  const totalSec = Math.round(ms / 1000);
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  return `${min}:${sec.toString().padStart(2, "0")}`;
 }
 
 export function fmtPercent(ratio: number): string {

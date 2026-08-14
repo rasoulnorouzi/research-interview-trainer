@@ -1,15 +1,15 @@
 # Research Interview Trainer
 
-**▶ Live: https://rasoulnorouzi.github.io/research-interview-trainer/**
+Nothing to install — students open the link, log in with their university
+email address and a mailed code, and start. No API key, no account of their
+own to set up. The site is served over HTTPS, which the browser requires
+before it will grant microphone access.
 
-Nothing to install — students open the link, paste their own OpenAI API key,
-and start. The site is served over HTTPS, which the browser requires before it
-will grant microphone access.
-
-A simple client-side React app for teaching students how to conduct
-qualitative research interviews. The student speaks (voice only) with an
-AI-simulated interviewee via the OpenAI Realtime API. Their own words appear
-as they say them. When the interview ends, the app produces a detailed report:
+A React app, served by a Cloudflare Worker, for teaching students how to
+conduct qualitative research interviews. The student speaks (voice only) with
+an AI-simulated interviewee via the OpenAI Realtime API. Their own words
+appear as they say them. When the interview ends, the app produces a detailed
+report, which is also emailed to the student and the instructor:
 
 - **Speaking metrics** (computed locally from the audio itself): duration,
   per-side speaking time and turn averages, silence, talk ratio, questions
@@ -26,54 +26,79 @@ as they say them. When the interview ends, the app produces a detailed report:
 
 Three built-in personas with detailed backstories (a nurse who left
 healthcare, a teacher who left education, a first-generation student who
-left university), plus a free-text box to define a fully custom persona.
+left university), managed from the instructor dashboard. There is no
+student-facing option to define a custom persona; picking a persona for a
+cohort is now an instructor task.
 
-## Using the hosted version
+## Using it as a student
 
-1. Get an OpenAI API key from https://platform.openai.com/api-keys
-2. Open https://rasoulnorouzi.github.io/research-interview-trainer/
-3. Paste the key, choose an interviewee and your models, allow microphone
-   access, and start.
+1. Open the link your instructor gave you.
+2. Log in with your university email address. You'll get a 6-digit code by
+   email; enter it to continue. Tick "Remember this device" to skip this next
+   time.
+3. Choose an interviewee, allow microphone access, and start.
 
-The key is held in your browser and sent only to OpenAI — this app has no
-server to send it to. It is used there only to mint a short-lived token for the
-voice session. Both models are chosen on the setup screen, so you control what
-each interview costs; the interviewee model dominates, and scoring is a few
-cents either way.
+No API key and no OpenAI account of your own is needed. The university's key
+is used server-side. When the interview ends, your report is shown on screen
+and emailed to you and your instructor.
 
 ## Running it locally
 
-1. Get an OpenAI API key from https://platform.openai.com/api-keys
-2. Install and run:
+This is a two-part app now: a static client and a Cloudflare Worker that
+serves the API. For most UI work, the client alone is enough.
 
-   ```bash
-   npm install
-   npm run dev
-   ```
+**Client only** (no login, no API, for UI changes upstream of the login
+screen):
 
-3. Open **http://localhost:5173** — not the LAN address Vite also prints.
-   Only `localhost` counts as a secure context, so the microphone is silently
-   blocked on `http://192.168.x.x:5173`.
-4. Paste your API key (optionally tick "Remember this key" — it is stored only
-   in your browser's localStorage and sent only to OpenAI), choose an
-   interviewee and your models, and start. The browser will ask for microphone
-   access.
+```bash
+npm install
+npm run dev
+```
+
+Open **http://localhost:5173** — not the LAN address Vite also prints. Only
+`localhost` counts as a secure context, so the microphone is silently blocked
+on `http://192.168.x.x:5173`.
+
+**Client and Worker together**, which behaves like the deployed app,
+including login, persona data, and scoring:
+
+```bash
+npm run build
+npm run dev:worker
+```
+
+This needs a local D1 database, migrated the same way as production; see
+[DEPLOYMENT.md](DEPLOYMENT.md) for the full setup, including secrets and the
+one-time key bootstrap.
 
 ## Scripts
 
-- `npm run dev` — development server
-- `npm run build` — production build (static files in `dist/`)
-- `npm run preview` — serve the production build
-- `npm run lint` — TypeScript check
+- `npm run dev` — client-only development server
+- `npm run dev:worker` — client and API together, via `wrangler dev`
+- `npm run build` — production build (static files in `dist/`, served by the Worker)
+- `npm run preview` — serve the production build (client only)
+- `npm run lint` — TypeScript check, client and Worker
+- `npm run seed:gen` — regenerate `seed-personas.sql` from `src/personas.ts`
 
-There is no backend: the browser talks to the OpenAI API directly over WebRTC,
-and there is no OpenAI SDK — only `react` and `react-dom`.
+The client still has only two dependencies, `react` and `react-dom`, and no
+OpenAI SDK anywhere. The Worker talks to OpenAI over plain `fetch`; the
+browser still talks to OpenAI directly over WebRTC for the interview audio
+itself, only the token that authorizes it is minted server-side now.
 
 Prompt design and the anti-injection rules are documented in
 [PROMPTING.md](PROMPTING.md); the migration from Gemini in
-[OPENAI-MIGRATION.md](OPENAI-MIGRATION.md).
+[OPENAI-MIGRATION.md](OPENAI-MIGRATION.md); the backend design in
+[BACKEND-PLAN.md](BACKEND-PLAN.md).
 
 ## Deployment
 
-Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds and
-publishes `dist/` to GitHub Pages. No manual step.
+The app deploys as a Cloudflare Worker. See [DEPLOYMENT.md](DEPLOYMENT.md)
+for the full first-deploy and update procedure, and
+[OPERATIONS.md](OPERATIONS.md) for running a cohort day to day. `API.md`
+documents the backend contract for anyone reimplementing it elsewhere.
+
+The `legacy-client` branch keeps the earlier pure client-side build, the one
+where a student pasted their own OpenAI API key and the app deployed to
+GitHub Pages on every push to `main`. `main` no longer deploys there;
+`legacy-client` is kept only as a fallback if the Worker ever needs to be
+rolled back for a semester.
