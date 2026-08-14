@@ -248,52 +248,51 @@ protection that was previously absent.
 ## 4. Resend email setup
 
 The Worker sends student login codes and interview reports through Resend.
-Resend has two states for a project: test and production.
 
-### Test state (current)
+### Current state: domain verified, mail live
 
-Until a sending domain is verified at [resend.com/domains](https://resend.com/domains),
-Resend restricts outgoing mail two ways:
+The sending domain, `rslnorouzi.site`, is verified at
+[resend.com/domains](https://resend.com/domains). Its DNS records (SPF,
+DKIM, and MX) are set in Cloudflare DNS. `EMAIL_FROM` in `wrangler.jsonc`
+is `Research Interview Trainer <trainer@rslnorouzi.site>`. Mail delivers
+to every address, students included, not only to the Resend account
+owner's own address. No further Resend setup is needed for this
+deployment.
 
-- Mail can only be sent from `onboarding@resend.dev`.
-- Mail can only be delivered to the Resend account owner's own address,
-  which for this project is `rasoulzaryab@gmail.com`.
+**Note.** A brand-new Resend account, before its domain is verified,
+restricts outgoing mail two ways: mail can only be sent from
+`onboarding@resend.dev`, and can only be delivered to the account owner's
+own address. That restriction does not apply to this deployment. It
+matters only if you set up Resend again from scratch, for example for a
+separate deployment of this app.
 
-**Caution.** In this state, students cannot receive login codes. Only the
-account owner's address receives mail. Use this state for development and
-for the smoke check in section 2, step 9. Do not run a real cohort in this
-state.
+### Changing the sending domain later
 
-### Production state
+Follow these steps if this deployment ever needs to move to a different
+sending domain.
 
-Do these steps before the first cohort starts.
-
-**1. Choose a sending domain** you control, for example a subdomain of the
-university's mail domain.
+**1. Choose a sending domain** you control, for example a different
+subdomain of the university's mail domain.
 
 **2. Verify the domain at [resend.com/domains](https://resend.com/domains).**
 
-Resend gives you three DNS records to add at your domain's DNS provider.
-
-| Record | Purpose |
-|---|---|
-| SPF (TXT) | Authorizes Resend's servers to send mail for your domain |
-| DKIM (TXT or CNAME) | Signs outgoing mail so receivers can verify it |
-| DMARC (TXT) | Tells receiving mail servers what to do with mail that fails SPF or DKIM |
+Resend gives you DNS records to add at your domain's DNS provider,
+typically an SPF record (TXT), a DKIM record (TXT or CNAME), and an MX
+record. Add every record it gives you.
 
 **3. Wait for verification.** Resend checks the records automatically.
 This can take up to 48 hours, though it is usually much faster.
 
-**Caution.** A domain without all three records gets mail rejected by many
-university mail servers, not filed to spam. A student checking their spam
-folder will not find a message that was never accepted. Verify all three
-records before trusting delivery.
+**Caution.** A domain missing any required record gets mail rejected by
+many university mail servers, not filed to spam. A student checking their
+spam folder will not find a message that was never accepted. Verify every
+record before trusting delivery.
 
 **4. Update `EMAIL_FROM` in `wrangler.jsonc`.**
 
 ```jsonc
 "vars": {
-  "EMAIL_FROM": "noreply@your-verified-domain.example"
+  "EMAIL_FROM": "Sender Name <noreply@your-new-domain.example>"
 }
 ```
 
@@ -304,8 +303,8 @@ npm run build && npx wrangler deploy
 ```
 
 **6. Send one test code to a real student-side inbox**, not just to your
-own address, before the cohort arrives. Confirm it arrives in the inbox,
-not spam.
+own address, before students start using the new domain. Confirm it
+arrives in the inbox, not spam.
 
 ## 5. Update deploy
 

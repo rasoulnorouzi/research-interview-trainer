@@ -323,10 +323,15 @@ Always a `302` redirect, never JSON.
 |---|---|---|---|
 | Per email address | 60 seconds | 1 | `POST /api/auth/request` |
 | Per email address | 1 hour | 5 | `POST /api/auth/request` |
-| Per source IP | 1 hour | 10 | `POST /api/auth/request` |
+| Per source IP | 1 hour | 120 | `POST /api/auth/request` |
 | Per login code | not time-boxed | 5 attempts | `POST /api/auth/verify` |
 | Login code lifetime | - | 600 seconds (10 minutes) | issued by `POST /api/auth/request` |
 | Break-glass token lifetime | - | 900 seconds (15 minutes) | issued by admin `POST /api/admin/breakglass` |
+
+The per-IP limit is 120 per hour, not a tighter number, because a whole
+computer lab or a campus WiFi network can sit behind one shared address.
+It still stops bulk probing and email bombing; it just does not mistake a
+classroom logging in together for an attack.
 
 Counters are consumed even once a caller is already over a limit, so
 repeated hammering stays locked out rather than recovering one attempt
@@ -353,7 +358,7 @@ concealment of a list that a university publishes in other forms.
 
 A reimplementation must keep the rate limits in section 4, because they
 are now the only bound on bulk probing of the roster. One request per
-address per 60 seconds, five per address per hour, and ten per source IP
+address per 60 seconds, five per address per hour, and 120 per source IP
 per hour. Counters are consumed before the roster is read and are
 consumed even when the caller is already over a limit, so a script cannot
 recover one probe per window by hammering the endpoint.
@@ -389,13 +394,16 @@ Worker.
 | POST | `/api/admin/roster/import` | `{csv, mode: "preview"|"apply"}` | `{"mode", "new", "changed", "unchanged", "invalid": [{line, reason}]}` |
 | PATCH | `/api/admin/roster/:id` | partial `{email?, fullName?, cohort?, active?}` | `200` RosterView, or `400`/`404`/`409` |
 | DELETE | `/api/admin/roster/:id` | none | `200 {studentId, active: false, message}`. Deactivates; never a SQL delete. |
+| DELETE | `/api/admin/roster/:id?hard=1` | none | `200 {studentId, deleted: true}`. Permanently removes the student, only when they have no stored reports (`409` otherwise, naming the count). Also clears their login codes and session grants. |
 | GET | `/api/admin/personas` | none | `{"personas": [{id, name, title, active, updatedAt, updatedBy}]}`. No spoiler fields, even here; the list view does not need them. |
 | POST | `/api/admin/personas` | full persona fields, including `systemInstruction`, `hiddenCore` | `201` full persona, or `400`/`409` |
 | GET | `/api/admin/personas/:id` | none | `200` full persona including `systemInstruction` and `hiddenCore`, or `404` |
 | PUT | `/api/admin/personas/:id` | full persona fields | `200` full persona; writes one `persona_versions` snapshot in the same batch as the row update |
+| DELETE | `/api/admin/personas/:id` | none | `200 {id, deleted: true}`. Permanently removes the persona, only when no reports reference it (`409` otherwise, naming the count). `persona_versions` is kept either way; there is no route that deletes a version. |
 | GET | `/api/admin/personas/:id/versions` | none | `{"personaId", "versions": [{id, savedAt, savedBy, snapshot}]}` |
 | GET | `/api/admin/submissions` | query: `cohort`, `from`, `to`, `sort=duration`, `limit` | `{"submissions": [...], "limit"}`. Excludes the four large JSON columns. |
 | GET | `/api/admin/submissions/:id` | none | `200` full submission, including transcript, scores, feedback, metrics; or `404` |
+| DELETE | `/api/admin/submissions/:id` | none | `200 {id, deleted: true}`. Permanently removes one submission. Nothing else references a submission, so there is no reference count and no deactivate-instead option; the dashboard offers this only from the submission's own detail view, not the list. |
 | GET | `/api/admin/submissions.csv` | same query params as list | `text/csv`, one row per submission plus one column per rubric criterion |
 | POST | `/api/admin/breakglass` | `{studentId}` | `200 {url, expiresInMinutes, studentId, fullName}`, or `404`/`400` |
 
@@ -410,6 +418,12 @@ There is no endpoint, and no query parameter, that returns the key in
 full. `PUT /api/admin/settings` accepts a full key to store one, and that
 is the only place a full key appears in a request or response body
 anywhere in this API.
+
+`PUT /api/admin/settings` also accepts `{"openai_api_key": null}` to
+clear the stored key. Every subsequent `POST /api/session` and
+`POST /api/report` answers `503` until a new key is saved. This is the
+one setting that supports removal; every other setting key must always
+carry a value.
 
 ## 7. Deviations from BACKEND-PLAN.md section 4
 

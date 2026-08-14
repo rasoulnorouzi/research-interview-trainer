@@ -44,6 +44,32 @@ touches keys, scoring or personas, since the implementation is authoritative
 over the plan wherever the two differ, and `API.md` §7 lists the known
 differences.
 
+**The Worker is deployed and live (2026-08-14).** It runs at
+https://research-interview-trainer.rasoulnorouzi.workers.dev, backed by the
+`riv-trainer` D1 database (migrated and seeded) and a Cloudflare Access app,
+"Interview Trainer Admin" (team `rasouldns.cloudflareaccess.com`), with
+`ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` filled in `wrangler.jsonc`; admin
+routes have been verified to reject missing or forged Access JWTs. The
+Resend sending domain `rslnorouzi.site` is verified (SPF, DKIM, MX in
+Cloudflare DNS), `EMAIL_FROM` is `Research Interview Trainer
+<trainer@rslnorouzi.site>`, and mail delivers to every address, not only
+the account owner's — see the Resend gotcha below, now historical for this
+deployment. The roster currently holds three test entries. `legacy-client`
+exists as a local git branch for rollback (`DEPLOYMENT.md` §6); pushing it
+to GitHub is still pending.
+
+The results screen no longer scores automatically: a student clicks
+"Submit interview for scoring" on `ResultsScreen.tsx`, and only that click
+triggers `POST /api/report`. Login failures are explicit rather than a
+single generic message — `worker/auth.ts` answers `400`, `404`, `429`, or
+`502` with a message naming the problem, a 2026-08-14 instructor decision
+documented in `API.md` §5. The per-IP rate limit on `POST /api/auth/request`
+is 120 per hour, not 10, raised because a shared classroom network is one
+NAT address. The admin dashboard also gained hard-delete paths this same
+day: `DELETE .../roster/:id?hard=1`, `DELETE .../personas/:id`, and
+`DELETE .../submissions/:id`, each refusing (`409`) when the row is still
+referenced by a stored report. See `API.md` §6 for the full admin surface.
+
 ## Architecture
 
 **One Cloudflare Worker serves both the static app and `/api/*`, from the
@@ -370,16 +396,23 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   anyone. `worker/access.ts` fails closed (rejects, does not wave through)
   whenever `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` is unset, which is the
   correct state for this file to be absent in.
-- **Student mail is Resend-restricted until a sending domain is verified.**
-  Until then, mail can only go out from `onboarding@resend.dev` and can only
-  be delivered to the Resend account owner's own address — no student
-  actually receives a login code in that state. See `DEPLOYMENT.md` §4.
+- **A brand-new Resend account is restricted until its sending domain is
+  verified — historical for this deployment, still true for a fresh one.**
+  Until verified, mail can only go out from `onboarding@resend.dev` and can
+  only be delivered to the Resend account owner's own address. This
+  project's domain, `rslnorouzi.site`, is verified (SPF, DKIM, MX in
+  Cloudflare DNS) and mail reaches every address, students included. Keep
+  this note in mind only if you ever set up Resend again for a different
+  deployment. See `DEPLOYMENT.md` §4.
 - **The OpenAI key is a `settings` row, not a Worker secret.** `wrangler
   secret put` is for `SESSION_SECRET` and `RESEND_API_KEY` only. The key is
   bootstrapped once by hand into D1 (`DEPLOYMENT.md` §2 step 7) and rotated
   afterward from the dashboard, which validates it live before saving and
   never displays it in full (`GET /api/admin/settings` masks it to
-  `sk-...`+last four characters).
+  `sk-...`+last four characters). A **Remove key** control on the Settings
+  screen (`PUT {openai_api_key: null}`) clears it outright; every
+  subsequent `POST /api/session` and `POST /api/report` then answers `503`
+  until a working key is saved again.
 
 ## Running it
 

@@ -21,7 +21,14 @@ on the very next request. No redeploy is needed.
 | `sessions_per_day` | How many interviews one student may start per day. | 5 | 1 to 10. This is the real backstop on cost: see section 8. |
 | `interview_model` | The OpenAI realtime model used for the spoken interview. | `gpt-realtime-2.1-mini` | Any realtime model id your key can reach. |
 | `scoring_model` | The OpenAI model used for all nine scoring calls. | `gpt-5.6-terra` | Any text model id your key can reach. |
-| `instructor_recipients` | Comma-separated email addresses that get a copy of every report. | none, must be set | At least one address. The dashboard rejects an empty list. |
+| `instructor_recipients` | Email addresses that get a copy of every report. Stored as one comma-joined string. | none, must be set | At least one address. The dashboard rejects an empty list. |
+
+The Settings screen presents `interview_model` and `scoring_model` as
+dropdowns over a curated list of ids, and `instructor_recipients` as a
+list with Add and Remove controls, not a text box. Picking a model this
+way is the normal path. The API itself still accepts any non-empty model
+id, so a value set straight in the database also works and shows in the
+dropdown as the current choice.
 
 **Caution.** The dashboard validates `openai_api_key` live against OpenAI
 before saving it. It does not validate `interview_model` or
@@ -70,14 +77,20 @@ first.
    than expected, usually means a stale export or a wrong file.
 4. Choose **Apply** only once the preview looks right.
 
-### Deactivate, never delete
+### Deactivate, or remove permanently
 
-The roster has no delete action, only deactivate. A student's submissions
-reference their roster row, so deleting it would break or orphan their
-reports.
+Deactivating a student is the normal way to remove their access. It
+blocks login immediately and keeps their history intact. Use the
+**Deactivate** button on the Roster screen.
 
-To remove a student's access, deactivate them instead. Deactivation blocks
-login immediately and keeps their history intact.
+A second control, **Remove**, deletes the roster row for good. Use it
+only for a mistake: a typo in a student ID, or a student added to the
+wrong cohort, who never ran an interview. The dashboard refuses the
+removal, and names the number of stored reports, the moment any report
+references that student. Deactivate that student instead. A permanent
+removal also clears the student's pending login code and their daily
+quota count, so a student re-added under the same ID later does not
+inherit today's count.
 
 ### Mid-semester re-import
 
@@ -106,21 +119,38 @@ shows only the last four characters, for example `sk-...a1b2`. There is no
 "reveal" control. If you need the full key again, get it from wherever
 you first obtained it.
 
+Once a key is set, the Settings screen shows a status line under the key
+field: the masked value, who saved it, and when. A separate **Remove
+key** control clears the stored key entirely, with a confirmation prompt.
+Use it to shut off the service on purpose, for example between cohorts.
+After removal, students see "not configured" and cannot start or submit
+an interview until a working key is saved again.
+
 ## 4. When a student gets no code
 
-Work through these in order.
+The login screen now names the problem directly, on the failed request
+itself, rather than leaving a student to guess. Start by asking what
+message they saw.
 
-1. **Ask them to check spam or junk.** This resolves most cases. The
-   login screen already tells students to do this.
-2. **Confirm the address is correct.** The code step shows the address
-   back to the student. A typo there means they are asking a code to be
-   sent to an address that is not theirs, and not on the roster either.
-3. **Check the rate limits.** A student who has requested a code more
-   than once in the last minute, or more than five times in the last
-   hour, will not get a new one until the window passes. The app does not
-   distinguish this case in its own message, since revealing it would
-   also reveal whether an address is enrolled.
-4. **Use break-glass** if none of the above explains it. Some students
+1. **"This email address is not on the course list. Check for typos or
+   contact your instructor."** The address is not on the roster, is
+   misspelled, or is a personal address instead of the university one.
+   Check it against the roster in section 2 and correct it if it is
+   wrong, or add the student if they belong on the course but are
+   missing.
+2. **"Too many attempts. Wait a minute and try again."** The student, or
+   someone sharing their network, has hit a rate limit: more than one
+   request in the last minute, more than five in the last hour for that
+   address, or more than 120 in the last hour from the same network
+   (see `API.md` section 4). Ask them to wait a minute and try again.
+3. **"The code email could not be sent. Try again in a minute."** The
+   address was accepted but Resend failed to deliver the message. Ask
+   the student to try again in a minute. If it keeps happening, check
+   the Resend account status.
+4. **No error, but still no email.** Ask them to check spam or junk.
+   This resolves most of these cases. The login screen already tells
+   students to do this.
+5. **Use break-glass** if none of the above explains it. Some students
    never receive the mail for reasons neither of you can see: a
    forwarding rule, a full mailbox, a filter set by their faculty.
 
@@ -161,6 +191,10 @@ including the fields that must stay hidden from students.
   disclosure rules, the ones covering hints, retreat, and pacing, into a
   persona's own text. The server appends them at the moment an interview
   starts. A persona row holds only its own material.
+- **Voice is a dropdown, checked on save.** The editor offers only the
+  voices the realtime API knows. The server also checks this itself, so
+  a name outside that list is rejected at save time, not discovered later
+  when a student tries to start an interview.
 
 ### Version history and restore
 
@@ -182,6 +216,17 @@ To restore an old version:
 
 **Note.** Elena van Dijk's first two layers are the instructor's original
 material. Preserve them exactly if you ever restore or edit that persona.
+
+### Deleting a persona
+
+The persona editor has a **Delete persona** control, set apart from Save
+so it is never the button a hurried hand reaches for. It removes the
+persona for good, and only works while no stored report references it.
+If any report does, the dashboard answers with the count and refuses;
+clear the persona's Active checkbox and save instead, which keeps it out
+of the student list without touching the reports.
+
+Version history is never deleted, even when the persona itself is.
 
 ## 6. Submissions
 
@@ -209,6 +254,16 @@ Export the current filtered list as a CSV file. Each row is one
 submission. Each rubric criterion gets its own column. A criterion that
 was not assessable exports as an empty cell, never as a zero: the two are
 different things, and the export must not blur them.
+
+### Deleting a submission
+
+Open a submission's detail view to find its **Delete submission**
+control, below everything else on the page. It removes the report and
+its transcript from the dashboard for good. It does not touch the copies
+already emailed to the student and to `instructor_recipients`.
+
+There is no delete action on the list itself. Opening the detail view
+first means you see the report before you remove it.
 
 ## 7. Semester rollover
 
