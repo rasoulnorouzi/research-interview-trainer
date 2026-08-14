@@ -20,8 +20,8 @@
     { "binding": "DB", "database_name": "riv-trainer", "database_id": "33a29bc2-6efd-4d16-a214-467084202acc" }
   ],
   "vars": {
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": "",
+    "ACCESS_TEAM_DOMAIN": "rasouldns.cloudflareaccess.com",
+    "ACCESS_AUD": "f9bb9a4af8edd275dc920609a2c79290dcb1a79a41842fb324e25a0e2c6ad8f5",
     "EMAIL_FROM": "onboarding@resend.dev"
   },
   "observability": { "enabled": true }
