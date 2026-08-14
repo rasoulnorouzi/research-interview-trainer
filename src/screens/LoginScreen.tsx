@@ -36,16 +36,18 @@ export function LoginScreen({ onLoggedIn }: Props) {
         body: JSON.stringify({ email: address }),
       });
       setCooldown(RESEND_SECONDS);
+      // Only a confirmed send opens the code step. Nothing was mailed on any
+      // other answer, so asking for a code would be asking for something that
+      // does not exist.
+      setStep("code");
     } catch (err) {
-      // A transport or server fault, never "no such address": the server
-      // answers 200 whether or not the email is on the roster, and the client
-      // must not branch on the answer either, or it becomes the enumeration
-      // oracle the server refuses to be. So the code step opens either way,
-      // with the fault shown and no cooldown, so a resend is immediate.
+      // The server's own message: not on the roster, over the rate limit, a
+      // failed send, or an unreachable network. It is shown where the address
+      // was typed, so a typo can be corrected in place. A resend from the code
+      // step lands here too and leaves that step where it is.
       setError((err as Error).message);
     }
     setBusy(false);
-    setStep("code");
   };
 
   const verify = async () => {

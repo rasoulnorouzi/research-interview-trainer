@@ -37,6 +37,27 @@ interface Props {
 }
 
 /**
+ * The recipients setting is stored, and sent, as one comma-separated string.
+ * The list editor below is a view over that string: it parses on render and
+ * rewrites the string only when an address is added or removed, so a value
+ * nobody touched reaches the save diff byte for byte as it was loaded and does
+ * not read as a change.
+ */
+function parseRecipients(value: string): string[] {
+  return value
+    .split(",")
+    .map((address) => address.trim())
+    .filter((address) => address.length > 0);
+}
+
+function joinRecipients(list: string[]): string {
+  return list.join(", ");
+}
+
+const RECIPIENTS_REQUIRED_NOTE =
+  "At least one assessment recipient is required. The previous list is kept.";
+
+/**
  * A model setting as a dropdown over the curated list (shared/models.ts), with
  * the chosen model's tradeoff spelled out underneath.
  *
@@ -96,6 +117,9 @@ export function Settings({ onApiError }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [recipientInput, setRecipientInput] = useState("");
+  const [recipientError, setRecipientError] = useState<string | null>(null);
+  const [recipientsNote, setRecipientsNote] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -126,6 +150,31 @@ export function Settings({ onApiError }: Props) {
     setForm((f) => ({ ...f, [key]: value }));
   };
 
+  const recipients = parseRecipients(form.instructor_recipients);
+
+  const addRecipient = () => {
+    const address = recipientInput.trim();
+    if (address.length === 0) return;
+    if (!address.includes("@")) {
+      setRecipientError("Enter an email address, including the @ sign.");
+      return;
+    }
+    if (recipients.some((existing) => existing.toLowerCase() === address.toLowerCase())) {
+      setRecipientError("That address is already on the list.");
+      return;
+    }
+    setRecipientError(null);
+    setRecipientsNote(null);
+    setField("instructor_recipients", joinRecipients([...recipients, address]));
+    setRecipientInput("");
+  };
+
+  const removeRecipient = (address: string) => {
+    setRecipientError(null);
+    setRecipientsNote(null);
+    setField("instructor_recipients", joinRecipients(recipients.filter((entry) => entry !== address)));
+  };
+
   // Client-side warning ahead of the server's own check, so a mismatched pair
   // is caught before the round trip rather than after.
   const limitNum = Number(form.interview_limit_minutes);
@@ -141,9 +190,19 @@ export function Settings({ onApiError }: Props) {
     e.preventDefault();
     setError(null);
     setSaved(false);
+    setRecipientsNote(null);
     if (warnTooHigh) {
       setError("The warning threshold must be less than the interview time limit.");
       return;
+    }
+
+    // The server rejects an empty recipient list, so an empty one is not sent
+    // at all. The rest of the form still saves, the stored list stays as it
+    // was, and the field is put back to it rather than left looking emptied.
+    const recipientsEmpty = recipients.length === 0;
+    if (recipientsEmpty) {
+      setRecipientsNote(RECIPIENTS_REQUIRED_NOTE);
+      setForm((f) => ({ ...f, instructor_recipients: settings?.instructor_recipients?.value ?? "" }));
     }
 
     const payload: Record<string, string | number> = {};
@@ -152,13 +211,16 @@ export function Settings({ onApiError }: Props) {
       if (form[key] !== current && form[key].trim().length > 0) payload[key] = Number(form[key]);
     }
     for (const key of TEXT_KEYS) {
+      if (key === "instructor_recipients" && recipientsEmpty) continue;
       const current = settings?.[key]?.value ?? "";
       if (form[key] !== current) payload[key] = form[key];
     }
     if (apiKeyInput.trim().length > 0) payload.openai_api_key = apiKeyInput.trim();
 
     if (Object.keys(payload).length === 0) {
-      setError("Nothing changed.");
+      // With an emptied list and nothing else changed there is nothing to send,
+      // and the note above already says why.
+      if (!recipientsEmpty) setError("Nothing changed.");
       return;
     }
 
@@ -269,17 +331,67 @@ export function Settings({ onApiError }: Props) {
 
         <div className="field">
           <label htmlFor="instructor_recipients">Assessment recipients</label>
-          <input
-            id="instructor_recipients"
-            type="text"
-            value={form.instructor_recipients}
-            onChange={(e) => setField("instructor_recipients", e.target.value)}
-          />
+          {recipients.length > 0 ? (
+            <table>
+              <tbody>
+                {recipients.map((address) => (
+                  <tr key={address}>
+                    <td>{address}</td>
+                    <td style={{ textAlign: "right", width: "1%", whiteSpace: "nowrap" }}>
+                      <button
+                        className="link-btn"
+                        type="button"
+                        onClick={() => removeRecipient(address)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="admin-help">No addresses yet. Add at least one below.</p>
+          )}
+
+          <div className="admin-toolbar">
+            <div className="field">
+              <input
+                id="instructor_recipients"
+                type="email"
+                placeholder="name@university.edu"
+                value={recipientInput}
+                autoComplete="off"
+                onChange={(e) => {
+                  setRecipientError(null);
+                  setRecipientInput(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  // Enter adds an address. Without this it submits the whole
+                  // settings form with the typed address still unadded.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addRecipient();
+                  }
+                }}
+              />
+            </div>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={recipientInput.trim().length === 0}
+              onClick={addRecipient}
+            >
+              Add
+            </button>
+          </div>
+
+          {recipientError && <p className="admin-warn">{recipientError}</p>}
+          {recipientsNote && <p className="admin-warn">{recipientsNote}</p>}
           <p className="admin-help">
-            Comma separated email addresses of the assessors. When a student submits an
-            interview, the full report (scores, feedback, and the complete interview
-            transcript) is emailed to every address here. The student also receives
-            their own copy at their roster email address.
+            When a student submits an interview, the full report (scores, feedback, and
+            the complete transcript) is emailed to every address here. The student also
+            receives their own copy at their roster email address.
           </p>
         </div>
 

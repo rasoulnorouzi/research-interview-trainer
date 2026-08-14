@@ -6,8 +6,9 @@ backend on a different stack. [`BACKEND-PLAN.md`](BACKEND-PLAN.md) section
 9 names FastAPI on a university VM as the anticipated move.
 
 The contract described here is the implementation in `worker/`, not the
-original design in `BACKEND-PLAN.md` section 4. Section 6 of this
-document lists every place the two differ.
+original design in `BACKEND-PLAN.md` section 4. Section 7 of this
+document lists every place the two differ, and section 5 records one
+further deviation, from `BACKEND-PLAN.md` section 6.
 
 ## 1. Conventions
 
@@ -65,18 +66,28 @@ Requests a login code. No authentication.
 { "email": "jane.doe@tilburguniversity.edu" }
 ```
 
-**Response**
+**Response, success**
 
-Always `200 {"ok": true}`, once the body is valid JSON with a
-`content-type: application/json` header. This holds whether the address
-is on the roster or not, and whether a rate limit was hit or not. See
-section 4 for why.
+`200 {"ok": true}`. The code was generated, stored, and accepted by the
+email provider.
+
+**Response, failure**
+
+| Status | Body | Cause |
+|---|---|---|
+| `400` | `{"error": "Enter your university email address."}` | The `email` field is missing, is not a string, or has no `@` |
+| `429` | `{"error": "Too many attempts. Wait a minute and try again."}` | A rate limit in section 4 was exceeded |
+| `404` | `{"error": "This email address is not on the course list. Check for typos or contact your instructor."}` | No roster row with that email and `active = 1` |
+| `502` | `{"error": "The code email could not be sent. Try again in a minute."}` | The code was stored, but the email provider call failed |
+
+The handler tests these in the order of the table. Nothing is generated
+and nothing is stored on the `400`, `429`, or `404` branch. Section 5
+records why this endpoint names an unknown address.
 
 A request that fails to parse at all, wrong content type, an oversized
-body, or malformed JSON, still returns its own error: `415`, `413`, or
-`400` respectively, each with `{"error": "<message>"}`. Those are
-transport-level failures, not email-address answers, and are not part of
-the enumeration-resistance guarantee.
+body, or malformed JSON, returns `415`, `413`, or `400` respectively,
+each with `{"error": "<message>"}`. Those are transport-level failures
+and carry no information about the address.
 
 ### POST /api/auth/verify
 
@@ -105,8 +116,11 @@ Also sets the `riv_session` cookie described in section 2.
 This single message covers every failure branch: wrong code, expired
 code, more than 5 attempts on this code, unknown email, and a
 deactivated student. Do not give these branches different messages in a
-reimplementation; a distinguishable message would tell a caller which
-addresses are enrolled.
+reimplementation. A distinguishable message here tells a caller how far a
+guess got: whether an address has a live code, whether a code is merely
+expired, or whether the attempts are already used. `POST
+/api/auth/request` names an unknown address (section 5); this endpoint
+does not follow it.
 
 ### POST /api/auth/logout
 
@@ -316,23 +330,36 @@ Always a `302` redirect, never JSON.
 
 Counters are consumed even once a caller is already over a limit, so
 repeated hammering stays locked out rather than recovering one attempt
-per window. `POST /api/auth/verify` invalidates its code entirely once 5
-attempts are used, rather than merely refusing the 6th.
+per window. A caller over any of the three `POST /api/auth/request`
+limits gets `429` with the message in section 3. `POST /api/auth/verify`
+invalidates its code entirely once 5 attempts are used, rather than
+merely refusing the 6th.
 
-## 5. Enumeration resistance
+## 5. Address disclosure at login
 
-`POST /api/auth/request` returns `200 {"ok": true}` in every branch that
-reaches the roster check: address on the roster, address not on the
-roster, and rate-limited. A reimplementation must preserve this exactly.
-Any observable difference between these three cases, a different status
-code, a different body, a different response time, turns the login
-endpoint into a way to test whether a given address is enrolled. Student
-IDs are semi-public in most university systems; the enrolment list itself
-should not be.
+`POST /api/auth/request` tells the caller when an address is not on the
+roster. It answers `404` with the message in section 3, before a code is
+generated.
 
-Rate limit counters are also consumed identically on all three branches,
-for the same reason: a difference in write pattern would be a timing
-side channel even if the response body is identical.
+This is a deliberate deviation from `BACKEND-PLAN.md` section 6, which
+specifies `200 {"ok": true}` on every branch so that the endpoint cannot
+be used to enumerate enrolment. The instructor decided on 2026-08-14 to
+trade that resistance for clarity. The cohort is 400 students. A student
+who mistypes an address, or who uses a personal address instead of the
+university one, must learn it at once. The alternative is a student
+waiting for a code that will never arrive, then writing to the
+instructor. Clarity for every student was judged worth more than
+concealment of a list that a university publishes in other forms.
+
+A reimplementation must keep the rate limits in section 4, because they
+are now the only bound on bulk probing of the roster. One request per
+address per 60 seconds, five per address per hour, and ten per source IP
+per hour. Counters are consumed before the roster is read and are
+consumed even when the caller is already over a limit, so a script cannot
+recover one probe per window by hammering the endpoint.
+
+`POST /api/auth/verify` keeps a single failure message for every branch.
+That decision is unchanged; see section 3.
 
 ## 6. Admin surface
 

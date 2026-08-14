@@ -1,10 +1,22 @@
 // Student authentication: email plus a mailed six-digit code, against the
-// pre-loaded roster. All of BACKEND-PLAN.md §6, including the security
-// checklist there. Read that section before changing anything in this file;
-// several lines that look like boilerplate are the protection.
+// pre-loaded roster. BACKEND-PLAN.md §6 and the security checklist there, with
+// one deliberate exception recorded below. Read that section before changing
+// anything in this file; several lines that look like boilerplate are the
+// protection.
 //
 // The security rests on one property: the code goes to an address already on
 // file, never to one the student supplies. Keep that if you change nothing else.
+//
+// The exception (instructor decision, 2026-08-14): /api/auth/request no longer
+// answers 200 for every address. It says plainly when an address is not on the
+// roster, so a student who mistypes their address, or who uses a personal one,
+// learns it immediately instead of waiting for a code that will never arrive.
+// That trades the enumeration resistance §6 asks for against clarity for 400
+// students, and the instructor made that trade knowingly. What remains against
+// bulk probing is the rate limits: 1 per minute and 5 per hour per address, 10
+// per hour per IP, consumed before the roster is read. Do not remove them, and
+// do not extend the same candour to the verify path, which still answers with a
+// single message for every failure.
 
 import { json, readJsonBody, type Env, type RosterIdentity } from "./db";
 import { sendLoginCode } from "./email";
@@ -18,8 +30,11 @@ const CODE_TTL_SECONDS = 600;
 const MAX_ATTEMPTS = 5;
 
 // One message for every verify failure: unknown address, wrong code, expired
-// code, burnt attempts, deactivated student. Distinguishing them would tell a
-// caller which addresses are enrolled.
+// code, burnt attempts, deactivated student. Separate messages here would tell
+// a caller how far a guess got, which is the useful signal on this path: an
+// address with a live code, a code that is merely expired, or attempts already
+// burnt. Keep the single message even though /api/auth/request now names an
+// unknown address.
 const VERIFY_ERROR = "Code incorrect or expired.";
 
 interface SessionPayload {
@@ -83,37 +98,49 @@ export function clearSessionCookie(): string {
 /**
  * POST /api/auth/request, body {email}.
  *
- * Returns 200 {ok:true} in every branch, including over-rate-limit and
- * address-not-in-roster, so the endpoint cannot be used to enumerate
- * enrolment or to tell whether a send actually happened.
+ * Answers each branch plainly: 400 for an address that is not one, 429 over a
+ * rate limit, 404 for an address that is not on the roster, 502 when the code
+ * could not be mailed, 200 when it was sent. The 404 is the instructor's
+ * decision of 2026-08-14, described at the top of this file: a student who is
+ * not on the course list is told so before a code is generated, rather than
+ * being left to wait for mail that will never come. It is a deliberate
+ * departure from the enumeration resistance BACKEND-PLAN.md §6 specifies.
+ *
+ * The rate limits below are what still bounds bulk probing, so they run before
+ * the roster is read and are consumed even when the caller is already over.
  */
 export async function handleAuthRequest(request: Request, env: Env): Promise<Response> {
   const parsed = await readJsonBody<{ email?: unknown }>(request);
   if (!parsed.ok) return parsed.response;
-  const ok = () => json(200, { ok: true });
 
   const email = typeof parsed.value.email === "string" ? parsed.value.email.trim().toLowerCase() : "";
+  if (!email.includes("@")) return json(400, { error: "Enter your university email address." });
+
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
   const now = nowSeconds();
 
-  // Rate limits first, and they are consumed before the roster is touched, so
-  // the write pattern is identical for an enrolled and an unknown address.
-  // Without this the endpoint is an email-bombing tool aimed at any student
-  // whose address someone knows, and it drains the send quota (§6).
+  // Consumed before the roster is touched. Without this the endpoint is an
+  // email-bombing tool aimed at any student whose address someone knows, it
+  // drains the send quota (§6), and now that the roster answer is visible it is
+  // also the only thing standing between a script and the enrolment list.
   const limited = await consumeRateLimits(env, now, [
     { key: `email:60:${email}`, windowSeconds: 60, max: 1 },
     { key: `email:3600:${email}`, windowSeconds: 3600, max: 5 },
     { key: `ip:3600:${ip}`, windowSeconds: 3600, max: 10 },
   ]);
-  if (limited) return ok();
-  if (!email.includes("@")) return ok();
+  if (limited) return json(429, { error: "Too many attempts. Wait a minute and try again." });
 
   const student = await env.DB.prepare(
     "SELECT student_id, full_name FROM roster WHERE email = ? AND active = 1",
   )
     .bind(email)
     .first<RosterIdentity>();
-  if (!student) return ok();
+  // Nothing is generated and nothing is stored for an address that is not here.
+  if (!student) {
+    return json(404, {
+      error: "This email address is not on the course list. Check for typos or contact your instructor.",
+    });
+  }
 
   const code = generateCode();
   // One live code per address; a new request overwrites the old one.
@@ -128,8 +155,9 @@ export async function handleAuthRequest(request: Request, env: Env): Promise<Res
   } catch (err) {
     // The address and the transport failure, never the code itself.
     console.error("login code send failed for", email, err instanceof Error ? err.message : String(err));
+    return json(502, { error: "The code email could not be sent. Try again in a minute." });
   }
-  return ok();
+  return json(200, { ok: true });
 }
 
 /** POST /api/auth/verify, body {email, code, remember}. Read this path in full before shipping (§10). */
