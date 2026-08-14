@@ -251,7 +251,7 @@ export function Settings({ onApiError }: Props) {
         />
 
         <div className="field">
-          <label htmlFor="instructor_recipients">Instructor recipients</label>
+          <label htmlFor="instructor_recipients">Assessment recipients</label>
           <input
             id="instructor_recipients"
             type="text"
@@ -259,8 +259,10 @@ export function Settings({ onApiError }: Props) {
             onChange={(e) => setField("instructor_recipients", e.target.value)}
           />
           <p className="admin-help">
-            Comma-separated email addresses. Every finished interview report is emailed to
-            all of them.
+            Comma separated email addresses of the assessors. When a student submits an
+            interview, the full report (scores, feedback, and the complete interview
+            transcript) is emailed to every address here. The student also receives
+            their own copy at their roster email address.
           </p>
         </div>
 
