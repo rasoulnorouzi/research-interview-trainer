@@ -185,9 +185,10 @@ material. Preserve them exactly if you ever restore or edit that persona.
 
 ## 6. Submissions
 
-The Submissions screen lists every completed interview. Every submission
-also arrives by email, so this screen is a convenience, not the only
-record.
+The Submissions screen lists every completed interview. The student
+clicks "Submit interview for scoring" on the results screen. Only then
+is the report scored, stored, and emailed. Every submission also arrives
+by email, so this screen is a convenience, not the only record.
 
 ### Filters
 

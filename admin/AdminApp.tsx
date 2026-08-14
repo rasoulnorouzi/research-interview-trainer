@@ -31,6 +31,22 @@ export function AdminApp() {
 
   return (
     <div className="page admin-page">
+      {/* Access owns the session, so logging out is a navigation to an edge
+          path rather than anything this app can do: /cdn-cgi/access/logout is
+          handled by Cloudflare before the Worker sees it. Same origin, so a
+          plain link is the whole implementation. Kept outside the
+          access-denied branch below, because switching account is exactly what
+          a denied instructor needs. */}
+      <div className="account-bar">
+        <a
+          className="link-btn"
+          href="/cdn-cgi/access/logout"
+          title="Ends your Cloudflare Access session."
+        >
+          Log out
+        </a>
+      </div>
+
       <h1>Research Interview Trainer - Instructor Dashboard</h1>
 
       {accessDenied ? (

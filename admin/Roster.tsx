@@ -41,6 +41,9 @@ export function Roster({ onApiError }: Props) {
   const [editForm, setEditForm] = useState({ email: "", fullName: "", cohort: "" });
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
+  // One row's failed action, shown on that row. Only one can be pending at a
+  // time, so a single slot is enough.
+  const [rowError, setRowError] = useState<{ studentId: string; message: string } | null>(null);
 
   const [csv, setCsv] = useState("");
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -128,6 +131,27 @@ export function Roster({ onApiError }: Props) {
     api<{ studentId: string }>(`/roster/${encodeURIComponent(s.studentId)}`, { method: "DELETE" })
       .then(load)
       .catch((err) => onApiError(err));
+  };
+
+  /**
+   * The real delete (?hard=1), for a student who was added by mistake. The
+   * server refuses with a 409 the moment any report references them, and that
+   * message names the number of reports, so it is shown on the row as written.
+   */
+  const remove = (s: Student) => {
+    if (!confirm(`Remove ${s.fullName} permanently? This only works when the student has no stored reports.`)) {
+      return;
+    }
+    setRowError(null);
+    api<{ deleted: boolean }>(`/roster/${encodeURIComponent(s.studentId)}?hard=1`, { method: "DELETE" })
+      .then(load)
+      .catch((err) => {
+        setRowError({
+          studentId: s.studentId,
+          message: err instanceof Error ? err.message : "Could not remove the student.",
+        });
+        onApiError(err);
+      });
   };
 
   const reactivate = (s: Student) => {
@@ -270,7 +294,13 @@ export function Roster({ onApiError }: Props) {
                             Reactivate
                           </button>
                         )}
+                        <button className="btn btn-danger" type="button" onClick={() => remove(s)}>
+                          Remove
+                        </button>
                       </div>
+                      {rowError?.studentId === s.studentId && (
+                        <p className="admin-warn">{rowError.message}</p>
+                      )}
                     </td>
                   </tr>
                 )

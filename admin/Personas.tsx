@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { REALTIME_VOICES } from "../shared/voices";
 
 interface PersonaListItem {
   id: string;
@@ -52,13 +53,16 @@ interface EditorForm {
   active: boolean;
 }
 
+// alloy is the first realtime voice and the one the old custom personas used.
+// A new persona has to start on some valid voice: the field is a dropdown, so
+// an empty string here would show a voice the form is not actually holding.
 const EMPTY_FORM: EditorForm = {
   id: "",
   name: "",
   title: "",
   researchTopic: "",
   shortBio: "",
-  voiceName: "",
+  voiceName: "alloy",
   systemInstruction: "",
   hiddenCore: "",
   active: true,
@@ -80,6 +84,7 @@ export function Personas({ onApiError }: Props) {
   const [form, setForm] = useState<EditorForm>(EMPTY_FORM);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [versions, setVersions] = useState<PersonaVersion[] | null>(null);
   const [versionsError, setVersionsError] = useState<string | null>(null);
 
@@ -151,6 +156,30 @@ export function Personas({ onApiError }: Props) {
     });
     setEditorError(null);
     setView({ mode: "editor", isNew: false });
+  };
+
+  const remove = () => {
+    if (
+      !confirm(
+        `Delete persona ${form.name} (${form.id})? Version history is kept, but the persona disappears from the students' list.`,
+      )
+    ) {
+      return;
+    }
+    setEditorError(null);
+    setDeleting(true);
+    api<{ deleted: boolean }>(`/personas/${encodeURIComponent(form.id)}`, { method: "DELETE" })
+      .then(() => {
+        setView({ mode: "list" });
+        loadList();
+      })
+      .catch((err) => {
+        // A 409 carries the server's count of the reports that reference this
+        // persona, so it is shown as written rather than replaced.
+        setEditorError(err instanceof Error ? err.message : "Could not delete the persona.");
+        onApiError(err);
+      })
+      .finally(() => setDeleting(false));
   };
 
   const save = (e: React.FormEvent) => {
@@ -304,14 +333,31 @@ export function Personas({ onApiError }: Props) {
             </p>
           </div>
           <div className="field">
-            <label htmlFor="persona-voice">Voice name</label>
-            <input
+            <label htmlFor="persona-voice">Voice</label>
+            <select
               id="persona-voice"
-              type="text"
+              style={{ font: "inherit" }}
               required
               value={form.voiceName}
               onChange={(e) => setForm((f) => ({ ...f, voiceName: e.target.value }))}
-            />
+            >
+              {/* A voice that predates this list is kept rather than swapped
+                  for the first entry, the same way the settings form keeps an
+                  unknown model id. The server rejects it on save, which is the
+                  point at which the instructor should be told. */}
+              {!(REALTIME_VOICES as readonly string[]).includes(form.voiceName) && (
+                <option value={form.voiceName}>{`(current) ${form.voiceName}`}</option>
+              )}
+              {REALTIME_VOICES.map((voice) => (
+                <option key={voice} value={voice}>
+                  {voice}
+                </option>
+              ))}
+            </select>
+            <p className="admin-help">
+              marin and cedar are the most natural of these. The built-in personas use marin,
+              cedar and coral. Listen before casting a persona in a new voice.
+            </p>
           </div>
           <div className="field">
             <label htmlFor="persona-instruction">System instruction</label>
@@ -362,6 +408,21 @@ export function Personas({ onApiError }: Props) {
             )}
           </div>
         </form>
+
+        {/* Outside the form and well below Save, so it is never the button a
+            hurried hand reaches for. Deactivating is the usual answer; this is
+            for a draft or a duplicate that was never interviewed. */}
+        {!view.isNew && (
+          <div style={{ marginTop: "3rem", borderTop: "1px solid var(--border)", paddingTop: "1.5rem" }}>
+            <button className="btn btn-danger" type="button" disabled={deleting} onClick={remove}>
+              {deleting ? "Deleting…" : "Delete persona"}
+            </button>
+            <p className="admin-help">
+              Deleting is possible only while no reports reference this persona. Version history
+              is kept.
+            </p>
+          </div>
+        )}
       </div>
     );
   }

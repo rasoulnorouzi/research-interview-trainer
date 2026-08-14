@@ -7,14 +7,18 @@
 //     or a log line.
 //   - Every persona save writes a persona_versions snapshot in the SAME batch
 //     as the row itself, so a save without a version is structurally
-//     impossible. Snapshots are never deleted and there is no DELETE route.
+//     impossible. Snapshots are never deleted and there is no route that
+//     deletes one, not even when the persona itself is removed.
 //
-// A student is never hard-deleted either: submissions.student_id references
-// the roster, so DELETE means active = 0 (§3, §7).
+// Removal follows the one rule §7 states about it: never orphan a submission.
+// DELETE on a student or a persona is a deactivation by default, and the
+// explicit hard-delete paths below first count the reports that reference the
+// row and refuse with a 409 if there are any (§3, §7).
 
 import { sha256Hex } from "./auth";
 import { getSettings, json, readJsonBody, type Env } from "./db";
 import { validateApiKey } from "./openai";
+import { REALTIME_VOICES } from "../shared/voices";
 
 const ROSTER_LIST_LIMIT = 500;
 const SUBMISSION_LIST_DEFAULT = 100;
@@ -89,7 +93,14 @@ export async function handleAdmin(
       }
       if (path.length === 2) {
         if (method === "PATCH") return await patchRosterEntry(request, env, path[1]);
-        if (method === "DELETE") return await deactivateRosterEntry(env, path[1]);
+        if (method === "DELETE") {
+          // ?hard=1 is the deliberate, opt-in removal. Without it a DELETE
+          // still means deactivate, so nothing that already calls this route
+          // starts erasing students.
+          return url.searchParams.get("hard") === "1"
+            ? await deleteRosterEntry(env, path[1])
+            : await deactivateRosterEntry(env, path[1]);
+        }
         return methodNotAllowed();
       }
       break;
@@ -103,6 +114,7 @@ export async function handleAdmin(
       if (path.length === 2) {
         if (method === "GET") return await getPersona(env, path[1]);
         if (method === "PUT") return await putPersona(request, env, instructorEmail, path[1]);
+        if (method === "DELETE") return await deletePersona(env, path[1]);
         return methodNotAllowed();
       }
       if (path.length === 3 && path[2] === "versions") {
@@ -217,6 +229,13 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
       continue;
     }
 
+    // interview_model and scoring_model are checked for being non-empty and
+    // nothing more, on purpose. Model ids change faster than deploys do, and a
+    // server-side allow-list would mean a code change on the day OpenAI ships
+    // a replacement. The dashboard's dropdown (shared/models.ts) is the
+    // guardrail; the API stays open so a new id can be set from the database
+    // if it ever has to be. Persona voices are the opposite case: see
+    // readPersonaFields.
     if (value.length === 0) return json(400, { error: `${key} cannot be empty.` });
     updates.push([key, value]);
   }
@@ -417,9 +436,9 @@ async function patchRosterEntry(request: Request, env: Env, studentId: string): 
 }
 
 /**
- * DELETE /api/admin/roster/:id deactivates. Never a SQL DELETE: submissions
- * reference the roster, so a real delete either fails or orphans reports
- * (§3, §7 "Deactivate, never delete").
+ * DELETE /api/admin/roster/:id deactivates. This is what §7 means by
+ * "Deactivate, never delete": submissions reference the roster, so removing a
+ * student who has reports either fails on the foreign key or orphans them.
  */
 async function deactivateRosterEntry(env: Env, studentId: string): Promise<Response> {
   const result = await env.DB.prepare("UPDATE roster SET active = 0 WHERE student_id = ?").bind(studentId).run();
@@ -429,6 +448,46 @@ async function deactivateRosterEntry(env: Env, studentId: string): Promise<Respo
     active: false,
     message: "Student deactivated. Their login is blocked and their reports are kept.",
   });
+}
+
+/**
+ * DELETE /api/admin/roster/:id?hard=1 really removes the row, and only for the
+ * case deactivation is a poor fit: a typo in an ID, or a student added to the
+ * wrong cohort, before they ever ran an interview.
+ *
+ * The submission count is checked here rather than left to the foreign key so
+ * the instructor reads a sentence instead of a constraint failure, and so the
+ * answer names the number of reports at stake. §7's rule is unchanged: a
+ * student with reports cannot be deleted, only deactivated.
+ *
+ * Their login_codes row goes with them. It is keyed by email, has no foreign
+ * key, and would otherwise sit there as a live code for an address the roster
+ * no longer knows.
+ */
+async function deleteRosterEntry(env: Env, studentId: string): Promise<Response> {
+  const student = await env.DB.prepare("SELECT student_id, email FROM roster WHERE student_id = ?")
+    .bind(studentId)
+    .first<{ student_id: string; email: string }>();
+  if (!student) return json(404, { error: `No student with ID ${studentId}.` });
+
+  const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM submissions WHERE student_id = ?")
+    .bind(studentId)
+    .first<{ n: number }>();
+  const reports = count?.n ?? 0;
+  if (reports > 0) {
+    return json(409, {
+      error: `This student has ${reports} stored ${reports === 1 ? "report" : "reports"}. Deactivate instead.`,
+    });
+  }
+
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM login_codes WHERE email = ?").bind(student.email),
+    // Otherwise a student re-added under the same ID inherits today's quota count.
+    env.DB.prepare("DELETE FROM session_grants WHERE student_id = ?").bind(studentId),
+    env.DB.prepare("DELETE FROM roster WHERE student_id = ?").bind(studentId),
+  ]);
+
+  return json(200, { studentId, deleted: true });
 }
 
 // ----------------------------------------------------------- roster import
@@ -742,6 +801,37 @@ async function putPersona(request: Request, env: Env, instructorEmail: string, i
 }
 
 /**
+ * DELETE /api/admin/personas/:id, for a persona that was never used: a draft,
+ * or a duplicate of one that already exists. submissions.persona_id has no
+ * foreign key, but the id is what the submission lists and the CSV export
+ * display, so deleting a persona that reports point at would leave those rows
+ * naming something that no longer exists. Counted and refused here for the
+ * same reason as the roster: never orphan a submission (§7).
+ *
+ * persona_versions is deliberately left alone. The history is the restore
+ * path, it is what stands in for git now that persona text lives in a
+ * database (§7), and it is never deleted. Re-creating the persona under the
+ * same id therefore finds its old versions waiting.
+ */
+async function deletePersona(env: Env, id: string): Promise<Response> {
+  const persona = await env.DB.prepare("SELECT id FROM personas WHERE id = ?").bind(id).first<{ id: string }>();
+  if (!persona) return json(404, { error: `No persona with ID ${id}.` });
+
+  const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM submissions WHERE persona_id = ?")
+    .bind(id)
+    .first<{ n: number }>();
+  const reports = count?.n ?? 0;
+  if (reports > 0) {
+    return json(409, {
+      error: `${reports} ${reports === 1 ? "report references" : "reports reference"} this persona. Deactivate it instead.`,
+    });
+  }
+
+  await env.DB.prepare("DELETE FROM personas WHERE id = ?").bind(id).run();
+  return json(200, { id, deleted: true });
+}
+
+/**
  * The history, newest first. Each row carries its snapshot in the same shape
  * PUT accepts, because restoring a version is a PUT of these fields. Seed
  * snapshots are written by genseed.ts in the column names of the table, so the
@@ -789,6 +879,14 @@ function readPersonaFields(
     ["systemInstruction", systemInstruction],
   ] as const) {
     if (value.length === 0) return { error: `${label} is required.` };
+  }
+
+  // The one field here that is checked against a list. A voice the realtime
+  // API does not know does not fail on save; it fails when a student presses
+  // start, which is both later and much worse. Model ids are left open for the
+  // opposite reason (see putSettings).
+  if (!(REALTIME_VOICES as readonly string[]).includes(voiceName)) {
+    return { error: "voiceName must be one of the available voices." };
   }
 
   let active = currentActive ?? 1;

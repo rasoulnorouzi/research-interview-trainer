@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { INTERVIEW_MODEL_OPTIONS, SCORING_MODEL_OPTIONS } from "../shared/models";
+import type { ModelChoice } from "../shared/types";
 
 interface SettingEntry {
   value: string;
@@ -32,6 +34,58 @@ const EMPTY_FORM: FormState = {
 
 interface Props {
   onApiError: (err: unknown) => void;
+}
+
+/**
+ * A model setting as a dropdown over the curated list (shared/models.ts), with
+ * the chosen model's tradeoff spelled out underneath.
+ *
+ * A stored id that is not in the list is kept as an extra option rather than
+ * discarded. The server accepts any non-empty model string, so a value set
+ * straight in the database is a working configuration, and a form that
+ * silently replaced it with the first list entry would change which model the
+ * course runs on without anyone deciding to.
+ */
+function ModelSelect({
+  id,
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  options: ModelChoice[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const selected = options.find((option) => option.id === value);
+  const note = selected
+    ? selected.note
+    : value.length === 0
+      ? "Not set. Interviews run on the built-in default until you choose one."
+      : "Set outside the dashboard. It stays in use until you choose from the list.";
+
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        style={{ font: "inherit" }}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {value.length === 0 && <option value="">Not set</option>}
+        {value.length > 0 && !selected && <option value={value}>{`(current) ${value}`}</option>}
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <p className="admin-help">{note}</p>
+    </div>
+  );
 }
 
 export function Settings({ onApiError }: Props) {
@@ -180,25 +234,21 @@ export function Settings({ onApiError }: Props) {
           />
         </div>
 
-        <div className="field">
-          <label htmlFor="interview_model">Interview (realtime) model id</label>
-          <input
-            id="interview_model"
-            type="text"
-            value={form.interview_model}
-            onChange={(e) => setField("interview_model", e.target.value)}
-          />
-        </div>
+        <ModelSelect
+          id="interview_model"
+          label="Interview (realtime) model"
+          options={INTERVIEW_MODEL_OPTIONS}
+          value={form.interview_model}
+          onChange={(value) => setField("interview_model", value)}
+        />
 
-        <div className="field">
-          <label htmlFor="scoring_model">Scoring model id</label>
-          <input
-            id="scoring_model"
-            type="text"
-            value={form.scoring_model}
-            onChange={(e) => setField("scoring_model", e.target.value)}
-          />
-        </div>
+        <ModelSelect
+          id="scoring_model"
+          label="Scoring model"
+          options={SCORING_MODEL_OPTIONS}
+          value={form.scoring_model}
+          onChange={(value) => setField("scoring_model", value)}
+        />
 
         <div className="field">
           <label htmlFor="instructor_recipients">Instructor recipients</label>

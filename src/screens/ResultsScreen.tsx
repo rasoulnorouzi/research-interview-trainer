@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Metrics,
   PersonaSummary,
@@ -15,16 +15,20 @@ interface Props {
 }
 
 type ReportState =
+  | { status: "idle" }
   | { status: "pending" }
   | { status: "done"; report: ReportResponse }
   | { status: "error"; message: string };
 
 export function ResultsScreen({ result, persona, onNewInterview }: Props) {
   const metrics = useMemo(() => computeMetrics(result), [result]);
-  const [state, setState] = useState<ReportState>({ status: "pending" });
+  const [state, setState] = useState<ReportState>({ status: "idle" });
 
-  // One call: the nine independent evaluators now run on the server, so the
-  // browser sees a finished report rather than nine promises.
+  // The nine independent evaluators run on the server, so the browser sees a
+  // finished report rather than nine promises. This only runs when the
+  // student clicks "Submit interview for scoring", or Retry after a failure
+  // - never automatically on mount, so the student decides when scoring,
+  // storing, and emailing happen.
   const submit = () => {
     setState({ status: "pending" });
     api<ReportResponse>("/api/report", {
@@ -40,8 +44,6 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
       .then((report) => setState({ status: "done", report }))
       .catch((err: Error) => setState({ status: "error", message: err.message }));
   };
-
-  useEffect(submit, []);
 
   const report = state.status === "done" ? state.report : null;
   const assessed = report ? report.scores.filter((s) => s.score !== null).length : 0;
@@ -167,6 +169,23 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
         demonstrate is marked <strong>n/a</strong> rather than scored low, and
         is left out of the overall figure.
       </p>
+
+      {(state.status === "idle" || state.status === "pending") && (
+        <div className="no-print">
+          <p>
+            Your interview is complete. Submit it to receive your scores and
+            feedback. A copy of the report goes to you and your instructor by
+            email.
+          </p>
+          <button
+            className="btn"
+            onClick={submit}
+            disabled={state.status === "pending"}
+          >
+            Submit interview for scoring
+          </button>
+        </div>
+      )}
 
       {state.status === "pending" && (
         <p className="small">Scoring your interview. This takes 10 to 20 seconds.</p>
