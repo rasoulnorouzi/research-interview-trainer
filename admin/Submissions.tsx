@@ -149,7 +149,7 @@ export function Submissions({ onApiError }: Props) {
     <div>
       <h2>Submissions</h2>
 
-      <form className="admin-toolbar" onSubmit={search}>
+      <form className="card admin-toolbar" onSubmit={search}>
         <div className="field">
           <label htmlFor="sub-cohort">Cohort</label>
           <input id="sub-cohort" type="text" value={cohort} onChange={(e) => setCohort(e.target.value)} />
@@ -204,7 +204,11 @@ export function Submissions({ onApiError }: Props) {
                   <td>{s.personaId}</td>
                   <td className="num">{fmtMs(s.durationMs)}</td>
                   <td className="score-cell">
-                    {s.overallScore === null ? <span className="not-assessed">n/a</span> : `${s.overallScore} / 5`}
+                    {s.overallScore === null ? (
+                      <span className="not-assessed">n/a</span>
+                    ) : (
+                      <span className="chip">{s.overallScore} / 5</span>
+                    )}
                   </td>
                   <td>{s.emailedAt !== null ? "Yes" : "No"}</td>
                 </tr>
@@ -236,19 +240,22 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
 
   return (
     <div>
-      <h2>Interview report</h2>
-      <p className="lede">
-        {detail.fullName} ({detail.studentId}){detail.cohort ? ` · ${detail.cohort}` : ""}
-        <br />
-        Persona: {detail.personaId}
-        <br />
-        {formatUnixOrMs(detail.startedAt)} · Duration {fmtMs(detail.durationMs)}
-        <br />
-        Emailed: {detail.emailedAt !== null ? "Yes" : "No"}
-      </p>
+      <div className="card">
+        <h2>Interview report</h2>
+        <p className="lede">
+          {detail.fullName} ({detail.studentId}){detail.cohort ? ` · ${detail.cohort}` : ""}
+          <br />
+          Persona: {detail.personaId}
+          <br />
+          {formatUnixOrMs(detail.startedAt)} · Duration {fmtMs(detail.durationMs)}
+          <br />
+          Emailed: {detail.emailedAt !== null ? "Yes" : "No"}
+        </p>
+      </div>
 
+      <div className="card">
       <h3>Speaking metrics</h3>
-      <table>
+      <table className="kv-table">
         <tbody>
           <tr>
             <th>Total duration</th>
@@ -292,7 +299,9 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
           </tr>
         </tbody>
       </table>
+      </div>
 
+      <div className="card">
       <h3>Rubric assessment</h3>
       {detail.overallScore !== null && (
         <p className="overall-score">
@@ -318,14 +327,20 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
             <tr key={s.id}>
               <td>{s.name}</td>
               <td className="score-cell">
-                {s.score === null ? <span className="not-assessed">n/a</span> : `${s.score} / 5`}
+                {s.score === null ? (
+                  <span className="not-assessed">n/a</span>
+                ) : (
+                  <span className="chip">{s.score} / 5</span>
+                )}
               </td>
               <td>{s.justification}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
 
+      <div className="card">
       <h3>Feedback</h3>
       <h3>Strengths</h3>
       <ul>
@@ -350,7 +365,9 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
       <p>{detail.feedback.missedDepth}</p>
       <h3>Summary</h3>
       <p>{detail.feedback.summary}</p>
+      </div>
 
+      <div className="card">
       <h3>Transcript</h3>
       <div className="transcript">
         {detail.transcript.map((e, i) => (
@@ -365,12 +382,13 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
           </div>
         ))}
       </div>
+      </div>
 
       {/* Below everything else, so it is never the button a hurried hand
           reaches for. There is no per-row delete in the list above: opening
           this view first is what makes sure the instructor sees what they
           are about to remove. */}
-      <div style={{ marginTop: "3rem", borderTop: "1px solid var(--border)", paddingTop: "1.5rem" }}>
+      <div className="danger-zone">
         <button className="btn btn-danger" type="button" disabled={deleting} onClick={onDelete}>
           {deleting ? "Deleting…" : "Delete submission"}
         </button>

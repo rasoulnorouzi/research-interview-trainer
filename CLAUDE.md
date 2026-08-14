@@ -130,11 +130,23 @@ zero. `liveSession.ts` attaches it in `ontrack` for exactly this reason.
 
 1. **Genuinely simple.** Resist adding files, dependencies, abstraction layers,
    or features. If something can be deleted, delete it.
-2. **Plain scientific/academic visual design. No "AI slop."** No gradients, no
-   glassmorphism, no purple, no drop shadows, no animation, no icon libraries,
-   no emoji decoration. White background, serif headings (Georgia), system sans
-   body, one muted accent (`--accent: #1a4a8a`), 1px `#c8c8c8` borders, ≤3px
-   radii. It should look like a research instrument, not a SaaS landing page.
+2. **Calm modern dashboard design. No "AI slop."** (Revised by the instructor
+   2026-08-14, replacing the earlier plain-academic serif rule; the reference
+   is a student-dashboard mock the instructor supplied.) Cool neutral page
+   background (`--bg: #f5f6f8` light), white cards with 12px radius and
+   hairline borders, a dark navy app frame, one sans-serif stack for
+   everything (weight makes headings, not typeface), pill chips and
+   8px-radius buttons, one subtle card shadow. **The app is theme-aware:**
+   every color is a token on `:root`, redefined under
+   `@media (prefers-color-scheme: dark)`, with `color-scheme: light dark`
+   so UA widgets follow; a deliberately warm or cream background was
+   rejected by the instructor as the generic AI look. Student app accent is
+   navy (`--accent`); the admin dashboard uses the same system with a
+   distinct deep-green accent (`.admin-root` token overrides) so the two
+   apps are never confusable in either theme. Still banned: gradients,
+   glassmorphism, purple, animation beyond hover/focus color, icon
+   libraries, emoji decoration, external fonts. Print output stays plain
+   black-on-white in both themes.
 3. **Voice only.** No text-question fallback. The student speaks; the
    interviewee speaks back.
    The student's words stream as they speak, via `gpt-live-transcribe` and

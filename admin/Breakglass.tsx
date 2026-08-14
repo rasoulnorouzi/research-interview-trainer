@@ -53,7 +53,7 @@ export function Breakglass({ onApiError }: Props) {
 
       {error && <div className="banner-error">{error}</div>}
 
-      <form onSubmit={submit}>
+      <form className="card" onSubmit={submit}>
         <div className="field">
           <label htmlFor="breakglass-student-id">Student ID</label>
           <input

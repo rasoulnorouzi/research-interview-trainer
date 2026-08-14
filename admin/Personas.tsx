@@ -272,7 +272,7 @@ export function Personas({ onApiError }: Props) {
       <div>
         <h2>{view.isNew ? "New persona" : `Edit persona: ${form.id}`}</h2>
         {editorError && <div className="banner-error">{editorError}</div>}
-        <form onSubmit={save}>
+        <form className="card" onSubmit={save}>
           {view.isNew && (
             <div className="field">
               <label htmlFor="persona-id">ID</label>
@@ -413,7 +413,7 @@ export function Personas({ onApiError }: Props) {
             hurried hand reaches for. Deactivating is the usual answer; this is
             for a draft or a duplicate that was never interviewed. */}
         {!view.isNew && (
-          <div style={{ marginTop: "3rem", borderTop: "1px solid var(--border)", paddingTop: "1.5rem" }}>
+          <div className="danger-zone">
             <button className="btn btn-danger" type="button" disabled={deleting} onClick={remove}>
               {deleting ? "Deleting…" : "Delete persona"}
             </button>

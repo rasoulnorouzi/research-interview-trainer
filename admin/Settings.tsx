@@ -211,7 +211,7 @@ export function Settings({ onApiError }: Props) {
       {error && <div className="banner-error">{error}</div>}
       {saved && <div className="banner-info">Saved.</div>}
 
-      <form onSubmit={submit}>
+      <form className="card" onSubmit={submit}>
         <div className="field">
           <label htmlFor="interview_limit_minutes">Interview time limit (minutes)</label>
           <input

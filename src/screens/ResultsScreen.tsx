@@ -62,23 +62,63 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
 
   return (
     <div>
-      <h1>Interview Report</h1>
-      <p className="lede">
-        {persona.name}. {persona.researchTopic}
-        <br />
-        {new Date(result.startedAt).toLocaleString()} · Duration{" "}
-        {fmtMs(metrics.durationMs)}
-      </p>
+      <div className="card">
+        <h1>Interview Report</h1>
+        <p className="lede">
+          {persona.name}. {persona.researchTopic}
+          <br />
+          {new Date(result.startedAt).toLocaleString()} · Duration{" "}
+          {fmtMs(metrics.durationMs)}
+        </p>
 
-      {result.endedByError && (
-        <div className="banner-info">
-          Note: the interview ended early due to a connection problem. The report
-          covers the recorded portion.
-        </div>
-      )}
+        {result.endedByError && (
+          <div className="banner-info">
+            Note: the interview ended early due to a connection problem. The report
+            covers the recorded portion.
+          </div>
+        )}
 
-      <h2>Speaking metrics</h2>
-      <table>
+        {(state.status === "idle" || state.status === "pending") && (
+          <div className="submit-block no-print">
+            <p>
+              Your interview is complete. Submit it to receive your scores and
+              feedback. A copy of the report goes to you and your instructor by
+              email.
+            </p>
+            <div className="btn-row">
+              <button
+                className="btn"
+                onClick={submit}
+                disabled={state.status === "pending"}
+              >
+                Submit interview for scoring
+              </button>
+            </div>
+            {state.status === "pending" && (
+              <p className="small">
+                Scoring your interview. This takes 10 to 20 seconds.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Retry exists only in the error branch: a second POST after a success
+            would store and email the report twice. */}
+        {state.status === "error" && (
+          <div className="banner-error">
+            <p>{state.message}</p>
+            <div className="btn-row">
+              <button className="btn btn-secondary no-print" onClick={submit}>
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Speaking metrics</h2>
+        <table className="kv-table">
         <tbody>
           <tr>
             <th>Total duration</th>
@@ -154,93 +194,72 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
             <th>Longest uninterrupted turn (you)</th>
             <td className="num">{fmtMs(metrics.longestStudentMonologueMs)}</td>
           </tr>
-        </tbody>
-      </table>
-      <p className="small">
-        In qualitative interviewing the interviewee should generally do most of
-        the talking; a common guideline is an interviewer share below 30%.
-      </p>
-
-      <h2>Rubric assessment</h2>
-      <p className="small">
-        Each criterion is scored 1–5 by an independent evaluator that sees only
-        the transcript and that single criterion, to avoid anchoring bias
-        between scores. A criterion the interview gave no opportunity to
-        demonstrate is marked <strong>n/a</strong> rather than scored low, and
-        is left out of the overall figure.
-      </p>
-
-      {(state.status === "idle" || state.status === "pending") && (
-        <div className="no-print">
-          <p>
-            Your interview is complete. Submit it to receive your scores and
-            feedback. A copy of the report goes to you and your instructor by
-            email.
-          </p>
-          <button
-            className="btn"
-            onClick={submit}
-            disabled={state.status === "pending"}
-          >
-            Submit interview for scoring
-          </button>
-        </div>
-      )}
-
-      {state.status === "pending" && (
-        <p className="small">Scoring your interview. This takes 10 to 20 seconds.</p>
-      )}
-
-      {/* Retry exists only in the error branch: a second POST after a success
-          would store and email the report twice. */}
-      {state.status === "error" && (
-        <p>
-          <span className="small">{state.message} </span>
-          <button className="btn btn-secondary no-print" onClick={submit}>
-            Retry
-          </button>
+          </tbody>
+        </table>
+        <p className="small">
+          In qualitative interviewing the interviewee should generally do most of
+          the talking; a common guideline is an interviewer share below 30%.
         </p>
-      )}
+      </div>
+
+      <div className="card">
+        <h2>Rubric assessment</h2>
+        <p className="small">
+          Each criterion is scored 1–5 by an independent evaluator that sees only
+          the transcript and that single criterion, to avoid anchoring bias
+          between scores. A criterion the interview gave no opportunity to
+          demonstrate is marked <strong>n/a</strong> rather than scored low, and
+          is left out of the overall figure.
+        </p>
+
+        {report ? (
+          <>
+            {report.overall !== null && (
+              <p className="overall-score">
+                Overall score: {report.overall.toFixed(1)} / 5
+                {notAssessedCount > 0 && (
+                  <span className="small">
+                    {" "}
+                    (over {assessed} of {report.scores.length} criteria;{" "}
+                    {notAssessedCount} not assessable)
+                  </span>
+                )}
+              </p>
+            )}
+            <table>
+              <thead>
+                <tr>
+                  <th>Criterion</th>
+                  <th>Score</th>
+                  <th>Justification</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.scores.map((s) => (
+                  <tr key={s.id}>
+                    <td>{s.name}</td>
+                    <td className="score-cell">
+                      {s.score === null ? (
+                        <span className="not-assessed">n/a</span>
+                      ) : (
+                        <span className="chip">{s.score} / 5</span>
+                      )}
+                    </td>
+                    <td>{s.justification}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        ) : (
+          <p className="small">
+            Your scores appear here once the interview is submitted.
+          </p>
+        )}
+      </div>
 
       {report && (
-        <>
-          {report.overall !== null && (
-            <p className="overall-score">
-              Overall score: {report.overall.toFixed(1)} / 5
-              {notAssessedCount > 0 && (
-                <span className="small">
-                  {" "}
-                  (over {assessed} of {report.scores.length} criteria;{" "}
-                  {notAssessedCount} not assessable)
-                </span>
-              )}
-            </p>
-          )}
-          <table>
-            <thead>
-              <tr>
-                <th>Criterion</th>
-                <th>Score</th>
-                <th>Justification</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.scores.map((s) => (
-                <tr key={s.id}>
-                  <td>{s.name}</td>
-                  <td className="score-cell">
-                    {s.score === null ? (
-                      <span className="not-assessed">n/a</span>
-                    ) : (
-                      `${s.score} / 5`
-                    )}
-                  </td>
-                  <td>{s.justification}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
+        <div className="card">
           <h2>Feedback</h2>
           <h3>Strengths</h3>
           <ul>
@@ -271,22 +290,24 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
               A copy of this report has been emailed to you and your instructor.
             </p>
           )}
-        </>
+        </div>
       )}
 
-      <h2>Transcript</h2>
-      <div className="transcript">
-        {result.transcript.map((e, i) => (
-          <div className="entry" key={i}>
-            <span className={`speaker ${e.speaker}`}>
-              {e.speaker === "student" ? "You" : persona.name}
-              <span className="t">
-                {fmtMs(e.tStart)} · spoke {fmtMs(e.speechMs)}
+      <div className="card">
+        <h2>Transcript</h2>
+        <div className="transcript">
+          {result.transcript.map((e, i) => (
+            <div className="entry" key={i}>
+              <span className={`speaker ${e.speaker}`}>
+                {e.speaker === "student" ? "You" : persona.name}
+                <span className="t">
+                  {fmtMs(e.tStart)} · spoke {fmtMs(e.speechMs)}
+                </span>
               </span>
-            </span>
-            <div>{e.text}</div>
-          </div>
-        ))}
+              <div>{e.text}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="btn-row no-print">

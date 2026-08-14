@@ -72,94 +72,94 @@ export function LoginScreen({ onLoggedIn }: Props) {
 
   return (
     <div className="login">
-      <h1>Research Interview Trainer</h1>
-      <p className="lede">
-        Practice qualitative research interviewing by speaking with a simulated
-        interviewee, then receive a report on your technique. Log in with the
-        university email address you are enrolled with.
-      </p>
+      <div className="card">
+        <h1>Research Interview Trainer</h1>
+        <p className="lede">
+          Practice qualitative research interviewing by speaking with a simulated
+          interviewee, then receive a report on your technique. Log in with the
+          university email address you are enrolled with.
+        </p>
 
-      {error && <div className="banner-error">{error}</div>}
+        {error && <div className="banner-error">{error}</div>}
 
-      {step === "email" ? (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void requestCode();
-          }}
-        >
-          <h2>Log in</h2>
-          <div className="field">
-            <label htmlFor="email">University email address</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              autoFocus
-            />
-          </div>
-          <div className="btn-row">
-            <button className="btn" type="submit" disabled={busy || email.trim().length === 0}>
-              {busy ? "Sending…" : "Send me a code"}
-            </button>
-          </div>
-        </form>
-      ) : (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void verify();
-          }}
-        >
-          <h2>Enter your code</h2>
-          <p>
-            We sent a 6-digit code to {email}. It can take a minute to arrive.
-            If it is not in your inbox, check your spam or junk folder.
-          </p>
-          <div className="field">
-            <label htmlFor="code">6-digit code</label>
-            <input
-              id="code"
-              type="text"
-              className="code-input"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              autoFocus
-            />
-            <label className="checkbox-row">
+        {step === "email" ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void requestCode();
+            }}
+          >
+            <h2>Log in</h2>
+            <div className="field">
+              <label htmlFor="email">University email address</label>
               <input
-                type="checkbox"
-                checked={remember}
-                onChange={(e) => setRemember(e.target.checked)}
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                autoFocus
               />
-              Remember this device
-            </label>
-          </div>
-          <div className="btn-row">
-            <button className="btn" type="submit" disabled={busy || code.length === 0}>
-              {busy ? "Checking…" : "Log in"}
-            </button>
-            <button
-              className="btn btn-secondary"
-              type="button"
-              onClick={() => void requestCode()}
-              disabled={busy || cooldown > 0}
-            >
-              {cooldown > 0 ? `Send it again (${cooldown}s)` : "Send it again"}
-            </button>
-          </div>
-          <p className="small">
-            <button className="link-btn" type="button" onClick={useDifferentAddress}>
-              Use a different address
-            </button>
-          </p>
-        </form>
-      )}
+            </div>
+            <div className="btn-row">
+              <button className="btn" type="submit" disabled={busy || email.trim().length === 0}>
+                {busy ? "Sending…" : "Send me a code"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void verify();
+            }}
+          >
+            <h2>Enter your code</h2>
+            <p>
+              We sent a 6-digit code to {email}. It can take a minute to arrive.
+              If it is not in your inbox, check your spam or junk folder.
+            </p>
+            <div className="field">
+              <label htmlFor="code">6-digit code</label>
+              <input
+                id="code"
+                type="text"
+                className="code-input"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                autoFocus
+              />
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                />
+                Remember this device
+              </label>
+            </div>
+            <div className="btn-row">
+              <button className="btn" type="submit" disabled={busy || code.length === 0}>
+                {busy ? "Checking…" : "Log in"}
+              </button>
+              <button
+                className="link-btn"
+                type="button"
+                onClick={() => void requestCode()}
+                disabled={busy || cooldown > 0}
+              >
+                {cooldown > 0 ? `Send it again (${cooldown}s)` : "Send it again"}
+              </button>
+              <button className="link-btn" type="button" onClick={useDifferentAddress}>
+                Use a different address
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError } from "./api";
 import { Settings } from "./Settings";
 import { Roster } from "./Roster";
@@ -16,9 +16,30 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "breakglass", label: "Break-glass" },
 ];
 
+/** The active tab lives in location.hash (#roster), so Back moves between the
+ *  tabs the instructor has visited instead of leaving the dashboard. An
+ *  unknown or empty hash falls back to the first tab. */
+function tabFromHash(): Tab {
+  const id = window.location.hash.replace(/^#/, "");
+  return TABS.some((t) => t.id === id) ? (id as Tab) : "settings";
+}
+
 export function AdminApp() {
-  const [tab, setTab] = useState<Tab>("settings");
+  const [tab, setTab] = useState<Tab>(tabFromHash);
   const [accessDenied, setAccessDenied] = useState(false);
+
+  useEffect(() => {
+    const onHashChange = () => setTab(tabFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // Setting the hash is what pushes the history entry; the listener above
+  // then moves the tab, so a click and a Back press take the same path.
+  const selectTab = (id: Tab) => {
+    if (id === tabFromHash()) return;
+    window.location.hash = id;
+  };
 
   // Every screen reports its API errors here through this one callback. A 403
   // means this instructor's email is not on the Access allow-list
@@ -30,51 +51,57 @@ export function AdminApp() {
   };
 
   return (
-    <div className="page admin-page">
-      {/* Access owns the session, so logging out is a navigation to an edge
-          path rather than anything this app can do: /cdn-cgi/access/logout is
-          handled by Cloudflare before the Worker sees it. Same origin, so a
-          plain link is the whole implementation. Kept outside the
-          access-denied branch below, because switching account is exactly what
-          a denied instructor needs. */}
-      <div className="account-bar">
-        <a
-          className="link-btn"
-          href="/cdn-cgi/access/logout"
-          title="Ends your Cloudflare Access session."
-        >
-          Log out
-        </a>
+    <div className="admin-root">
+      <div className="page admin-page">
+        <header className="app-header">
+          <span className="app-name">
+            Research Interview Trainer - Instructor Dashboard
+          </span>
+          {/* Access owns the session, so logging out is a navigation to an
+              edge path rather than anything this app can do:
+              /cdn-cgi/access/logout is handled by Cloudflare before the Worker
+              sees it. Same origin, so a plain link is the whole
+              implementation. Kept outside the access-denied branch below,
+              because switching account is exactly what a denied instructor
+              needs. */}
+          <span className="app-user">
+            <a
+              className="link-btn"
+              href="/cdn-cgi/access/logout"
+              title="Ends your Cloudflare Access session."
+            >
+              Log out
+            </a>
+          </span>
+        </header>
+
+        {accessDenied ? (
+          <div className="banner-error">
+            Access denied. Your email is not on the dashboard allow-list.
+          </div>
+        ) : (
+          <>
+            <nav className="admin-nav">
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={tab === t.id ? "active" : ""}
+                  onClick={() => selectTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </nav>
+
+            {tab === "settings" && <Settings onApiError={onApiError} />}
+            {tab === "roster" && <Roster onApiError={onApiError} />}
+            {tab === "personas" && <Personas onApiError={onApiError} />}
+            {tab === "submissions" && <Submissions onApiError={onApiError} />}
+            {tab === "breakglass" && <Breakglass onApiError={onApiError} />}
+          </>
+        )}
       </div>
-
-      <h1>Research Interview Trainer - Instructor Dashboard</h1>
-
-      {accessDenied ? (
-        <div className="banner-error">
-          Access denied. Your email is not on the dashboard allow-list.
-        </div>
-      ) : (
-        <>
-          <nav className="admin-nav">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={tab === t.id ? "active" : ""}
-                onClick={() => setTab(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </nav>
-
-          {tab === "settings" && <Settings onApiError={onApiError} />}
-          {tab === "roster" && <Roster onApiError={onApiError} />}
-          {tab === "personas" && <Personas onApiError={onApiError} />}
-          {tab === "submissions" && <Submissions onApiError={onApiError} />}
-          {tab === "breakglass" && <Breakglass onApiError={onApiError} />}
-        </>
-      )}
     </div>
   );
 }

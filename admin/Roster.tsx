@@ -182,7 +182,7 @@ export function Roster({ onApiError }: Props) {
     <div>
       <h2>Roster</h2>
 
-      <form className="admin-toolbar" onSubmit={search}>
+      <form className="card admin-toolbar" onSubmit={search}>
         <div className="field">
           <label htmlFor="roster-q">Search</label>
           <input
@@ -317,6 +317,7 @@ export function Roster({ onApiError }: Props) {
         </div>
       )}
 
+      <div className="card">
       <h2>Add a student</h2>
       {addError && <div className="banner-error">{addError}</div>}
       <form onSubmit={addStudent}>
@@ -365,7 +366,9 @@ export function Roster({ onApiError }: Props) {
           </button>
         </div>
       </form>
+      </div>
 
+      <div className="card">
       <h2>Import from CSV</h2>
       <p className="small">
         Header row: student_id,email,full_name,cohort (cohort column optional). Preview shows
@@ -422,6 +425,7 @@ export function Roster({ onApiError }: Props) {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

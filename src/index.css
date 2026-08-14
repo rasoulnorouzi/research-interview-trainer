@@ -1,14 +1,130 @@
-/* Research Interview Trainer — plain academic stylesheet */
+/* ============================================================================
+   Research Interview Trainer — one stylesheet for both apps.
 
+   Order: tokens (light, admin-light, dark, admin-dark), base, shared
+   components (buttons, fields, cards, chips, tables, banners), then the
+   app-specific sections (student, admin) and finally print. The two apps
+   share every component; the instructor dashboard only re-points the accent
+   and frame tokens inside .admin-root, so an instructor can tell at a glance
+   which app they are looking at.
+
+   Every colour a component uses is a token, which is what makes the dark
+   scheme a matter of redefining the same names rather than a second set of
+   rules. Two accent roles exist for that reason: --accent is the fill (button
+   backgrounds, active pills, borders) and --accent-text is the same idea used
+   as text on a card, which has to lighten in dark mode while the fill has to
+   stay dark enough for white text.
+
+   No external fonts, no gradients, no animation beyond hover/focus colour.
+   ========================================================================= */
+
+/* --- Light (default) ---------------------------------------------------- */
 :root {
-  --accent: #1a4a8a;
-  --ink: #1c1c1c;
-  --muted: #5a5a5a;
-  --border: #c8c8c8;
-  --bg-subtle: #f6f6f4;
-  --error: #9a2a1f;
-  --serif: Georgia, "Times New Roman", serif;
-  --sans: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  color-scheme: light dark;
+
+  /* Surfaces */
+  --bg: #f5f6f8;
+  --frame: #131a33;
+  --card: #ffffff;
+  --field: #ffffff;
+  --surface-subtle: #f8f9fb;
+  --surface-chip: #eceef1;
+
+  /* Text */
+  --text: #1d2433;
+  --text-muted: #6a7080;
+  --placeholder: #a2a6b2;
+
+  /* Lines */
+  --border: #e3e6ea;
+  --border-hover: #cdd2da;
+
+  /* Accent: --accent fills, --accent-text labels. */
+  --accent: #2f3a72;
+  --accent-strong: #262f5d;
+  --accent-text: #2f3a72;
+  --accent-soft: #eef0f8;
+  --on-accent: #ffffff;
+
+  /* Destructive */
+  --danger: #a33d3d;
+  --danger-text: #7d2c2c;
+  --danger-border: #e2c2c2;
+  --danger-soft: #f7eeee;
+
+  /* Disabled */
+  --disabled: #b9bcc7;
+  --disabled-text: #ffffff;
+
+  /* Shape */
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 3px rgba(20, 26, 51, 0.06);
+
+  /* Type */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono",
+    monospace;
+}
+
+/* The instructor dashboard: same design language, green identity. Every
+   component below reads these same variable names, so nothing forks. */
+.admin-root {
+  --frame: #12261f;
+  --accent: #1f5c4a;
+  --accent-strong: #18493a;
+  --accent-text: #1f5c4a;
+  --accent-soft: #e9f2ee;
+}
+
+/* --- Dark --------------------------------------------------------------- */
+/* Same token names, different values. These blocks must stay after the light
+   .admin-root block above: :root and .admin-root have equal specificity, so
+   order is what decides, and the admin block below restores the green the
+   :root block would otherwise take back. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111419;
+    /* Kept clearly lighter than --bg so the frame still reads as a frame. */
+    --frame: #1c2338;
+    --card: #1a1e26;
+    --field: #13171e;
+    --surface-subtle: #1f242d;
+    --surface-chip: rgba(255, 255, 255, 0.08);
+
+    --text: #e8eaee;
+    --text-muted: #9aa1ad;
+    --placeholder: #737b88;
+
+    --border: rgba(255, 255, 255, 0.09);
+    --border-hover: rgba(255, 255, 255, 0.22);
+
+    --accent: #3d4c8f;
+    --accent-strong: #4a5aa8;
+    --accent-text: #a3b1ee;
+    --accent-soft: rgba(90, 110, 200, 0.16);
+    --on-accent: #ffffff;
+
+    --danger: #d98080;
+    --danger-text: #f0b4b4;
+    --danger-border: rgba(217, 128, 128, 0.4);
+    --danger-soft: rgba(200, 80, 80, 0.14);
+
+    --disabled: #333944;
+    --disabled-text: #8a919d;
+
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.45);
+  }
+
+  .admin-root {
+    --frame: #16302a;
+    --accent: #276b55;
+    --accent-strong: #2f8267;
+    --accent-text: #79c9ad;
+    --accent-soft: rgba(60, 160, 120, 0.16);
+  }
 }
 
 * {
@@ -19,85 +135,328 @@ html,
 body {
   margin: 0;
   padding: 0;
-  background: #ffffff;
-  color: var(--ink);
-  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
   font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
 
 .page {
-  max-width: 760px;
+  max-width: 880px;
   margin: 0 auto;
-  padding: 2.5rem 1.25rem 4rem;
+  padding: 20px 20px 64px;
 }
 
+/* Headings are separated by weight and size, not typeface. */
 h1,
 h2,
 h3 {
-  font-family: var(--serif);
-  font-weight: normal;
-  color: var(--ink);
+  color: var(--text);
   margin: 0 0 0.5rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 h1 {
-  font-size: 1.7rem;
-  border-bottom: 2px solid var(--ink);
-  padding-bottom: 0.4rem;
-  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
 }
 
 h2 {
-  font-size: 1.25rem;
-  margin-top: 2rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 650;
+  margin: 0 0 0.75rem;
+}
+
+h3 {
+  font-size: 0.95rem;
+  font-weight: 650;
+  margin: 1.25rem 0 0.4rem;
+}
+
+p {
+  margin: 0 0 0.9rem;
+}
+
+p:last-child {
+  margin-bottom: 0;
 }
 
 p.lede {
-  color: var(--muted);
-  margin: 0 0 1.5rem;
+  color: var(--text-muted);
+  margin: 0 0 1.25rem;
 }
 
 .small {
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
-/* Forms */
+ul {
+  margin: 0.4rem 0 1rem;
+  padding-left: 1.3rem;
+}
+
+blockquote {
+  margin: 0.5rem 0 0.6rem;
+  padding: 0.5rem 0.9rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------------------
+   Header bar — the dark frame at the top of both apps.
+   Rounded on desktop, full-bleed once the page padding stops earning its keep.
+   ------------------------------------------------------------------------ */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--frame);
+  color: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 14px 20px;
+  margin-bottom: 20px;
+}
+
+.app-header .app-name {
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.app-header .app-user {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.app-header .link-btn {
+  color: #ffffff;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.app-header .link-btn:hover {
+  color: #ffffff;
+  border-bottom-color: #ffffff;
+}
+
+@media (max-width: 640px) {
+  .app-header {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    margin: -20px -20px 20px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Cards
+   ------------------------------------------------------------------------ */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 22px;
+  margin-bottom: 18px;
+}
+
+.card:last-child {
+  margin-bottom: 0;
+}
+
+.card > h2:first-child,
+.card > h3:first-child {
+  margin-top: 0;
+}
+
+.card-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.card-title h2 {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons
+   ------------------------------------------------------------------------ */
+
+.btn {
+  display: inline-block;
+  font: inherit;
+  font-weight: 550;
+  padding: 9px 18px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.12s ease, color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--on-accent);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  background: var(--disabled);
+  border-color: var(--disabled);
+  color: var(--disabled-text);
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--card);
+  color: var(--accent-text);
+  border-color: var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
+}
+
+.btn-secondary:disabled {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.btn-danger {
+  background: var(--card);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger:disabled {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 1.25rem;
+}
+
+/* A button that reads as a link: quiet secondary actions. */
+.link-btn {
+  font: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-btn:hover:not(:disabled) {
+  color: var(--accent-strong);
+}
+
+.link-btn:disabled {
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------------------
+   Fields — every property is set, so no UA default leaks through in dark mode.
+   ------------------------------------------------------------------------ */
+
 label {
   display: block;
   font-weight: 600;
-  margin-bottom: 0.3rem;
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+  color: var(--text);
 }
 
 input[type="password"],
 input[type="text"],
 input[type="email"],
+input[type="number"],
+input[type="date"],
+select,
 textarea {
   width: 100%;
-  padding: 0.5rem 0.6rem;
+  padding: 9px 11px;
   font: inherit;
   border: 1px solid var(--border);
-  border-radius: 2px;
-  background: #fff;
-  color: var(--ink);
+  border-radius: var(--radius-control);
+  background: var(--field);
+  color: var(--text);
+}
+
+select {
+  cursor: pointer;
 }
 
 input:focus,
+select:focus,
 textarea:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--accent-text);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
 }
 
 textarea {
   resize: vertical;
-  min-height: 8rem;
+  min-height: 7rem;
 }
 
 .field {
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.1rem;
+}
+
+.field:last-child {
+  margin-bottom: 0;
 }
 
 .checkbox-row {
@@ -105,224 +464,30 @@ textarea {
   align-items: center;
   gap: 0.5rem;
   font-weight: normal;
-  margin-top: 0.5rem;
+  margin-top: 0.6rem;
+  margin-bottom: 0;
 }
 
 .checkbox-row input {
   width: auto;
 }
 
-/* Buttons */
-.btn {
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+   Chips
+   ------------------------------------------------------------------------ */
+
+.chip {
   display: inline-block;
-  font: inherit;
-  padding: 0.55rem 1.2rem;
-  border: 1px solid var(--accent);
-  border-radius: 2px;
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-}
-
-.btn:hover:not(:disabled) {
-  background: #143a6e;
-}
-
-.btn:disabled {
-  background: #9aa7b8;
-  border-color: #9aa7b8;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background: #fff;
-  color: var(--accent);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: var(--bg-subtle);
-}
-
-.btn-danger {
-  background: #fff;
-  color: var(--error);
-  border-color: var(--error);
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #faf0ee;
-}
-
-.btn-row {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-top: 1.5rem;
-}
-
-/* Persona cards */
-.persona-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.persona-card {
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 0.75rem 0.9rem;
-  cursor: pointer;
-  display: flex;
-  gap: 0.7rem;
-  align-items: flex-start;
-}
-
-.persona-card input {
-  margin-top: 0.3rem;
-}
-
-.persona-card.selected {
-  border-color: var(--accent);
-  background: #f2f5fa;
-}
-
-.persona-card .name {
-  font-weight: 600;
-}
-
-.persona-card .topic {
-  font-style: italic;
-  color: var(--accent);
-  font-size: 0.9rem;
-}
-
-/* Banners */
-.banner-error {
-  border: 1px solid var(--error);
-  background: #faf0ee;
-  color: var(--error);
-  padding: 0.6rem 0.9rem;
-  border-radius: 2px;
-  margin-bottom: 1.25rem;
-}
-
-.banner-info {
-  border: 1px solid var(--border);
-  background: var(--bg-subtle);
-  padding: 0.6rem 0.9rem;
-  border-radius: 2px;
-  margin-bottom: 1.25rem;
-}
-
-/* Interview screen */
-.interview-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.status-line {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--muted);
-  margin: 0.75rem 0 1rem;
-}
-
-.rec-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #b02c20;
-  display: inline-block;
-}
-
-.rec-dot.idle {
-  background: var(--border);
-}
-
-.timer {
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.transcript {
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 1rem;
-  min-height: 16rem;
-  max-height: 26rem;
-  overflow-y: auto;
-  background: #fff;
-}
-
-.transcript .entry {
-  margin-bottom: 0.9rem;
-}
-
-.transcript .speaker {
-  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
   font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.transcript .speaker.student {
-  color: var(--accent);
-}
-
-.transcript .speaker.interviewee {
-  color: var(--ink);
-}
-
-.transcript .t {
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
-  margin-left: 0.5rem;
-  font-weight: normal;
-  text-transform: none;
-}
-
-.transcript .placeholder {
-  color: var(--muted);
-  font-style: italic;
-}
-
-/* Covers the brief gap before the first streamed transcript delta arrives. */
-.transcript .pending {
-  color: var(--muted);
-  font-style: italic;
-}
-
-/* Tables (metrics, rubric) */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 0.75rem 0 1rem;
-}
-
-th,
-td {
-  border: 1px solid var(--border);
-  padding: 0.45rem 0.6rem;
-  text-align: left;
-  vertical-align: top;
-}
-
-th {
-  background: var(--bg-subtle);
-  font-weight: 600;
-}
-
-td.num {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.score-cell {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -331,135 +496,414 @@ td.num {
 /* "Not assessable" — deliberately unemphatic, so it does not read as a bad
    score. It isn't one. */
 .not-assessed {
-  color: var(--muted);
-  font-weight: normal;
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-chip);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
-.overall-score {
-  font-family: var(--serif);
-  font-size: 1.3rem;
-  margin: 0.5rem 0 1rem;
+/* ---------------------------------------------------------------------------
+   Tables
+   ------------------------------------------------------------------------ */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text);
 }
 
-blockquote {
-  margin: 0.5rem 0 0.75rem;
-  padding: 0.4rem 0.9rem;
-  border-left: 3px solid var(--accent);
-  background: var(--bg-subtle);
-  font-style: italic;
+th,
+td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
 }
 
-ul {
-  margin: 0.4rem 0 1rem;
-  padding-left: 1.4rem;
+thead th {
+  font-size: 0.78rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-/* Login */
+tbody tr:last-child > th,
+tbody tr:last-child > td {
+  border-bottom: none;
+}
+
+td.num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.score-cell {
+  white-space: nowrap;
+}
+
+/* Two-column key/value table: metrics on the report and in the dashboard. */
+.kv-table th {
+  font-weight: 500;
+  color: var(--text-muted);
+  width: 55%;
+}
+
+.kv-table td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Full-width tables sit flush inside their card. */
+.card > table:last-child,
+.card > .table-flush:last-child {
+  margin-bottom: -22px;
+}
+
+.table-flush,
+.card > table {
+  margin-left: -22px;
+  margin-right: -22px;
+  margin-bottom: 1rem;
+  width: calc(100% + 44px);
+}
+
+.card > table th:first-child,
+.card > table td:first-child,
+.table-flush th:first-child,
+.table-flush td:first-child {
+  padding-left: 22px;
+}
+
+.card > table th:last-child,
+.card > table td:last-child,
+.table-flush th:last-child,
+.table-flush td:last-child {
+  padding-right: 22px;
+}
+
+/* ---------------------------------------------------------------------------
+   Banners
+   ------------------------------------------------------------------------ */
+
+.banner-error,
+.banner-info {
+  border-radius: var(--radius-control);
+  padding: 12px 14px;
+  margin-bottom: 1.1rem;
+  font-size: 0.92rem;
+}
+
+.banner-error {
+  border: 1px solid var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+}
+
+.banner-info {
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
+.banner-error :last-child,
+.banner-info :last-child {
+  margin-bottom: 0;
+}
+
+/* ===========================================================================
+   STUDENT APP
+   ======================================================================== */
+
+/* Login ------------------------------------------------------------------ */
+
 .login {
-  max-width: 26rem;
+  max-width: 440px;
+  margin: 0 auto;
 }
 
 /* Six digits, spaced so a mistyped code is easy to see. */
 .code-input {
-  font-family: var(--serif);
+  font-family: var(--font-mono);
   font-size: 1.3rem;
   letter-spacing: 0.35em;
   font-variant-numeric: tabular-nums;
-  max-width: 10rem;
+  max-width: 11rem;
+  text-align: center;
 }
 
-/* A button that reads as a link: used for secondary account actions. */
-.link-btn {
-  font: inherit;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  text-decoration: underline;
+/* Setup ------------------------------------------------------------------ */
+
+.persona-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.persona-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  background: var(--card);
   cursor: pointer;
-}
-
-/* Who is logged in, above the setup screen's own heading. */
-.account-bar {
   display: flex;
-  justify-content: flex-end;
-  align-items: baseline;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  gap: 10px;
+  align-items: flex-start;
+  font-weight: normal;
+  margin: 0;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 
-/* The interview timer once it has switched to counting down. Colour only:
-   a flashing or growing clock would rush the student, which is exactly the
-   behaviour the rubric penalises. */
-.timer.counting-down {
-  color: var(--accent);
+.persona-card:hover {
+  border-color: var(--border-hover);
+}
+
+.persona-card input {
+  width: auto;
+  margin-top: 0.3rem;
+  flex: none;
+}
+
+.persona-card.selected {
+  border-color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.persona-card .name {
+  font-weight: 650;
+}
+
+.persona-card .topic {
+  color: var(--accent-text);
+  font-size: 0.85rem;
+}
+
+/* Interview -------------------------------------------------------------- */
+
+.interview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.interview-header h1 {
+  margin-bottom: 0;
+}
+
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0.85rem 0 0;
+}
+
+.rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #b02c20;
+  display: inline-block;
+  flex: none;
+}
+
+.rec-dot.idle {
+  background: var(--text-muted);
+}
+
+/* Elapsed time, as a quiet pill. */
+.timer {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.9rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* ---------------------------------------------------------------------
-   Instructor dashboard (admin.html / admin/*, BACKEND-PLAN.md §7).
-   Appended only, per project rule — the student stylesheet above is
-   untouched. Reuses .btn, .field, tables, .banner-error/.banner-info and
-   the plain research-instrument look; adds only the layout this screen
-   needs (nav tabs, toolbars, a monospace textarea for prompt/CSV text,
-   clickable table rows).
-   --------------------------------------------------------------------- */
+/* Once it has switched to counting down: filled, so it reads as a state
+   change rather than an alarm. No flashing and no growing, which would rush
+   the student — the exact behaviour the rubric penalises. */
+.timer.counting-down {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.transcript {
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.transcript .entry {
+  margin-bottom: 0.9rem;
+}
+
+.transcript .entry:last-child {
+  margin-bottom: 0;
+}
+
+.transcript .speaker {
+  display: block;
+  font-weight: 650;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.15rem;
+}
+
+.transcript .speaker.student {
+  color: var(--accent-text);
+}
+
+.transcript .speaker.interviewee {
+  color: var(--text-muted);
+}
+
+.transcript .t {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.5rem;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.transcript .placeholder {
+  color: var(--text-muted);
+}
+
+/* Covers the brief gap before the first streamed transcript delta arrives. */
+.transcript .pending {
+  color: var(--text-muted);
+}
+
+/* Results ---------------------------------------------------------------- */
+
+.overall-score {
+  font-size: 1.15rem;
+  font-weight: 650;
+  margin: 0 0 1rem;
+}
+
+/* The "submit for scoring" prompt: the one thing to do on arrival. */
+.submit-block {
+  border: 1px solid var(--accent-text);
+  background: var(--accent-soft);
+  border-radius: var(--radius-control);
+  padding: 16px 18px;
+  margin-bottom: 1.25rem;
+}
+
+.submit-block .btn-row {
+  margin-top: 0.9rem;
+}
+
+/* ===========================================================================
+   INSTRUCTOR DASHBOARD (admin.html / admin/*)
+   Layout only: the green identity comes from the token overrides on
+   .admin-root at the top of this file.
+   ======================================================================== */
 
 .admin-page {
-  max-width: 1100px;
+  max-width: 1180px;
 }
 
+/* Tab navigation as pills. */
 .admin-nav {
   display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 1.5rem;
+  gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 18px;
 }
 
 .admin-nav button {
   font: inherit;
-  padding: 0.5rem 1rem;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 2px 2px 0 0;
-  background: none;
-  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 550;
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--card);
+  color: var(--text-muted);
   cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .admin-nav button:hover {
-  color: var(--ink);
+  color: var(--text);
+  border-color: var(--border-hover);
 }
 
 .admin-nav button.active {
-  color: var(--ink);
-  border-color: var(--border);
-  background: var(--bg-subtle);
-  font-weight: 600;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 
+/* Filter and inline-form rows. */
 .admin-toolbar {
   display: flex;
-  gap: 0.75rem;
+  gap: 12px;
   flex-wrap: wrap;
   align-items: flex-end;
   margin-bottom: 1rem;
 }
 
+.admin-toolbar:last-child {
+  margin-bottom: 0;
+}
+
 .admin-toolbar .field {
   margin-bottom: 0;
-  min-width: 9rem;
+  min-width: 10rem;
+  flex: 1 1 10rem;
+}
+
+.admin-toolbar .btn {
+  flex: none;
 }
 
 .admin-row-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
+.admin-row-actions .btn {
+  padding: 5px 12px;
+  font-size: 0.85rem;
+}
+
+/* Tables get the card treatment without needing a wrapper in the markup. */
 .admin-table-wrap {
   overflow-x: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  margin-bottom: 18px;
+}
+
+.admin-table-wrap table {
+  min-width: 640px;
+}
+
+.admin-table-wrap th,
+.admin-table-wrap td {
+  padding: 11px 14px;
+  vertical-align: middle;
 }
 
 .admin-clickable-row {
@@ -467,54 +911,156 @@ ul {
 }
 
 .admin-clickable-row:hover {
-  background: var(--bg-subtle);
+  background: var(--accent-soft);
 }
 
 .admin-help {
-  color: var(--muted);
+  color: var(--text-muted);
   font-size: 0.85rem;
-  margin: 0.3rem 0 0;
+  margin: 0.35rem 0 0;
 }
 
 .admin-warn {
-  color: var(--error);
+  color: var(--danger);
   font-size: 0.85rem;
-  margin: 0.3rem 0 0;
+  margin: 0.35rem 0 0;
 }
 
 textarea.admin-large {
   min-height: 14rem;
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85rem;
 }
 
 .admin-copy-box {
   border: 1px solid var(--border);
-  border-radius: 2px;
-  padding: 0.5rem 0.7rem;
-  margin: 0.5rem 0;
-  background: #fff;
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  border-radius: var(--radius-control);
+  padding: 9px 12px;
+  margin: 0.6rem 0;
+  background: var(--field);
+  color: var(--text);
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   word-break: break-all;
 }
 
-/* Print */
+/* Destructive actions, kept well below everything else. */
+.danger-zone {
+  margin-top: 2.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+
+/* ===========================================================================
+   PRINT — the report has to leave the app as plain black on white: no frame,
+   no cards, no fills. The light values are forced here, so a student printing
+   from a dark-scheme browser still gets a readable page. This block is last,
+   which is what makes it win over the dark tokens at equal specificity.
+   ======================================================================== */
+
 @media print {
-  .no-print {
+  :root,
+  .admin-root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --card: #ffffff;
+    --field: #ffffff;
+    --surface-subtle: #ffffff;
+    --surface-chip: transparent;
+    --text: #000000;
+    --text-muted: #444444;
+    --border: #999999;
+    --border-hover: #999999;
+    --accent: #000000;
+    --accent-strong: #000000;
+    --accent-text: #000000;
+    --accent-soft: transparent;
+    --danger: #000000;
+    --danger-text: #000000;
+    --danger-border: #999999;
+    --danger-soft: transparent;
+    --shadow-card: none;
+  }
+
+  .no-print,
+  .app-header {
     display: none !important;
   }
+
+  html,
+  body {
+    background: #ffffff;
+    color: #000000;
+    font-size: 12px;
+  }
+
   .page {
     max-width: none;
     padding: 0;
   }
+
+  .card {
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0 0 1rem;
+    background: none;
+    break-inside: auto;
+  }
+
+  .card > table,
+  .table-flush,
+  .card > table:last-child,
+  .card > .table-flush:last-child {
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 1rem;
+    width: 100%;
+  }
+
+  .card > table th:first-child,
+  .card > table td:first-child,
+  .table-flush th:first-child,
+  .table-flush td:first-child {
+    padding-left: 0;
+  }
+
+  .card > table th:last-child,
+  .card > table td:last-child,
+  .table-flush th:last-child,
+  .table-flush td:last-child {
+    padding-right: 0;
+  }
+
+  th,
+  td {
+    border-bottom: 1px solid #999999;
+    padding: 4px 6px 4px 0;
+  }
+
+  .chip,
+  .not-assessed,
+  .timer {
+    background: none;
+    color: #000000;
+    padding: 0;
+    font-weight: 600;
+  }
+
+  .submit-block,
+  blockquote {
+    border: none;
+    background: none;
+    padding: 0;
+  }
+
+  blockquote {
+    border-left: 2px solid #000000;
+    padding-left: 0.6rem;
+  }
+
   .transcript {
     max-height: none;
     overflow: visible;
-    border: none;
-    padding: 0;
-  }
-  body {
-    font-size: 12px;
   }
 }
