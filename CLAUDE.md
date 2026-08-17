@@ -96,6 +96,8 @@ worker/
 shared/
   types.ts                    Types both src/ and worker/ import; src/types.ts re-exports them
   format.ts                   fmtMs(), shared by the client and the report emails
+  models.ts                   The model ids the dashboard's Settings form offers
+  voices.ts                   REALTIME_VOICES — the castable persona voices
 src/
   main.tsx                    React root — NO StrictMode (see gotchas)
   App.tsx                     Phase machine: "login" | "setup" | "interview" | "results"
@@ -112,7 +114,14 @@ src/
     InterviewScreen.tsx       Live transcript, countdown, mute, end
     ResultsScreen.tsx         Metrics, rubric, feedback, transcript, export
 admin/                        Instructor dashboard, behind Cloudflare Access
+  AdminApp.tsx, api.ts, and one file per screen: Roster, Personas,
+  Settings, Submissions, Breakglass
 ```
+
+**There are two HTML entry points, not one:** `index.html` (student app,
+`src/`) and `admin.html` (dashboard, `admin/`), declared as separate Rollup
+inputs in `vite.config.ts` and served by the same Worker. A change to the
+build config has to keep both.
 
 No router (four screens, one state variable). No state library. No test
 suite for the client; the Worker has its own stricter tsconfig instead (see
@@ -121,9 +130,16 @@ gotchas).
 Models are **instructor settings now, not student choices**: `interview_model`
 and `scoring_model` live in the `settings` table, edited from the dashboard,
 defaulting to `gpt-realtime-2.1-mini` and `gpt-5.6-terra`
-(`seed-settings.sql`). `src/models.ts` is gone. Input transcription is still
-pinned to `gpt-live-transcribe`, now in `worker/openai.ts` — see the
-voice-only constraint for why that one is not negotiable.
+(`seed-settings.sql`). `src/models.ts` is gone; the id lists the dashboard
+offers moved to `shared/models.ts`. Note the asymmetry between the two
+lists: **models are UI-only** — `worker/admin.ts` accepts any non-empty
+string, so an id typed straight into the database keeps working and adding a
+newly shipped model is a one-line edit — whereas **voices in
+`shared/voices.ts` are enforced server-side**, deliberately, because an
+unknown voice fails at session start in front of a student. Input
+transcription is still pinned to `gpt-live-transcribe`, now in
+`worker/openai.ts` — see the voice-only constraint for why that one is not
+negotiable.
 
 `src/personas.ts` stays in the repo as the origin point for the built-in
 personas, even though the Worker serves them from D1: `npm run seed:gen`
@@ -348,9 +364,11 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   student and a 0%/100% talk ratio.
   Under Gemini the interviewee's time was instead summed exactly from the
   sample count of every received PCM chunk. WebRTC never hands the app samples,
-  so that path is gone and the energy gate replaced it. Comments in `types.ts`
-  and `metrics.ts` still describe the old chunk-counting method; they are
-  stale, not a second measurement path.
+  so that path is gone and the energy gate replaced it. Two comments still
+  describe the old chunk-counting method and are stale, not a second
+  measurement path: `shared/types.ts:20` (on `intervieweeAudioMs`) and
+  `src/lib/metrics.ts:32`. Worth correcting in the code and deleting these
+  two sentences.
 - Per-turn `speechMs` is the meter's advance since that turn opened, so it
   survives text and audio arriving out of step.
 - **Turns are keyed by the server's `item_id`**, so the old `TURN_GAP_MS`
@@ -455,10 +473,12 @@ case the Worker needs to be rolled back for a semester (`DEPLOYMENT.md` §6).
 Two things from the old Pages-era notes still matter if anyone works on that
 branch:
 
-- **`base: './'` in `vite.config.ts` is load-bearing.** Pages serves the app
-  from a subpath (`/research-interview-trainer/`), and Vite's default absolute
-  `/assets/…` URLs 404 there — a blank white page. Relative works because there
-  is one `index.html` and no router. Do not "tidy" it back to the default.
+- **`base: './'` in `vite.config.ts` is load-bearing — and not only here.**
+  Pages serves the app from a subpath (`/research-interview-trainer/`), and
+  Vite's default absolute `/assets/…` URLs 404 there — a blank white page.
+  Relative works because there is no router. It also keeps `admin.html`'s
+  assets resolving on the Worker, so this line matters on `main` too, not
+  just on the fallback branch. Do not "tidy" it back to the default.
 - Pages is HTTPS, hence a secure context, so `getUserMedia` works there the
   same way it does on the Worker's own origin.
 
