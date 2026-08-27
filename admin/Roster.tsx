@@ -140,21 +140,31 @@ export function Roster({ onApiError }: Props) {
   };
 
   /**
-   * The real delete (?hard=1), for a student who was added by mistake. The
-   * server refuses with a 409 the moment any report references them, and that
-   * message names the number of reports, so it is shown on the row as written.
+   * The real delete (?hard=1). Since 2026-08-27 it cascades: the student's
+   * stored reports and transcripts go with them, so the confirm text must
+   * say so plainly — it is the only warning between the click and the loss.
    */
   const remove = (s: Student) => {
     if (
       !confirm(
-        `Remove ${s.fullName} (${s.studentId}) permanently?\n\nThis deletes the roster row, their login codes and their session grants. It cannot be undone. It only works when the student has no stored reports.`,
+        `Remove ${s.fullName} (${s.studentId}) permanently?\n\nThis deletes the roster row, ALL of their stored reports and transcripts, their login codes and their session grants. It cannot be undone. Emailed copies are not affected.\n\nTo only block their access and keep their reports, use Deactivate instead.`,
       )
     ) {
       return;
     }
     setRowError(null);
-    api<{ deleted: boolean }>(`/roster/${encodeURIComponent(s.studentId)}?hard=1`, { method: "DELETE" })
-      .then(load)
+    api<{ deleted: boolean; reportsDeleted: number }>(
+      `/roster/${encodeURIComponent(s.studentId)}?hard=1`,
+      { method: "DELETE" },
+    )
+      .then((r) => {
+        setBulkMessage(
+          r.reportsDeleted > 0
+            ? `Removed ${s.studentId} and ${r.reportsDeleted} stored ${r.reportsDeleted === 1 ? "report" : "reports"}.`
+            : `Removed ${s.studentId}.`,
+        );
+        load();
+      })
       .catch((err) => {
         setRowError({
           studentId: s.studentId,
@@ -203,28 +213,28 @@ export function Roster({ onApiError }: Props) {
     });
   };
 
-  const bulkRemove = (students: Student[]) => {
+  const bulkRemove = () => {
     if (selected.size === 0) return;
     const n = selected.size;
     if (
       !confirm(
-        `Remove ${n} ${n === 1 ? "student" : "students"} permanently?\n\nThis deletes their roster rows, login codes and session grants. It cannot be undone. Students with stored reports are not removed; the result names them, and you can deactivate them instead.`,
+        `Remove ${n} ${n === 1 ? "student" : "students"} permanently?\n\nThis deletes their roster rows, ALL of their stored reports and transcripts, their login codes and their session grants. It cannot be undone. Emailed copies are not affected.\n\nTo only block access and keep reports, use Deactivate instead.`,
       )
     ) {
       return;
     }
     setBulkRemoving(true);
     setBulkMessage(null);
-    api<{ deleted: number; kept: { studentId: string; reports: number }[] }>(`/roster/bulk-remove`, {
+    api<{ deleted: number; reportsDeleted: number }>(`/roster/bulk-remove`, {
       method: "POST",
       body: JSON.stringify({ ids: [...selected] }),
     })
       .then((r) => {
-        const keptNote =
-          r.kept.length > 0
-            ? ` Kept (have reports): ${r.kept.map((k) => `${k.studentId} (${k.reports})`).join(", ")}.`
+        const reportsNote =
+          r.reportsDeleted > 0
+            ? ` and ${r.reportsDeleted} stored ${r.reportsDeleted === 1 ? "report" : "reports"}`
             : "";
-        setBulkMessage(`Removed ${r.deleted} ${r.deleted === 1 ? "student" : "students"}.${keptNote}`);
+        setBulkMessage(`Removed ${r.deleted} ${r.deleted === 1 ? "student" : "students"}${reportsNote}.`);
         load();
       })
       .catch((err) => {
@@ -429,7 +439,7 @@ export function Roster({ onApiError }: Props) {
             className="btn btn-danger"
             type="button"
             disabled={bulkRemoving}
-            onClick={() => bulkRemove(state.students)}
+            onClick={bulkRemove}
           >
             {bulkRemoving ? "Removing…" : `Remove ${selected.size} selected`}
           </button>

@@ -1029,6 +1029,29 @@ td.num {
   background: var(--accent-soft);
 }
 
+/* The Submissions list shows one row per student; clicking it opens that
+   student's interviews in a nested table on a recessed band. */
+.admin-caret {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  width: 1rem;
+}
+
+.admin-subrow > td {
+  background: var(--bg);
+  padding-top: 4px;
+  padding-bottom: 14px;
+}
+
+.admin-subtable {
+  min-width: 0;
+}
+
+.admin-subtable th,
+.admin-subtable td {
+  padding: 7px 10px;
+}
+
 .admin-help {
   color: var(--text-muted);
   font-size: 0.85rem;

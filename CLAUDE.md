@@ -67,8 +67,18 @@ documented in `API.md` §5. The per-IP rate limit on `POST /api/auth/request`
 is 120 per hour, not 10, raised because a shared classroom network is one
 NAT address. The admin dashboard also gained hard-delete paths this same
 day: `DELETE .../roster/:id?hard=1`, `DELETE .../personas/:id`, and
-`DELETE .../submissions/:id`, each refusing (`409`) when the row is still
-referenced by a stored report. See `API.md` §6 for the full admin surface.
+`DELETE .../submissions/:id`. The persona delete refuses (`409`) while any
+stored report references the persona; the roster delete **cascaded** as of
+2026-08-27, an instructor decision reversing the original never-orphan rule
+— deleting a student now deletes their stored reports with them, single and
+bulk alike, and the dashboard's confirm dialog carries the warning.
+Deactivate remains the keep-history option. The Submissions screen shows
+one row per student (click to open that student's interviews) and its
+checkbox selection drives bulk delete and a bulk download, built
+client-side from the existing per-submission GET: one selection saves a
+plain .md, more than one saves a ZIP of Markdown files written by
+`admin/zip.ts`, a small dependency-free store-only ZIP writer. See
+`API.md` §6 for the full admin surface.
 
 ## Architecture
 

@@ -94,14 +94,17 @@ Deactivating a student is the normal way to remove their access. It
 blocks login immediately and keeps their history intact. Use the
 **Deactivate** button on the Students screen (the roster).
 
-A second control, **Remove**, deletes the roster row for good. Use it
-only for a mistake: a typo in a student ID, or a student added to the
-wrong cohort, who never ran an interview. The dashboard refuses the
-removal, and names the number of stored reports, the moment any report
-references that student. Deactivate that student instead. A permanent
-removal also clears the student's pending login code and their daily
-quota count, so a student re-added under the same ID later does not
-inherit today's count.
+A second control, **Remove**, deletes the student for good, together
+with **all of their stored reports and transcripts**. The confirmation
+dialog says so before anything is sent; read it. Emailed copies of the
+reports are not affected. Use Remove when the record itself must go: a
+typo in a student ID, a student added to the wrong cohort, or a student
+whose data must be erased. Use Deactivate when the student must only
+lose access and the reports must stay. A permanent removal also clears
+the student's pending login code and their session quota count, so a
+student re-added under the same ID later does not inherit the old
+count. If a removal was a mistake, D1 Time Travel (section 11) can
+restore the database to a point before it.
 
 ### Mid-semester re-import
 
@@ -365,17 +368,36 @@ scored, so past reports never shift under a student after the fact.
 
 ## 7. Submissions
 
-### Find and remove submissions
+### One row per student
 
-The list has a Student ID search box. A partial ID also matches, so
-"0001" finds u000001. Every row shows the student's name and ID.
+The list shows one row per student: name, ID, cohort, how many
+interviews they submitted, the date of the last one, and their average
+score across the scored interviews. Click a student's row to open their
+interviews underneath; click again to close them. Click an interview to
+open its full report. The Student ID search box narrows the list; a
+partial ID also matches, so "0001" finds u000001, and a search that
+leaves one student opens their row by itself.
 
-Each row has a check box. Select rows, then use the "Delete selected"
-button under the table. A warning names the number of rows and asks for
-confirmation first. The deletion is permanent; the emailed copies are
-not affected. The same warning-then-confirm pattern protects the other
-destructive controls: Remove, bulk Remove selected and Reset sessions on the Students screen (the roster),
-and the single-submission delete in the detail view.
+### Select, download, delete
+
+The student row's check box selects all of that student's interviews at
+once; each interview under it also has its own. Two buttons appear
+under the table once anything is selected.
+
+**Download selected** saves every selected report as its own Markdown
+file, scores and feedback included. One selected report downloads
+directly as a .md file; more than one arrives as a single ZIP archive
+with one file per report, named by student, date and persona. It is
+built in the browser from the same data the detail view shows. For a
+file without scores, open a single report and use its own download with
+the include switch off.
+
+**Delete selected** removes the selected submissions permanently. A
+warning names the number of rows and asks for confirmation first; the
+emailed copies are not affected. The same warning-then-confirm pattern
+protects the other destructive controls: Remove, bulk Remove selected
+and Reset sessions on the Students screen (the roster), and the
+single-submission delete in the detail view.
 
 ### Download one submission
 

@@ -527,14 +527,13 @@ async function deactivateRosterEntry(env: Env, studentId: string): Promise<Respo
 }
 
 /**
- * DELETE /api/admin/roster/:id?hard=1 really removes the row, and only for the
- * case deactivation is a poor fit: a typo in an ID, or a student added to the
- * wrong cohort, before they ever ran an interview.
- *
- * The submission count is checked here rather than left to the foreign key so
- * the instructor reads a sentence instead of a constraint failure, and so the
- * answer names the number of reports at stake. §7's rule is unchanged: a
- * student with reports cannot be deleted, only deactivated.
+ * DELETE /api/admin/roster/:id?hard=1 really removes the row, together with
+ * every stored report of that student. Until 2026-08-27 a student with
+ * reports could not be deleted, only deactivated (§7's never-orphan rule);
+ * the instructor asked for the cascade instead, so the rule is now:
+ * deactivate keeps history, delete destroys it. The dashboard's confirm
+ * dialog says so before the request is ever sent, and the response names the
+ * number of reports that went with the student.
  *
  * Their login_codes row goes with them. It is keyed by email, has no foreign
  * key, and would otherwise sit there as a live code for an address the roster
@@ -550,20 +549,18 @@ async function deleteRosterEntry(env: Env, studentId: string): Promise<Response>
     .bind(studentId)
     .first<{ n: number }>();
   const reports = count?.n ?? 0;
-  if (reports > 0) {
-    return json(409, {
-      error: `This student has ${reports} stored ${reports === 1 ? "report" : "reports"}. Deactivate instead.`,
-    });
-  }
 
   await env.DB.batch([
+    // Reports first: the roster row must not go while submissions still
+    // reference it, or the foreign key stops the batch halfway.
+    env.DB.prepare("DELETE FROM submissions WHERE student_id = ?").bind(studentId),
     env.DB.prepare("DELETE FROM login_codes WHERE email = ?").bind(student.email),
     // Otherwise a student re-added under the same ID inherits today's quota count.
     env.DB.prepare("DELETE FROM session_grants WHERE student_id = ?").bind(studentId),
     env.DB.prepare("DELETE FROM roster WHERE student_id = ?").bind(studentId),
   ]);
 
-  return json(200, { studentId, deleted: true });
+  return json(200, { studentId, deleted: true, reportsDeleted: reports });
 }
 
 /**
@@ -588,10 +585,10 @@ const ROSTER_BULK_MAX = 500;
 
 /**
  * POST /api/admin/roster/bulk-remove, body {ids: [...]} — the checkbox
- * selection on the Roster screen, removed permanently. The never-orphan rule
- * (§7) holds per student: anyone with stored reports is skipped and named in
- * the response, not deleted. Each removed student loses their roster row,
- * login codes and session grants, exactly like the single hard delete.
+ * selection on the Roster screen, removed permanently. Exactly like the
+ * single hard delete since 2026-08-27: each student's stored reports go with
+ * them, along with their roster row, login codes and session grants. The
+ * response counts both, so the dashboard can say what really happened.
  */
 async function bulkRemoveStudents(request: Request, env: Env): Promise<Response> {
   const parsed = await readJsonBody<{ ids?: unknown }>(request);
@@ -614,28 +611,28 @@ async function bulkRemoveStudents(request: Request, env: Env): Promise<Response>
   )
     .bind(...ids)
     .all<{ student_id: string; email: string }>();
+  if (students.results.length === 0) return json(200, { deleted: 0, reportsDeleted: 0 });
 
-  const withReports = await env.DB.prepare(
-    `SELECT student_id, COUNT(*) AS n FROM submissions WHERE student_id IN (${placeholders}) GROUP BY student_id`,
+  const found = students.results.map((s) => s.student_id);
+  const emails = students.results.map((s) => s.email);
+  const foundPh = found.map(() => "?").join(", ");
+  const emailPh = emails.map(() => "?").join(", ");
+
+  const count = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM submissions WHERE student_id IN (${foundPh})`,
   )
-    .bind(...ids)
-    .all<{ student_id: string; n: number }>();
-  const kept = new Map(withReports.results.map((row) => [row.student_id, row.n]));
+    .bind(...found)
+    .first<{ n: number }>();
 
-  const removable = students.results.filter((s) => !kept.has(s.student_id));
-  if (removable.length > 0) {
-    const statements = removable.flatMap((s) => [
-      env.DB.prepare("DELETE FROM login_codes WHERE email = ?").bind(s.email),
-      env.DB.prepare("DELETE FROM session_grants WHERE student_id = ?").bind(s.student_id),
-      env.DB.prepare("DELETE FROM roster WHERE student_id = ?").bind(s.student_id),
-    ]);
-    await env.DB.batch(statements);
-  }
+  await env.DB.batch([
+    // Reports before roster rows, or the foreign key stops the batch halfway.
+    env.DB.prepare(`DELETE FROM submissions WHERE student_id IN (${foundPh})`).bind(...found),
+    env.DB.prepare(`DELETE FROM login_codes WHERE email IN (${emailPh})`).bind(...emails),
+    env.DB.prepare(`DELETE FROM session_grants WHERE student_id IN (${foundPh})`).bind(...found),
+    env.DB.prepare(`DELETE FROM roster WHERE student_id IN (${foundPh})`).bind(...found),
+  ]);
 
-  return json(200, {
-    deleted: removable.length,
-    kept: withReports.results.map((row) => ({ studentId: row.student_id, reports: row.n })),
-  });
+  return json(200, { deleted: students.results.length, reportsDeleted: count?.n ?? 0 });
 }
 
 // ----------------------------------------------------------- roster import
@@ -1662,9 +1659,9 @@ async function getSubmission(env: Env, id: string): Promise<Response> {
 }
 
 /**
- * DELETE /api/admin/submissions/:id, a plain delete. Unlike the roster and
- * persona hard-deletes above, nothing references a submission (§7): it is the
- * leaf of the data model, not a row other rows point at. Deleting it is the
+ * DELETE /api/admin/submissions/:id, a plain delete. Unlike the persona
+ * hard-delete above, nothing references a submission (§7): it is the leaf of
+ * the data model, not a row other rows point at. Deleting it is the
  * instructor destroying their own record, not orphaning anyone else's, so
  * there is no reference count to check and no deactivate-instead option.
  */

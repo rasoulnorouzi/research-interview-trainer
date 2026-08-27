@@ -432,9 +432,9 @@ Worker.
 | POST | `/api/admin/roster/import` | `{csv, mode: "preview"|"apply"}` | `{"mode", "new", "changed", "unchanged", "invalid": [{line, reason}]}` |
 | PATCH | `/api/admin/roster/:id` | partial `{email?, fullName?, cohort?, active?}` | `200` RosterView, or `400`/`404`/`409` |
 | DELETE | `/api/admin/roster/:id` | none | `200 {studentId, active: false, message}`. Deactivates; never a SQL delete. |
-| DELETE | `/api/admin/roster/:id?hard=1` | none | `200 {studentId, deleted: true}`. Permanently removes the student, only when they have no stored reports (`409` otherwise, naming the count). Also clears their login codes and session grants. |
+| DELETE | `/api/admin/roster/:id?hard=1` | none | `200 {studentId, deleted: true, reportsDeleted}`. Permanently removes the student **and every stored report of that student** (2026-08-27 instructor decision; before that date a student with reports answered `409`). Also clears their login codes and session grants. `reportsDeleted` counts the reports that went with them. |
 | POST | `/api/admin/roster/:id/reset-sessions` | none | `200 {studentId, cleared}`. Deletes the student's session grants, so the `sessions_total` quota opens again. Reports are not touched. `404` for an unknown student. |
-| POST | `/api/admin/roster/bulk-remove` | `{ids: [...]}` (max 500) | `200 {deleted, kept}`. Removes the listed students permanently, exactly like the single hard delete. Students with stored reports are skipped and listed in `kept` with their report count. |
+| POST | `/api/admin/roster/bulk-remove` | `{ids: [...]}` (max 500) | `200 {deleted, reportsDeleted}`. Removes the listed students permanently, exactly like the single hard delete: their stored reports go with them. Unknown ids are ignored; the counts cover the students and reports really removed. |
 | GET | `/api/admin/personas` | none | `{"personas": [{id, name, title, active, updatedAt, updatedBy}]}`. No spoiler fields, even here; the list view does not need them. |
 | POST | `/api/admin/personas` | full persona fields, including `systemInstruction`, `hiddenCore` | `201` full persona, or `400`/`409` |
 | GET | `/api/admin/personas/:id` | none | `200` full persona including `systemInstruction` and `hiddenCore`, or `404` |
@@ -564,6 +564,16 @@ The implementation differs from the original plan in these ways.
    because criteria no longer share one scale. See
    [`BACKEND-PLAN.md`](BACKEND-PLAN.md) sections 3 and 7 for the added
    schema, and section 6 above for the admin surface.
+6. **A student hard delete cascades over their reports.** The plan's
+   never-orphan rule (section 7 there) said a student with stored
+   reports can only be deactivated, and the implementation enforced it
+   with a `409` until 2026-08-27. The instructor then asked for the
+   delete to work regardless of records, so `DELETE
+   /api/admin/roster/:id?hard=1` and `POST /api/admin/roster/bulk-remove`
+   now delete the student's submissions in the same batch as the roster
+   row. Deactivation remains the way to block access while keeping
+   history, and the dashboard's confirm dialog states the loss before
+   the request is sent.
 
 ## 8. Invariants
 

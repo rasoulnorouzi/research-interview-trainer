@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Toggle } from "./Toggle";
 import { api, adminUrl } from "./api";
+import { buildZip } from "./zip";
 import { fmtMs } from "../shared/format";
 import type { CriterionScore, Metrics, QualitativeFeedback, TranscriptEntry } from "../shared/types";
 
@@ -74,6 +75,59 @@ function computeOverallPoints(
   return { points, possible };
 }
 
+interface StudentGroup {
+  studentId: string;
+  fullName: string;
+  cohort: string | null;
+  items: SubmissionListItem[];
+}
+
+/**
+ * One row per student, grouped in the order the server returned the
+ * submissions, so both sort modes stay meaningful: by date puts the most
+ * recently active student first, by duration the student with the longest
+ * single interview.
+ */
+function groupByStudent(list: SubmissionListItem[]): StudentGroup[] {
+  const groups: StudentGroup[] = [];
+  const byId = new Map<string, StudentGroup>();
+  for (const s of list) {
+    let g = byId.get(s.studentId);
+    if (!g) {
+      g = { studentId: s.studentId, fullName: s.fullName, cohort: s.cohort, items: [] };
+      byId.set(s.studentId, g);
+      groups.push(g);
+    }
+    g.items.push(s);
+  }
+  return groups;
+}
+
+function latestStartedAt(g: StudentGroup): number {
+  return Math.max(...g.items.map((s) => s.startedAt));
+}
+
+/** Mean of the student's scored interviews, null when none was scored. */
+function averageScore(g: StudentGroup): number | null {
+  const scored = g.items.filter((s) => s.overallScore !== null);
+  if (scored.length === 0) return null;
+  return Math.round(scored.reduce((sum, s) => sum + (s.overallScore as number), 0) / scored.length);
+}
+
+/** Browser-side file download, shared by the detail view and the bulk button. */
+function downloadBlob(filename: string, blob: Blob) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/** The interview's date for file names, tolerant of seconds or milliseconds. */
+function submissionDay(startedAt: number): string {
+  return new Date(startedAt > 1e11 ? startedAt : startedAt * 1000).toISOString().slice(0, 10);
+}
+
 export function Submissions({ onApiError }: Props) {
   const [cohort, setCohort] = useState("");
   const [from, setFrom] = useState("");
@@ -81,9 +135,13 @@ export function Submissions({ onApiError }: Props) {
   const [sort, setSort] = useState<"date" | "duration">("date");
   const [student, setStudent] = useState("");
 
-  // The checkbox selection for bulk delete, by submission id.
+  // The checkbox selection for bulk delete and bulk download, by submission id.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
+
+  // Which student rows are open. The list shows one row per student.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const [list, setList] = useState<SubmissionListItem[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -110,7 +168,13 @@ export function Submissions({ onApiError }: Props) {
     setSelected(new Set());
     const qs = buildQuery();
     api<{ submissions: SubmissionListItem[] }>(`/submissions${qs ? `?${qs}` : ""}`)
-      .then(({ submissions }) => setList(submissions))
+      .then(({ submissions }) => {
+        setList(submissions);
+        // A filter that narrows the list to one student opens that student's
+        // row by itself; otherwise every row starts closed.
+        const students = new Set(submissions.map((s) => s.studentId));
+        setExpanded(students.size === 1 ? students : new Set());
+      })
       .catch((err) => {
         setListError(err instanceof Error ? err.message : "Could not load submissions.");
         onApiError(err);
@@ -136,6 +200,69 @@ export function Submissions({ onApiError }: Props) {
   const toggleSelectAll = () => {
     if (!list) return;
     setSelected((prev) => (prev.size === list.length ? new Set<string>() : new Set(list.map((s) => s.id))));
+  };
+
+  const toggleExpanded = (studentId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
+
+  // The student row's checkbox selects (or clears) all of that student's
+  // submissions at once.
+  const toggleStudentSelected = (g: StudentGroup) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const all = g.items.every((s) => next.has(s.id));
+      for (const s of g.items) {
+        if (all) next.delete(s.id);
+        else next.add(s.id);
+      }
+      return next;
+    });
+  };
+
+  /**
+   * Every selected submission as its own Markdown file, fetched one by one
+   * from the existing detail endpoint, so no new API surface. One selection
+   * downloads directly; more than one arrives as a single ZIP archive
+   * (admin/zip.ts, dependency-free), because a browser blocks a page that
+   * fires many downloads at once. Scores and feedback are always included:
+   * this is the instructor's own record, not a student handout.
+   */
+  const bulkDownload = () => {
+    if (!list || selected.size === 0) return;
+    setBulkDownloading(true);
+    setListError(null);
+    const ids = list.filter((s) => selected.has(s.id)).map((s) => s.id);
+    Promise.all(ids.map((id) => api<SubmissionDetail>(`/submissions/${encodeURIComponent(id)}`)))
+      .then((details) => {
+        if (details.length === 1) {
+          const d = details[0];
+          const md = buildSubmissionMarkdown(d, true);
+          downloadBlob(`interview-${d.studentId}-${submissionDay(d.startedAt)}.md`, new Blob([md], { type: "text/markdown" }));
+          return;
+        }
+        const used = new Set<string>();
+        const entries = details.map((d) => {
+          const base = `interview-${d.studentId}-${submissionDay(d.startedAt)}-${d.personaId}`;
+          // A student can interview the same persona twice in a day, and one
+          // archive cannot hold two files with one name.
+          let name = `${base}.md`;
+          for (let n = 2; used.has(name); n++) name = `${base}-${n}.md`;
+          used.add(name);
+          return { name, text: buildSubmissionMarkdown(d, true) };
+        });
+        downloadBlob(`submissions-${new Date().toISOString().slice(0, 10)}.zip`, buildZip(entries));
+      })
+      .catch((err) => {
+        setListError(err instanceof Error ? err.message : "Could not download the selected submissions.");
+        onApiError(err);
+      })
+      .finally(() => setBulkDownloading(false));
   };
 
   const bulkDelete = () => {
@@ -264,46 +391,94 @@ export function Submissions({ onApiError }: Props) {
                     onChange={toggleSelectAll}
                   />
                 </th>
-                <th>Started</th>
+                <th aria-hidden="true"></th>
                 <th>Student</th>
                 <th>Cohort</th>
-                <th>Persona</th>
-                <th>Duration</th>
-                <th>Overall score</th>
-                <th>Emailed</th>
+                <th>Interviews</th>
+                <th>Last interview</th>
+                <th>Average score</th>
               </tr>
             </thead>
             <tbody>
-              {list.map((s) => (
-                <tr key={s.id} className="admin-clickable-row" onClick={() => openDetail(s.id)}>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      aria-label={`Select the submission of ${s.studentId}`}
-                      checked={selected.has(s.id)}
-                      onChange={() => toggleSelected(s.id)}
-                    />
-                  </td>
-                  <td className="num">{formatUnixOrMs(s.startedAt)}</td>
-                  <td>
-                    {s.fullName} <span className="small">({s.studentId})</span>
-                  </td>
-                  <td>{s.cohort ?? ""}</td>
-                  <td>{s.personaId}</td>
-                  <td className="num">{fmtMs(s.durationMs)}</td>
-                  <td className="score-cell">
-                    {s.overallScore === null ? (
-                      <span className="not-assessed">n/a</span>
-                    ) : (
-                      <span className="chip">{s.overallScore}%</span>
+              {groupByStudent(list).map((g) => {
+                const isOpen = expanded.has(g.studentId);
+                const avg = averageScore(g);
+                return (
+                  <Fragment key={g.studentId}>
+                    <tr className="admin-clickable-row" onClick={() => toggleExpanded(g.studentId)}>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select all submissions of ${g.fullName}`}
+                          checked={g.items.every((s) => selected.has(s.id))}
+                          onChange={() => toggleStudentSelected(g)}
+                        />
+                      </td>
+                      <td className="admin-caret">{isOpen ? "▾" : "▸"}</td>
+                      <td>
+                        {g.fullName} <span className="small">({g.studentId})</span>
+                      </td>
+                      <td>{g.cohort ?? ""}</td>
+                      <td className="num">{g.items.length}</td>
+                      <td className="num">{formatUnixOrMs(latestStartedAt(g))}</td>
+                      <td className="score-cell">
+                        {avg === null ? (
+                          <span className="not-assessed">n/a</span>
+                        ) : (
+                          <span className="chip">{avg}%</span>
+                        )}
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="admin-subrow">
+                        <td></td>
+                        <td colSpan={6}>
+                          <table className="admin-subtable">
+                            <thead>
+                              <tr>
+                                <th></th>
+                                <th>Started</th>
+                                <th>Persona</th>
+                                <th>Duration</th>
+                                <th>Overall score</th>
+                                <th>Emailed</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {g.items.map((s) => (
+                                <tr key={s.id} className="admin-clickable-row" onClick={() => openDetail(s.id)}>
+                                  <td onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                      type="checkbox"
+                                      aria-label={`Select the submission of ${s.studentId} started ${formatUnixOrMs(s.startedAt)}`}
+                                      checked={selected.has(s.id)}
+                                      onChange={() => toggleSelected(s.id)}
+                                    />
+                                  </td>
+                                  <td className="num">{formatUnixOrMs(s.startedAt)}</td>
+                                  <td>{s.personaId}</td>
+                                  <td className="num">{fmtMs(s.durationMs)}</td>
+                                  <td className="score-cell">
+                                    {s.overallScore === null ? (
+                                      <span className="not-assessed">n/a</span>
+                                    ) : (
+                                      <span className="chip">{s.overallScore}%</span>
+                                    )}
+                                  </td>
+                                  <td>{s.emailedAt !== null ? "Yes" : "No"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td>{s.emailedAt !== null ? "Yes" : "No"}</td>
-                </tr>
-              ))}
+                  </Fragment>
+                );
+              })}
               {list.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="small">
+                  <td colSpan={7} className="small">
                     No submissions match.
                   </td>
                 </tr>
@@ -314,6 +489,14 @@ export function Submissions({ onApiError }: Props) {
       )}
       {list && selected.size > 0 && (
         <div className="btn-row" style={{ marginTop: "0.8rem" }}>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={bulkDownload}
+            disabled={bulkDownloading}
+          >
+            {bulkDownloading ? "Preparing…" : `Download ${selected.size} selected`}
+          </button>
           <button className="btn btn-danger" type="button" onClick={bulkDelete} disabled={bulkDeleting}>
             {bulkDeleting ? "Deleting…" : `Delete ${selected.size} selected`}
           </button>
@@ -340,16 +523,7 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
 
   const downloadMarkdown = () => {
     const md = buildSubmissionMarkdown(detail, includeFeedback);
-    const blob = new Blob([md], { type: "text/markdown" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `interview-${detail.studentId}-${new Date(
-      detail.startedAt > 1e11 ? detail.startedAt : detail.startedAt * 1000,
-    )
-      .toISOString()
-      .slice(0, 10)}.md`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    downloadBlob(`interview-${detail.studentId}-${submissionDay(detail.startedAt)}.md`, new Blob([md], { type: "text/markdown" }));
   };
 
   return (
