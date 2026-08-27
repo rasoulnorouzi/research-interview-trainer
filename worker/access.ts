@@ -102,3 +102,27 @@ async function findKey(domain: string, kid: string, refresh: boolean): Promise<A
 function decodeUtf8(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes);
 }
+
+/** The MASTER_ADMINS var as a clean lowercase list. */
+export function masterAdmins(env: Env): string[] {
+  return (env.MASTER_ADMINS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => e.length > 0);
+}
+
+/**
+ * Authorization, checked after Access has authenticated the person:
+ * a master admin (MASTER_ADMINS var) or a row in the admins table. Access
+ * proves who is at the door; this decides whether they may come in. The
+ * split is what lets the handover team manage admins from the dashboard
+ * while the master accounts stay out of anyone's reach.
+ */
+export async function isAuthorizedAdmin(env: Env, email: string): Promise<boolean> {
+  const address = email.trim().toLowerCase();
+  if (masterAdmins(env).includes(address)) return true;
+  const row = await env.DB.prepare("SELECT email FROM admins WHERE email = ?")
+    .bind(address)
+    .first<{ email: string }>();
+  return row !== null;
+}

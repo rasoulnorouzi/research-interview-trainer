@@ -1,6 +1,7 @@
 // The two endpoints that spend the university OpenAI key: minting an interview
 // token (BACKEND-PLAN.md §5) and scoring plus emailing a finished interview
-// (§5, §8). Read §5 and §7 before changing anything here.
+// (§5, §8) with one independent evaluator call per active criterion. Read §5
+// and §7 before changing anything here.
 //
 // Both handlers re-check the roster rather than trusting the session cookie
 // alone. `identify` is stateless by design (§9) and does not see a student
@@ -12,11 +13,20 @@
 
 import { identify } from "./auth";
 import { getSettings, json, readJsonBody, type Env } from "./db";
-import { instructorReportEmail, sendEmail, studentReportEmail, type ReportEmailData } from "./email";
+import {
+  assessmentAttachment,
+  instructorReportEmail,
+  sendEmail,
+  studentReportEmail,
+  studentTranscriptEmail,
+  transcriptAttachment,
+  type ReportEmailData,
+} from "./email";
 import { mintRealtimeToken } from "./openai";
 import { scoreAll, type ScoringPersona } from "./scoring";
 import { SHARED_DISCLOSURE_MECHANICS } from "../src/personas";
 import type {
+  CriterionDefinition,
   Metrics,
   ReportRequest,
   ReportResponse,
@@ -29,14 +39,14 @@ import type {
 // BACKEND-PLAN.md §3 so the behaviour is the documented one either way.
 const DEFAULT_LIMIT_MINUTES = 12;
 const DEFAULT_WARN_MINUTES = 10;
-const DEFAULT_SESSIONS_PER_DAY = 5;
+const DEFAULT_SESSIONS_TOTAL = 10;
 const DEFAULT_INTERVIEW_MODEL = "gpt-realtime-2.1-mini";
 const DEFAULT_SCORING_MODEL = "gpt-5.6-terra";
 
 // A token is valid for the interview limit plus two minutes. OPENAI-MIGRATION.md
 // §7(b) found no max_session_duration, so this is the only server-side bound
 // that exists: it caps when a session may START, not how long one runs. The
-// client countdown and the daily quota carry the rest (§5).
+// client countdown and the session quota carry the rest (§5).
 const TOKEN_GRACE_MINUTES = 2;
 
 const NOT_LOGGED_IN = "Not logged in.";
@@ -56,14 +66,14 @@ export async function handleSession(request: Request, env: Env): Promise<Respons
   if (!student) return json(401, { error: NOT_LOGGED_IN });
 
   // Parsed before the grant is consumed, so a malformed request does not cost
-  // the student one of their daily interviews.
+  // the student one of their interview sessions.
   const parsed = await readJsonBody<{ personaId?: unknown }>(request);
   if (!parsed.ok) return parsed.response;
   const personaId = typeof parsed.value.personaId === "string" ? parsed.value.personaId : "";
   if (!personaId) return json(400, { error: "A persona is required." });
 
   const settings = await getSettings(env, [
-    "sessions_per_day",
+    "sessions_total",
     "interview_limit_minutes",
     "interview_warn_minutes",
     "interview_model",
@@ -74,22 +84,31 @@ export async function handleSession(request: Request, env: Env): Promise<Respons
 
   const limitMinutes = positiveInt(settings.interview_limit_minutes, DEFAULT_LIMIT_MINUTES);
   const warnMinutes = positiveInt(settings.interview_warn_minutes, DEFAULT_WARN_MINUTES);
-  const quota = positiveInt(settings.sessions_per_day, DEFAULT_SESSIONS_PER_DAY);
+  const quota = positiveInt(settings.sessions_total, DEFAULT_SESSIONS_TOTAL);
 
-  // The daily quota is the backstop the whole time limit depends on: a student
-  // who disables the countdown in devtools is still bounded to
-  // sessions_per_day × limit (§5). Increment then check, so two requests racing
-  // cannot both read an under-quota count. A rejected mint still costs a grant,
-  // which is the simpler behaviour and acceptable.
+  // The quota is a TOTAL per student, not per day (instructor decision,
+  // 2026-08-26), and it is the backstop the whole time limit depends on: a
+  // student who disables the countdown in devtools is still bounded to
+  // sessions_total × limit (§5). The grants stay one row per day so usage
+  // remains readable, and the check sums them. Increment today's row first,
+  // then check the sum, so two requests racing cannot both read an under-quota
+  // count. A rejected mint still costs a grant, which is the simpler behaviour
+  // and acceptable. The dashboard's reset control deletes a student's grant
+  // rows, which re-opens the quota without touching their reports.
   const day = new Date().toISOString().slice(0, 10); // UTC YYYY-MM-DD
-  const grant = await env.DB.prepare(
+  await env.DB.prepare(
     "INSERT INTO session_grants (student_id, day, count) VALUES (?, ?, 1) " +
-      "ON CONFLICT(student_id, day) DO UPDATE SET count = session_grants.count + 1 RETURNING count",
+      "ON CONFLICT(student_id, day) DO UPDATE SET count = session_grants.count + 1",
   )
     .bind(session.studentId, day)
-    .first<{ count: number }>();
-  if ((grant?.count ?? 1) > quota) {
-    return json(429, { error: "Daily interview limit reached. Try again tomorrow." });
+    .run();
+  const used = await env.DB.prepare("SELECT SUM(count) AS n FROM session_grants WHERE student_id = ?")
+    .bind(session.studentId)
+    .first<{ n: number }>();
+  if ((used?.n ?? 1) > quota) {
+    return json(429, {
+      error: "You have used all your interview sessions. Ask your instructor if you need another one.",
+    });
   }
 
   const persona = await env.DB.prepare(
@@ -129,7 +148,10 @@ export async function handleSession(request: Request, env: Env): Promise<Respons
   return json(200, body);
 }
 
-/** POST /api/report — nine independent evaluator calls, persist, email. */
+/**
+ * POST /api/report — one independent evaluator call per active criterion plus
+ * the feedback call, then persist and email.
+ */
 export async function handleReport(request: Request, env: Env): Promise<Response> {
   const session = await identify(request, env);
   if (!session) return json(401, { error: NOT_LOGGED_IN });
@@ -153,9 +175,32 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     .first<{ id: string; name: string; title: string; research_topic: string; hidden_core: string | null }>();
   if (!personaRow) return json(404, { error: "That persona is not available." });
 
-  const settings = await getSettings(env, ["scoring_model", "openai_api_key", "instructor_recipients"]);
+  // The rubric is read fresh per report, so an edit in the dashboard applies to
+  // the next interview scored rather than the next deploy. Inactive criteria
+  // are simply absent: they cost no call and appear in no report.
+  const criteria = await loadCriteria(env);
+  if (criteria.length === 0) {
+    // Same answer as a missing API key, and for the same reason: this is the
+    // instructor's configuration to fix, and a student can do nothing with a
+    // more specific message.
+    console.error("scoring aborted: the rubric has no active criteria");
+    return json(503, { error: NOT_CONFIGURED });
+  }
+
+  const settings = await getSettings(env, [
+    "scoring_model",
+    "openai_api_key",
+    "instructor_recipients",
+    "share_report_with_student",
+  ]);
   const apiKey = settings.openai_api_key ?? "";
   if (!apiKey) return json(503, { error: NOT_CONFIGURED });
+
+  // The instructor's switch, and the only thing it touches: the student's copy
+  // of the report. Scoring, storage and the instructor email below are the same
+  // either way. Anything other than the stored "0" means share, so a cleared or
+  // hand-edited row keeps today's behaviour rather than silently withholding.
+  const shareWithStudent = settings.share_report_with_student !== "0";
 
   // The evaluators see the name, the title, the topic and the ground truth.
   // Not the system instruction, not the voice, not the short bio.
@@ -168,7 +213,13 @@ export async function handleReport(request: Request, env: Env): Promise<Response
 
   let scored;
   try {
-    scored = await scoreAll(apiKey, settings.scoring_model || DEFAULT_SCORING_MODEL, persona, transcript);
+    scored = await scoreAll(
+      apiKey,
+      settings.scoring_model || DEFAULT_SCORING_MODEL,
+      persona,
+      transcript,
+      criteria,
+    );
   } catch (err) {
     console.error("scoring failed:", err instanceof Error ? err.message : "unknown");
     // All-or-nothing: nothing is stored and nothing is emailed, so the client's
@@ -177,13 +228,18 @@ export async function handleReport(request: Request, env: Env): Promise<Response
   }
 
   // Computed here, never by a model: no evaluator produces an aggregate, and
-  // not-assessable criteria are excluded from the mean rather than counted as
-  // zero. A report where nothing was assessable has a null overall.
-  const assessable = scored.scores.map((s) => s.score).filter((s): s is number => s !== null);
-  const overall =
-    assessable.length === 0
-      ? null
-      : Math.round((assessable.reduce((a, b) => a + b, 0) / assessable.length) * 10) / 10;
+  // not-assessable criteria are excluded rather than counted as zero. Points
+  // earned over points available, as a percentage, because criteria no longer
+  // share one scale and a mean of a 5 and a 10 would mean nothing. A report
+  // where nothing was assessable has a null overall.
+  let points = 0;
+  let possible = 0;
+  for (const row of scored.scores) {
+    if (row.score === null) continue;
+    points += row.score;
+    possible += row.max ?? 5;
+  }
+  const overall = possible > 0 ? Math.round(((100 * points) / possible) * 10) / 10 : null;
 
   const submissionId = crypto.randomUUID();
   const durationMs = endedAt - startedAt;
@@ -239,7 +295,15 @@ export async function handleReport(request: Request, env: Env): Promise<Response
   // not the record. The log line carries no address and no report content.
   let emailed = false;
   try {
-    const forStudent = studentReportEmail(emailData);
+    // The transcript and the assessment also travel as two separate .txt
+    // files (instructor request, 2026-08-26). The student's mail carries the
+    // assessment file only when sharing is on; the instructor's always
+    // carries both.
+    const transcriptFile = transcriptAttachment(emailData);
+    const assessmentFile = assessmentAttachment(emailData);
+    const forStudent = shareWithStudent
+      ? studentReportEmail(emailData)
+      : studentTranscriptEmail(emailData);
     await sendEmail(
       env.RESEND_API_KEY,
       env.EMAIL_FROM,
@@ -247,6 +311,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
       forStudent.subject,
       forStudent.text,
       forStudent.html,
+      shareWithStudent ? [transcriptFile, assessmentFile] : [transcriptFile],
     );
     if (recipients.length > 0) {
       const forInstructor = instructorReportEmail(emailData);
@@ -257,6 +322,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
         forInstructor.subject,
         forInstructor.text,
         forInstructor.html,
+        [transcriptFile, assessmentFile],
       );
     }
     emailed = true;
@@ -269,13 +335,57 @@ export async function handleReport(request: Request, env: Env): Promise<Response
       .run();
   }
 
-  const body: ReportResponse = {
-    scores: scored.scores,
-    feedback: scored.feedback,
-    overall,
-    emailed,
-  };
+  // With sharing off the scores are held back from the response as well as from
+  // the email, so the browser never holds a number the student is not meant to
+  // see. The stored submission above is complete either way.
+  const body: ReportResponse = shareWithStudent
+    ? { scores: scored.scores, feedback: scored.feedback, overall, emailed, shared: true }
+    : { scores: [], feedback: null, overall: null, emailed, shared: false };
   return json(200, body);
+}
+
+interface CriterionRow {
+  id: string;
+  name: string;
+  description: string;
+  anchor_low: string;
+  anchor_mid: string;
+  anchor_high: string;
+  scale_max: number;
+  needs_ground_truth: number;
+}
+
+/**
+ * The active rubric, in the instructor's order. sort_order then id, so two
+ * criteria left at the same sort_order still come out in a stable order rather
+ * than swapping places between reports.
+ *
+ * scale_max is clamped to the same 2..10 the admin API enforces. The column has
+ * no CHECK constraint, so a row edited straight in the database could otherwise
+ * put "1-50" in an evaluator prompt and a 50-point criterion in the overall.
+ */
+async function loadCriteria(env: Env): Promise<CriterionDefinition[]> {
+  const rows = await env.DB.prepare(
+    "SELECT id, name, description, anchor_low, anchor_mid, anchor_high, scale_max, needs_ground_truth " +
+      "FROM criteria WHERE active = 1 ORDER BY sort_order, id",
+  ).all<CriterionRow>();
+
+  return rows.results.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    anchorLow: row.anchor_low,
+    anchorMid: row.anchor_mid,
+    anchorHigh: row.anchor_high,
+    scaleMax: clampScale(row.scale_max),
+    needsGroundTruth: row.needs_ground_truth === 1,
+  }));
+}
+
+function clampScale(value: unknown): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return 5;
+  return Math.min(10, Math.max(2, n));
 }
 
 interface ValidReport {

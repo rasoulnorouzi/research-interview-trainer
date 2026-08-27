@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  CriterionScore,
   Metrics,
   PersonaSummary,
   ReportResponse,
@@ -19,6 +20,21 @@ type ReportState =
   | { status: "pending" }
   | { status: "done"; report: ReportResponse }
   | { status: "error"; message: string };
+
+/**
+ * Points-out-of-possible for the overall figure, summed over rows the
+ * evaluators could actually assess (score !== null); a not-assessable
+ * criterion contributes to neither sum. Null when nothing was assessable.
+ */
+function computeOverallPoints(
+  scores: CriterionScore[],
+): { points: number; possible: number } | null {
+  const assessed = scores.filter((s) => s.score !== null);
+  if (assessed.length === 0) return null;
+  const points = assessed.reduce((sum, s) => sum + (s.score as number), 0);
+  const possible = assessed.reduce((sum, s) => sum + (s.max ?? 5), 0);
+  return { points, possible };
+}
 
 export function ResultsScreen({ result, persona, onNewInterview }: Props) {
   const metrics = useMemo(() => computeMetrics(result), [result]);
@@ -46,8 +62,15 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
   };
 
   const report = state.status === "done" ? state.report : null;
+  // The instructor can switch off the student's copy of the scores. The server
+  // then sends no scores and no feedback at all, so there is nothing to hide in
+  // the browser; the screen shows the metrics, the transcript and a notice.
+  const withheld = report !== null && report.shared === false;
+  // Held in its own const so the null check survives into the callbacks below.
+  const feedback = report ? report.feedback : null;
   const assessed = report ? report.scores.filter((s) => s.score !== null).length : 0;
   const notAssessedCount = report ? report.scores.length - assessed : 0;
+  const overallPoints = report ? computeOverallPoints(report.scores) : null;
 
   const downloadMarkdown = () => {
     const md = buildMarkdownReport(result, metrics, persona, report);
@@ -81,9 +104,8 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
         {(state.status === "idle" || state.status === "pending") && (
           <div className="submit-block no-print">
             <p>
-              Your interview is complete. Submit it to receive your scores and
-              feedback. A copy of the report goes to you and your instructor by
-              email.
+              Your interview is complete. Submit it for scoring. You and your
+              instructor receive a copy by email.
             </p>
             <div className="btn-row">
               <button
@@ -112,6 +134,18 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
                 Retry
               </button>
             </div>
+          </div>
+        )}
+
+        {report && (
+          <div className="banner-success">
+            {report.shared !== false
+              ? report.emailed
+                ? "Your interview was submitted and scored. The report was emailed to you and your instructor."
+                : "Your interview was submitted and scored. The report email could not be sent, but your instructor has the report."
+              : report.emailed
+                ? "Your interview was submitted. Your instructor received the scored report, and your transcript was emailed to you."
+                : "Your interview was submitted. Your instructor received the scored report."}
           </div>
         )}
       </div>
@@ -202,94 +236,103 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
         </p>
       </div>
 
-      <div className="card">
-        <h2>Rubric assessment</h2>
-        <p className="small">
-          Each criterion is scored 1–5 by an independent evaluator that sees only
-          the transcript and that single criterion, to avoid anchoring bias
-          between scores. A criterion the interview gave no opportunity to
-          demonstrate is marked <strong>n/a</strong> rather than scored low, and
-          is left out of the overall figure.
-        </p>
-
-        {report ? (
-          <>
-            {report.overall !== null && (
-              <p className="overall-score">
-                Overall score: {report.overall.toFixed(1)} / 5
-                {notAssessedCount > 0 && (
-                  <span className="small">
-                    {" "}
-                    (over {assessed} of {report.scores.length} criteria;{" "}
-                    {notAssessedCount} not assessable)
-                  </span>
-                )}
-              </p>
-            )}
-            <table>
-              <thead>
-                <tr>
-                  <th>Criterion</th>
-                  <th>Score</th>
-                  <th>Justification</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.scores.map((s) => (
-                  <tr key={s.id}>
-                    <td>{s.name}</td>
-                    <td className="score-cell">
-                      {s.score === null ? (
-                        <span className="not-assessed">n/a</span>
-                      ) : (
-                        <span className="chip">{s.score} / 5</span>
-                      )}
-                    </td>
-                    <td>{s.justification}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        ) : (
-          <p className="small">
-            Your scores appear here once the interview is submitted.
+      {withheld ? (
+        <div className="card">
+          <h2>Scores and feedback</h2>
+          <p>
+            Your interview was submitted and scored. Your instructor received the
+            full report and will share feedback with you.
           </p>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="card">
+          <h2>Rubric assessment</h2>
+          <p className="small">
+            Each criterion is scored by an independent evaluator that sees only
+            the transcript and that single criterion, to avoid anchoring bias
+            between scores. A criterion the interview gave no opportunity to
+            demonstrate is marked <strong>n/a</strong> rather than scored low, and
+            is left out of the overall figure.
+          </p>
 
-      {report && (
+          {report ? (
+            <>
+              {report.overall !== null && overallPoints && (
+                <p className="overall-score">
+                  Overall score: {overallPoints.points} / {overallPoints.possible}{" "}
+                  points (
+                  {report.overall ??
+                    Math.round((100 * overallPoints.points) / overallPoints.possible)}
+                  %)
+                  {notAssessedCount > 0 && (
+                    <span className="small">
+                      {" "}
+                      (over {assessed} of {report.scores.length} criteria;{" "}
+                      {notAssessedCount} not assessable)
+                    </span>
+                  )}
+                </p>
+              )}
+              <table>
+                <thead>
+                  <tr>
+                    <th>Criterion</th>
+                    <th>Score</th>
+                    <th>Justification</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.scores.map((s) => (
+                    <tr key={s.id}>
+                      <td>{s.name}</td>
+                      <td className="score-cell">
+                        {s.score === null ? (
+                          <span className="not-assessed">n/a</span>
+                        ) : (
+                          <span className="chip">{s.score} / {s.max ?? 5}</span>
+                        )}
+                      </td>
+                      <td>{s.justification}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          ) : (
+            <p className="small">
+              Your scores appear here once the interview is submitted.
+            </p>
+          )}
+        </div>
+      )}
+
+      {report && feedback && (
         <div className="card">
           <h2>Feedback</h2>
           <h3>Strengths</h3>
           <ul>
-            {report.feedback.strengths.map((s, i) => (
+            {feedback.strengths.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ul>
           <h3>Areas to improve</h3>
           <ul>
-            {report.feedback.improvements.map((s, i) => (
+            {feedback.improvements.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ul>
           <h3>Notable moments</h3>
-          {report.feedback.moments.map((m, i) => (
+          {feedback.moments.map((m, i) => (
             <div key={i}>
               <blockquote>“{m.quote}”</blockquote>
               <p className="small">{m.comment}</p>
             </div>
           ))}
           <h3>What you did not reach</h3>
-          <p>{report.feedback.missedDepth}</p>
+          <p>{feedback.missedDepth}</p>
           <h3>Summary</h3>
-          <p>{report.feedback.summary}</p>
+          <p>{feedback.summary}</p>
 
-          {report.emailed && (
-            <p className="small">
-              A copy of this report has been emailed to you and your instructor.
-            </p>
-          )}
         </div>
       )}
 
@@ -357,43 +400,62 @@ function buildMarkdownReport(
   lines.push(`| Average words per turn (you) | ${metrics.avgQuestionWords} |`);
   lines.push(`| Longest uninterrupted turn (you) | ${fmtMs(metrics.longestStudentMonologueMs)} |`);
   lines.push(``);
-  lines.push(`## Rubric assessment`);
-  lines.push(``);
-  if (!report) {
+  if (report && report.shared === false) {
+    // The same transcript-only shape the student's email has: the download must
+    // not become a way around the instructor's switch.
+    lines.push(
+      `Your interview was submitted and scored. Your instructor received the full report and will share feedback with you.`,
+    );
+    lines.push(``);
+  } else if (!report) {
+    lines.push(`## Rubric assessment`);
+    lines.push(``);
     lines.push(`The interview was not scored.`);
     lines.push(``);
   } else {
-    if (report.overall !== null) lines.push(`Overall score: **${report.overall.toFixed(1)} / 5**`);
+    lines.push(`## Rubric assessment`);
+    lines.push(``);
+    const overallPoints = computeOverallPoints(report.scores);
+    if (report.overall !== null && overallPoints) {
+      const pct =
+        report.overall ??
+        Math.round((100 * overallPoints.points) / overallPoints.possible);
+      lines.push(
+        `Overall score: **${overallPoints.points} / ${overallPoints.possible} points (${pct}%)**`,
+      );
+    }
     lines.push(``);
     lines.push(`| Criterion | Score | Justification |`);
     lines.push(`| --- | --- | --- |`);
     for (const s of report.scores) {
-      const score = s.score === null ? "n/a" : `${s.score} / 5`;
+      const score = s.score === null ? "n/a" : `${s.score} / ${s.max ?? 5}`;
       lines.push(`| ${s.name} | ${score} | ${s.justification} |`);
     }
     lines.push(``);
     const f = report.feedback;
-    lines.push(`## Feedback`);
-    lines.push(``);
-    lines.push(`### Strengths`);
-    f.strengths.forEach((s) => lines.push(`- ${s}`));
-    lines.push(``);
-    lines.push(`### Areas to improve`);
-    f.improvements.forEach((s) => lines.push(`- ${s}`));
-    lines.push(``);
-    lines.push(`### Notable moments`);
-    f.moments.forEach((m) => {
-      lines.push(`> "${m.quote}"`);
+    if (f) {
+      lines.push(`## Feedback`);
       lines.push(``);
-      lines.push(`${m.comment}`);
+      lines.push(`### Strengths`);
+      f.strengths.forEach((s) => lines.push(`- ${s}`));
       lines.push(``);
-    });
-    lines.push(`### What you did not reach`);
-    lines.push(f.missedDepth);
-    lines.push(``);
-    lines.push(`### Summary`);
-    lines.push(f.summary);
-    lines.push(``);
+      lines.push(`### Areas to improve`);
+      f.improvements.forEach((s) => lines.push(`- ${s}`));
+      lines.push(``);
+      lines.push(`### Notable moments`);
+      f.moments.forEach((m) => {
+        lines.push(`> "${m.quote}"`);
+        lines.push(``);
+        lines.push(`${m.comment}`);
+        lines.push(``);
+      });
+      lines.push(`### What you did not reach`);
+      lines.push(f.missedDepth);
+      lines.push(``);
+      lines.push(`### Summary`);
+      lines.push(f.summary);
+      lines.push(``);
+    }
   }
   lines.push(`## Transcript`);
   lines.push(``);

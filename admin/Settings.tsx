@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Toggle } from "./Toggle";
 import { api } from "./api";
 import { INTERVIEW_MODEL_OPTIONS, SCORING_MODEL_OPTIONS } from "../shared/models";
 import type { ModelChoice } from "../shared/types";
@@ -11,24 +12,28 @@ interface SettingEntry {
 
 type SettingsView = Record<string, SettingEntry>;
 
-const NUMERIC_KEYS = ["interview_limit_minutes", "interview_warn_minutes", "sessions_per_day"] as const;
+const NUMERIC_KEYS = ["interview_limit_minutes", "interview_warn_minutes", "sessions_total"] as const;
 const TEXT_KEYS = ["interview_model", "scoring_model", "instructor_recipients"] as const;
+// Switches. Held in the form as the stored "1" or "0" and sent as a boolean.
+const BOOLEAN_KEYS = ["share_report_with_student"] as const;
 
 interface FormState {
   interview_limit_minutes: string;
   interview_warn_minutes: string;
-  sessions_per_day: string;
+  sessions_total: string;
   interview_model: string;
   scoring_model: string;
+  share_report_with_student: string;
   instructor_recipients: string;
 }
 
 const EMPTY_FORM: FormState = {
   interview_limit_minutes: "",
   interview_warn_minutes: "",
-  sessions_per_day: "",
+  sessions_total: "",
   interview_model: "",
   scoring_model: "",
+  share_report_with_student: "1",
   instructor_recipients: "",
 };
 
@@ -130,9 +135,11 @@ export function Settings({ onApiError }: Props) {
         setForm({
           interview_limit_minutes: settings.interview_limit_minutes?.value ?? "",
           interview_warn_minutes: settings.interview_warn_minutes?.value ?? "",
-          sessions_per_day: settings.sessions_per_day?.value ?? "",
+          sessions_total: settings.sessions_total?.value ?? "",
           interview_model: settings.interview_model?.value ?? "",
           scoring_model: settings.scoring_model?.value ?? "",
+          // A missing row means the built-in default, which is to share.
+          share_report_with_student: settings.share_report_with_student?.value ?? "1",
           instructor_recipients: settings.instructor_recipients?.value ?? "",
         });
       })
@@ -205,10 +212,16 @@ export function Settings({ onApiError }: Props) {
       setForm((f) => ({ ...f, instructor_recipients: settings?.instructor_recipients?.value ?? "" }));
     }
 
-    const payload: Record<string, string | number> = {};
+    const payload: Record<string, string | number | boolean> = {};
     for (const key of NUMERIC_KEYS) {
       const current = settings?.[key]?.value ?? "";
       if (form[key] !== current && form[key].trim().length > 0) payload[key] = Number(form[key]);
+    }
+    for (const key of BOOLEAN_KEYS) {
+      // Same default as the load above, so an untouched checkbox over a missing
+      // row does not read as a change.
+      const current = settings?.[key]?.value ?? "1";
+      if (form[key] !== current) payload[key] = form[key] === "1";
     }
     for (const key of TEXT_KEYS) {
       if (key === "instructor_recipients" && recipientsEmpty) continue;
@@ -231,9 +244,11 @@ export function Settings({ onApiError }: Props) {
         setForm({
           interview_limit_minutes: settings.interview_limit_minutes?.value ?? "",
           interview_warn_minutes: settings.interview_warn_minutes?.value ?? "",
-          sessions_per_day: settings.sessions_per_day?.value ?? "",
+          sessions_total: settings.sessions_total?.value ?? "",
           interview_model: settings.interview_model?.value ?? "",
           scoring_model: settings.scoring_model?.value ?? "",
+          // A missing row means the built-in default, which is to share.
+          share_report_with_student: settings.share_report_with_student?.value ?? "1",
           instructor_recipients: settings.instructor_recipients?.value ?? "",
         });
         setApiKeyInput("");
@@ -302,15 +317,19 @@ export function Settings({ onApiError }: Props) {
         </div>
 
         <div className="field">
-          <label htmlFor="sessions_per_day">Interview sessions per student per day</label>
+          <label htmlFor="sessions_total">Interview sessions per student (total)</label>
           <input
-            id="sessions_per_day"
+            id="sessions_total"
             type="number"
             min={1}
             step={1}
-            value={form.sessions_per_day}
-            onChange={(e) => setField("sessions_per_day", e.target.value)}
+            value={form.sessions_total}
+            onChange={(e) => setField("sessions_total", e.target.value)}
           />
+          <p className="admin-help">
+            The total number of interviews one student can start, for the whole course.
+            Use the Reset sessions button on the Students screen (the roster) to give one student more.
+          </p>
         </div>
 
         <ModelSelect
@@ -328,6 +347,21 @@ export function Settings({ onApiError }: Props) {
           value={form.scoring_model}
           onChange={(value) => setField("scoring_model", value)}
         />
+
+        <div className="field">
+          <Toggle
+            id="share_report_with_student"
+            label="Send scores and feedback to students"
+            checked={form.share_report_with_student === "1"}
+            onChange={(on) => setField("share_report_with_student", on ? "1" : "0")}
+          />
+          <p className="admin-help">
+            When this is off, a student receives only the interview transcript, on the
+            results screen and by email. The interview is still scored. The full scored
+            report still goes to the assessment recipients below, and it stays in
+            Submissions.
+          </p>
+        </div>
 
         <div className="field">
           <label htmlFor="instructor_recipients">Assessment recipients</label>

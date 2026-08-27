@@ -1,10 +1,16 @@
-// The rubric and the nine evaluator calls, ported from src/lib/scoring.ts.
+// The evaluator calls: one per active criterion, plus the feedback call.
 //
-// Every prompt string in this file is BYTE-IDENTICAL to the client version.
-// PROMPTING.md explains why: several lines that look like boilerplate are the
-// only thing standing between a student-authored transcript and the grade it
-// asks for. Do not rewrite, reorder or "improve" any of them, and re-run the
-// injection test in PROMPTING.md section B after any edit that does.
+// The rubric itself is no longer here. Criterion texts live in the `criteria`
+// D1 table, authored in src/criteria.ts and seeded from it, and the caller
+// hands them to scoreAll. What is still here is the prompt these texts are
+// rendered into, and that prompt is load-bearing.
+//
+// THE INVARIANT: the rendered evaluator prompt for a seeded criterion at
+// scale_max 5 is byte-identical to the prompt tested in PROMPTING.md section B.
+// Re-run the section B injection test after any edit to the guard, the block
+// order, or the anchor template. Several lines that look like boilerplate are
+// the only thing standing between a student-authored transcript and the grade
+// it asks for; do not rewrite, reorder or "improve" any of them.
 //
 // What moving server-side changes: hiddenCore never reaches the browser, and
 // the student no longer runs their own evaluators, so the scores in the emailed
@@ -39,93 +45,6 @@ export interface ScoringPersona {
   researchTopic: string;
   hiddenCore: string | null;
 }
-
-// The rubric. Each criterion is scored by its own independent model call
-// (a fresh context that sees only this criterion and the transcript), so
-// scores cannot anchor or halo each other.
-export const CRITERIA: CriterionDefinition[] = [
-  {
-    id: "open_questions",
-    name: "Open vs. closed questions",
-    description:
-      "Did the student favor open invitations ('tell me about…', 'how did you experience…') over yes/no or short-answer questions?",
-    anchor1: "Nearly all questions are closed (yes/no, single-fact), leaving the interviewee no room to narrate.",
-    anchor3: "A mix: some genuine open questions, but frequent closed questions that cut narration short.",
-    anchor5: "Consistently open, invitation-style questions that let the interviewee tell their story in their own words.",
-  },
-  {
-    id: "probing",
-    name: "Follow-up probing",
-    description:
-      "Did the student pursue what the interviewee actually said with depth probes ('you mentioned X, what was that like?') rather than jumping to the next prepared topic?",
-    anchor1: "No follow-ups; the student moves to a new topic after every answer regardless of content.",
-    anchor3: "Occasional follow-ups, but important disclosures are regularly left unexplored.",
-    anchor5: "Systematically picks up the interviewee's own words and probes deeper before moving on.",
-  },
-  {
-    id: "cue_pursuit",
-    name: "Noticing and pursuing cues",
-    description:
-      "The interviewee repeatedly dropped small cues at the edge of things they had not yet disclosed: hesitations, half-finished sentences, qualifiers such as 'mostly' or 'it wasn't really the hours', deflecting jokes, and abrupt topic changes. Did the student notice these and follow them, rather than accepting the answer and moving on?",
-    anchor1:
-      "Every cue is missed or talked over; the student proceeds through their own agenda as though the interviewee had said nothing unusual.",
-    anchor3:
-      "One or two cues are picked up, but several clear openings are left on the table.",
-    anchor5:
-      "Consistently catches hesitations, unfinished sentences and evasions and gently returns to them, including naming a deflection when it occurs.",
-    needsGroundTruth: true,
-  },
-  {
-    id: "depth_reached",
-    name: "Depth of discovery",
-    description:
-      "The interviewee was role-played with a layered account: a rehearsed surface story they give anyone, a more personal middle layer, and a genuine underlying reason disclosed only to an interviewer who earns it. How far did the student actually get, and did they identify the real problem rather than the presented one?",
-    anchor1:
-      "The student never left the rehearsed surface account and finished the interview believing the presented reason was the whole story.",
-    anchor3:
-      "The student reached the middle layer, the personal cost and specific incidents, but never approached the underlying reason.",
-    anchor5:
-      "The student reached the underlying reason and recognised it for what it was, arriving there through the interviewee's own disclosures rather than by guessing or asserting it.",
-    needsGroundTruth: true,
-  },
-  {
-    id: "leading",
-    name: "Avoiding leading questions",
-    description:
-      "Did the student avoid embedding assumptions, interpretations, or desired answers in their questions ('So you must have felt abandoned, right?')?",
-    anchor1: "Questions routinely put words in the interviewee's mouth or presuppose the answer.",
-    anchor3: "Mostly neutral phrasing with several leading or assumption-loaded questions.",
-    anchor5: "Questions are neutrally phrased throughout; interpretations are checked, not imposed.",
-  },
-  {
-    id: "rapport",
-    name: "Rapport and creating safety",
-    description:
-      "Did the student build conditions in which a guarded person would risk saying something they had not planned to say: appropriate acknowledgments, unhurried pacing, tolerating silence, and giving space after a difficult disclosure instead of rushing to the next question?",
-    anchor1: "Mechanical interrogation; difficult disclosures are ignored, tidied away, or talked over.",
-    anchor3: "Polite but somewhat detached; acknowledgments are formulaic and pacing is brisk.",
-    anchor5:
-      "Warm and attentive; sensitive moments are acknowledged and given room, and the interviewee visibly opens up as a result.",
-  },
-  {
-    id: "neutrality",
-    name: "Neutrality and non-judgment",
-    description:
-      "Did the student refrain from evaluating, advising, moralizing, or agreeing/disagreeing with the interviewee's choices?",
-    anchor1: "Repeatedly judges, advises, or debates the interviewee.",
-    anchor3: "Mostly neutral but occasionally slips into opinions or advice.",
-    anchor5: "Fully non-judgmental stance; the interviewee's account is explored, never evaluated.",
-  },
-  {
-    id: "structure",
-    name: "Interview structure",
-    description:
-      "Was there a recognizable opening (introduction, easing in), a logical topic flow, and a proper closing ('is there anything you'd like to add?', thanks)?",
-    anchor1: "No discernible opening or closing; topics jump around arbitrarily.",
-    anchor3: "Some structure, but an abrupt start or ending, or disorganized topic flow.",
-    anchor5: "Clear opening, coherent progression between topics, and a respectful closing.",
-  },
-];
 
 export function formatTranscript(transcript: TranscriptEntry[], personaName: string): string {
   return transcript
@@ -201,15 +120,51 @@ const PLAIN_WRITING_RULE = `WRITE PLAINLY. A tutor is speaking to a student, not
 - No vague praise and no encouragement that carries no information. "Good job overall" and "keep up the great work" are worthless to a student. Say the specific thing.
 - Prefer short, direct sentences. Name what was said and what it did.`;
 
-const CRITERION_SCHEMA = {
-  type: "object",
-  properties: {
-    score: { type: "integer", description: "0 for not assessable, otherwise 1-5" },
-    justification: { type: "string" },
-  },
-  required: ["score", "justification"],
-  additionalProperties: false,
-};
+/**
+ * The anchored scale, rendered for whatever top a criterion carries. At the
+ * built-in scaleMax of 5 this produces exactly the three anchor lines and the
+ * "(2 and 4 are intermediate.)" line the section B test was run against, byte
+ * for byte; that identity is the reason this is a function and not a template.
+ *
+ * The midpoint is the rounded middle of the scale, so a 4-point criterion
+ * anchors 1, 3 (mid) and 4, and a 2-point one anchors only 1 and 2 with no
+ * midpoint line and no intermediates. Every remaining whole number is named as
+ * intermediate rather than left unexplained, because a model given three
+ * anchors and no account of the gaps tends to answer only in anchors.
+ */
+function anchorBlock(criterion: CriterionDefinition): string {
+  const max = criterion.scaleMax;
+  const mid = Math.round((1 + max) / 2);
+
+  const lines = ["Score anchors:", `1 = ${criterion.anchorLow}`];
+  if (mid > 1 && mid < max) lines.push(`${mid} = ${criterion.anchorMid}`);
+  lines.push(`${max} = ${criterion.anchorHigh}`);
+
+  const intermediates: number[] = [];
+  for (let n = 2; n <= max - 1; n++) {
+    if (n !== mid) intermediates.push(n);
+  }
+  if (intermediates.length === 1) {
+    lines.push(`(${intermediates[0]} is intermediate.)`);
+  } else if (intermediates.length > 1) {
+    const last = intermediates[intermediates.length - 1];
+    lines.push(`(${intermediates.slice(0, -1).join(", ")} and ${last} are intermediate.)`);
+  }
+
+  return lines.join("\n");
+}
+
+function criterionSchema(scaleMax: number) {
+  return {
+    type: "object",
+    properties: {
+      score: { type: "integer", description: `0 for not assessable, otherwise 1-${scaleMax}` },
+      justification: { type: "string" },
+    },
+    required: ["score", "justification"],
+    additionalProperties: false,
+  };
+}
 
 async function scoreOneCriterion(
   apiKey: string,
@@ -226,11 +181,7 @@ Score the student on exactly ONE criterion.
 CRITERION: ${criterion.name}
 ${criterion.description}
 
-Score anchors:
-1 = ${criterion.anchor1}
-3 = ${criterion.anchor3}
-5 = ${criterion.anchor5}
-(2 and 4 are intermediate.)
+${anchorBlock(criterion)}
 
 ${NOT_ASSESSABLE_RULE}
 
@@ -243,7 +194,14 @@ Give the score and a justification of at most two sentences that references what
   const parsed = (await callResponses(apiKey, {
     model,
     input,
-    text: { format: { type: "json_schema", name: "criterion", strict: true, schema: CRITERION_SCHEMA } },
+    text: {
+      format: {
+        type: "json_schema",
+        name: "criterion",
+        strict: true,
+        schema: criterionSchema(criterion.scaleMax),
+      },
+    },
   })) as { score: number; justification: string };
 
   const raw = Math.round(Number(parsed.score));
@@ -251,7 +209,10 @@ Give the score and a justification of at most two sentences that references what
     id: criterion.id,
     name: criterion.name,
     // 0 (or anything below 1) means the evaluator judged this not assessable.
-    score: Number.isFinite(raw) && raw >= 1 ? Math.min(5, raw) : null,
+    score: Number.isFinite(raw) && raw >= 1 ? Math.min(criterion.scaleMax, raw) : null,
+    // Stored with the score, so a report stays readable after the instructor
+    // changes the scale: an old 4 was out of 5, not out of whatever it is now.
+    max: criterion.scaleMax,
     justification: String(parsed.justification ?? ""),
   };
 }
@@ -316,35 +277,42 @@ ${PLAIN_WRITING_RULE}`;
 }
 
 export interface ScoringResult {
-  /** In CRITERIA order, so the report always reads in rubric order. */
+  /** In the order the criteria were passed, so the report reads in rubric order. */
   scores: CriterionScore[];
   feedback: QualitativeFeedback;
 }
 
 /**
- * The eight criterion calls plus the feedback call, all nine fired together.
+ * One call per active criterion, plus the feedback call, all fired together.
  *
- * NINE INDEPENDENT CALLS. Each criterion gets a fresh model context that sees
- * the transcript and exactly one criterion definition, never another criterion
- * and never another score; the feedback call never sees a number. Running on a
+ * INDEPENDENT CALLS. Each criterion gets a fresh model context that sees the
+ * transcript and exactly one criterion definition, never another criterion and
+ * never another score; the feedback call never sees a number. Running on a
  * server is not a reason to batch them. Batching would reintroduce precisely
  * the anchoring bias the design exists to prevent, and BACKEND-PLAN.md §5 and
- * §11 both mark it non-negotiable. Nine subrequests is well inside the free
- * tier's limit of fifty.
+ * §11 both mark it non-negotiable. The admin API caps the rubric at 20 active
+ * criteria, so the total stays well inside the free tier's limit of fifty
+ * subrequests however many criteria the instructor adds.
  *
  * Failure handling is all-or-nothing, which is the difference from the client
- * version: the browser could render eight rows and offer a retry on the ninth,
- * but a server that stored a partial report and emailed it would have to
- * reconcile the retry against a row and a sent message. Each rejected call gets
- * one sequential retry, and if anything still fails this throws so the caller
- * stores nothing and sends nothing. The client re-POSTs the whole report (§8).
+ * version: the browser could render the criterion rows and offer a retry on
+ * just the feedback, but a server that stored a partial report and emailed it
+ * would have to reconcile the retry against a row and a sent message. Each
+ * rejected call gets one sequential retry, and if anything still fails this
+ * throws so the caller stores nothing and sends nothing. The client re-POSTs
+ * the whole report (§8).
  */
 export async function scoreAll(
   apiKey: string,
   model: string,
   persona: ScoringPersona,
   transcript: TranscriptEntry[],
+  criteria: CriterionDefinition[],
 ): Promise<ScoringResult> {
+  // The caller guards this first, so reaching it means the rubric was emptied
+  // between its check and this call. Scoring nothing is not a report.
+  if (criteria.length === 0) throw new Error("no active criteria");
+
   const transcriptText = formatTranscript(transcript, persona.name);
 
   const runCriterion = (criterion: CriterionDefinition) => () =>
@@ -352,11 +320,11 @@ export async function scoreAll(
   const runFeedback = () => getQualitativeFeedback(apiKey, model, persona, transcriptText);
 
   // Launch order matters only in that they all launch before any is awaited.
-  const criterionCalls = CRITERIA.map(runCriterion);
+  const criterionCalls = criteria.map(runCriterion);
   const settled = await Promise.allSettled([...criterionCalls.map((run) => run()), runFeedback()]);
 
   // One sequential retry each, after the parallel round, so a rate limit does
-  // not immediately meet nine more requests.
+  // not immediately meet a second full round of requests.
   const resolved: unknown[] = [];
   for (let i = 0; i < settled.length; i++) {
     const outcome = settled[i];

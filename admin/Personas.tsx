@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Toggle } from "./Toggle";
 import { api } from "./api";
 import { REALTIME_VOICES } from "../shared/voices";
 
@@ -383,15 +384,12 @@ export function Personas({ onApiError }: Props) {
             </p>
           </div>
           <div className="field">
-            <label className="checkbox-row" htmlFor="persona-active">
-              <input
-                id="persona-active"
-                type="checkbox"
-                checked={form.active}
-                onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
-              />
-              Active (shown to students)
-            </label>
+            <Toggle
+              id="persona-active"
+              label="Active (shown to students)"
+              checked={form.active}
+              onChange={(active) => setForm((f) => ({ ...f, active }))}
+            />
           </div>
 
           <div className="btn-row">

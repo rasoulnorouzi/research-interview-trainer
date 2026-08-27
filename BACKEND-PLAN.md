@@ -211,6 +211,33 @@ CREATE TABLE persona_versions (
   saved_by    TEXT
 );
 CREATE INDEX idx_persona_versions ON persona_versions(persona_id, saved_at);
+
+-- The scoring rubric, editable from the dashboard. Seeded from src/criteria.ts.
+-- Post-plan addition, 2026-08-21; see §7. Kept identical to schema.sql.
+CREATE TABLE criteria (
+  id                 TEXT PRIMARY KEY,
+  name               TEXT NOT NULL,
+  description        TEXT NOT NULL,
+  anchor_low         TEXT NOT NULL,   -- what a score of 1 looks like
+  anchor_mid         TEXT NOT NULL,   -- what the midpoint score looks like
+  anchor_high        TEXT NOT NULL,   -- what the top score looks like
+  scale_max          INTEGER NOT NULL DEFAULT 5,  -- top of this item's scale, 2..10
+  needs_ground_truth INTEGER NOT NULL DEFAULT 0,
+  sort_order         INTEGER NOT NULL DEFAULT 0,
+  active             INTEGER NOT NULL DEFAULT 1,
+  updated_at         INTEGER NOT NULL,
+  updated_by         TEXT
+);
+
+-- Every save of a criterion, never deleted. Mirrors persona_versions.
+CREATE TABLE criteria_versions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  criterion_id TEXT NOT NULL,
+  snapshot     TEXT NOT NULL,          -- full JSON of the row as saved
+  saved_at     INTEGER NOT NULL,
+  saved_by     TEXT
+);
+CREATE INDEX idx_criteria_versions ON criteria_versions(criterion_id, saved_at);
 ```
 
 Three columns exist only to keep later options open and are unused for now:
@@ -225,6 +252,7 @@ cost nothing today. See §9.
 | `interview_limit_minutes` | Hard stop for an interview | 12 |
 | `interview_warn_minutes` | When the countdown turns visible | 10 |
 | `sessions_per_day` | Per-student realtime session cap | 5 |
+| — | *Post-plan change (2026-08-26): replaced by `sessions_total`, a per-student TOTAL for the course, resettable per student from the dashboard.* | |
 | `interview_model` | Realtime model id | `gpt-realtime-2.1-mini` |
 | `scoring_model` | Evaluator model id | `gpt-5.6-terra` |
 | `instructor_recipients` | Who receives every report | none, must be set |
@@ -579,6 +607,15 @@ that would quietly break the exercise:
 New personas also need the shared disclosure mechanics appended, exactly as
 `buildCustomPersona()` does today. Do that **server-side at mint time**, not by
 pasting the rules into the editor, so no persona can be saved without them.
+
+**Post-plan addition (2026-08-21): rubric management.** The scoring rubric
+moved to the dashboard the same way personas did, and was not part of this
+plan as written. A `criteria` table plus a `criteria_versions` history (§3)
+carry the same full-CRUD, write-a-snapshot-on-every-save, and
+never-delete-if-a-report-references-it rules as personas above, plus a
+per-criterion `scaleMax` and a 20-active cap this plan's fixed, code-only
+`CRITERIA` list never needed. See `API.md` §6 for the shipped surface and
+`OPERATIONS.md` for how an instructor uses it.
 
 ### Submissions
 

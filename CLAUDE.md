@@ -89,10 +89,11 @@ worker/
   db.ts                       Env binding, settings read, json()/readJsonBody() helpers
   openai.ts                   Token minting + /v1/responses calls, zero Cloudflare imports
   email.ts                    Resend dispatch + report email rendering, zero Cloudflare imports
-  scoring.ts                  Rubric + nine independent evaluator calls (moved from src/lib)
+  scoring.ts                  One evaluator call per active D1 criterion (moved from src/lib)
   report.ts                   POST /api/session, POST /api/report handlers
   admin.ts                    The whole /api/admin/* surface
   genseed.ts                  Generates seed-personas.sql from src/personas.ts (Node, not Worker)
+  genseed-criteria.ts         Generates seed-criteria.sql from src/criteria.ts (Node, not Worker)
 shared/
   types.ts                    Types both src/ and worker/ import; src/types.ts re-exports them
   format.ts                   fmtMs(), shared by the client and the report emails
@@ -103,6 +104,7 @@ src/
   App.tsx                     Phase machine: "login" | "setup" | "interview" | "results"
   api.ts                      Same-origin fetch wrapper, ApiError
   personas.ts                 3 layered personas + SHARED_DISCLOSURE_MECHANICS (seed origin, see below)
+  criteria.ts                 8 seeded rubric criteria (seed origin, see below)
   index.css                   The entire stylesheet, plain CSS
   lib/
     audio.ts                  createSpeechMeter() — voiced-time measurement only
@@ -114,7 +116,7 @@ src/
     InterviewScreen.tsx       Live transcript, countdown, mute, end
     ResultsScreen.tsx         Metrics, rubric, feedback, transcript, export
 admin/                        Instructor dashboard, behind Cloudflare Access
-  AdminApp.tsx, api.ts, and one file per screen: Roster, Personas,
+  AdminApp.tsx, api.ts, and one file per screen: Roster, Personas, Rubric,
   Settings, Submissions, Breakglass
 ```
 
@@ -146,6 +148,14 @@ personas, even though the Worker serves them from D1: `npm run seed:gen`
 regenerates `seed-personas.sql` from it, and it is git's history, diffs and
 review for content the dashboard's `persona_versions` table cannot fully
 replace on its own (`BACKEND-PLAN.md` §7).
+
+The scoring rubric works the same way: `src/criteria.ts` is the origin
+point for the 8 built-in criteria, even though the Worker reads the active
+rubric from the `criteria` D1 table. `npm run seed:gen:criteria`
+regenerates `seed-criteria.sql` from it, mirroring `seed:gen` for
+personas, and it is the ultimate restore if the dashboard's
+`criteria_versions` history is ever not enough (`BACKEND-PLAN.md` §7,
+2026-08-21 addition).
 
 The report "export" is still a client-side Markdown download in
 `ResultsScreen.tsx`, unchanged. What changed is where the scores it renders
@@ -268,7 +278,9 @@ Voices: Elena `marin`, Tom `cedar`, Jasmine `coral`, custom `alloy` — `marin`
 and `cedar` are OpenAI's most natural realtime voices and go to the two
 personas that must not sound performed. Delivery is directed per persona and
 tied to the disclosure state (rules 16-18 of the shared mechanics), so retreat
-is *audible*. See [`PROMPTING.md`](PROMPTING.md).
+is *audible*. Rule 22 (2026-08-26) restricts the interviewee to English and
+Dutch: it answers in the interviewer's language and declines, in English, any
+other language. See [`PROMPTING.md`](PROMPTING.md).
 
 When editing personas: keep the three-layer structure, keep unlock conditions
 explicit and behavioural, keep answers capped at four spoken sentences, and
@@ -279,22 +291,39 @@ what they are supposed to discover.
 
 The instructor specifically requires that rubric scoring be free of anchoring
 bias. **Scoring now runs server-side, in `worker/scoring.ts`, not in the
-browser.** Every prompt string there is byte-identical to the client version
-it replaced; `worker/scoring.ts`'s own header comment says so and points back
-at [`PROMPTING.md`](PROMPTING.md) — treat a change to any of them as seriously
+browser.** Since 2026-08-21 the rubric itself is instructor-editable: criteria
+live in the `criteria` D1 table (+ `criteria_versions` history), edited from
+the dashboard's Rubric screen and seeded from `src/criteria.ts`, the same role
+`src/personas.ts` plays for personas. Each criterion carries its own
+`scale_max` (2 to 10, default 5) alongside its own anchors. What is fixed in
+`worker/scoring.ts` is the **template** that criterion text is rendered into,
+not the criteria themselves; that template is byte-identical, at `scale_max`
+5, to the client version it replaced — `worker/scoring.ts`'s own header
+comment says so and points back at [`PROMPTING.md`](PROMPTING.md). Treat a
+change to the template, the guard, or any criterion's stored text as seriously
 as before, and re-run the injection test in `PROMPTING.md` §B after any edit
 that touches one. Therefore:
 
-- **Eight criteria, eight separate `/v1/responses` calls.** Each evaluator is
-  a fresh context that sees the transcript and *one* criterion definition with
-  its 1/3/5 anchors — never the other criteria, never another score, never the
+- **One call per active criterion (8 seeded, up to 20 active), each its own
+  `/v1/responses` call.** Each evaluator is a fresh context that sees the
+  transcript and *one* criterion definition rendered at that criterion's own
+  `scale_max` — never the other criteria, never another score, never the
   persona's system instruction.
-- A **ninth independent call** writes the qualitative feedback and never sees
-  any numbers.
-- All nine launch together from `scoreAll()`; wall-clock ≈ one call. Each gets
-  one sequential retry if it fails the first parallel round.
-- `overall` is computed in `worker/report.ts` as the mean. The model never
-  produces an aggregate.
+- A **separate, independent call** writes the qualitative feedback and never
+  sees any numbers.
+- All of those calls, one per active criterion plus feedback, launch together
+  from `scoreAll()`; wall-clock ≈ one call. Each gets one sequential retry if
+  it fails the first parallel round. `worker/admin.ts` caps the rubric at 20
+  active criteria, so a report never fires more calls than that plus one.
+- `overall` is computed in `worker/report.ts`, never by a model, and is now
+  **points-based**: the sum of earned points over the sum of possible points
+  across every assessable criterion, as a percentage with one decimal. A plain
+  mean stopped being meaningful once criteria could carry different scales.
+  Each `CriterionScore` carries `max`, the scale it was scored on, so a report
+  stays readable after the instructor changes a criterion's scale later; rows
+  stored before this change have no `max` and every renderer defaults it to
+  `5`. An empty, all-inactive rubric makes `POST /api/report` answer `503`,
+  the same response a missing OpenAI key produces.
 - **Failure is all-or-nothing now, which is the one real behaviour change
   from the client version.** The browser used to render eight rows and offer
   a retry on just the ninth; the server cannot do that without reconciling a
@@ -312,9 +341,9 @@ this outright.
 aborted interview gives some criteria nothing to judge; the evaluators are told
 explicitly that absence of evidence is not poor performance and that a 1 is for
 doing the thing badly, not for never having had the chance. Not-assessable
-criteria render as `n/a` and are excluded from the overall mean rather than
-counted as zero. Keep this distinction — collapsing it back into a low score
-silently punishes students for a short session.
+criteria render as `n/a` and are excluded from the points-based `overall`
+score rather than counted as zero. Keep this distinction — collapsing it back
+into a low score silently punishes students for a short session.
 
 Errors from OpenAI are deliberately **not** surfaced to students in detail
 anymore. `describeScoringError()` and its `/v1/models` hint are gone: they
@@ -325,19 +354,24 @@ the key-hygiene note at the top of that file — and `worker/report.ts` turns
 those into the generic `502` a student sees. An instructor diagnosing a
 scoring outage reads the Worker logs, not the student-facing message.
 
-Student-facing prose is governed by `PLAIN_WRITING_RULE`, appended to all nine
-calls: no em dashes, no markdown, no filler vocabulary, no praise without a
-specific. Feedback is the most-read text in the app and it should not read like
-a chatbot.
+Student-facing prose is governed by `PLAIN_WRITING_RULE`, appended to every
+scoring call: no em dashes, no markdown, no filler vocabulary, no praise
+without a specific. Feedback is the most-read text in the app and it should
+not read like a chatbot.
 
-**The transcript is untrusted input to all nine calls** — a student can say an
-injection out loud and speech-to-text puts it in the prompt. It is fenced in
-`<transcript>` tags with an explicit guard, the instructions come after it, and
-`strict: true` bounds the output. See [`PROMPTING.md`](PROMPTING.md) §B, which
-includes the tested result for all three scoring models.
+**The transcript is untrusted input to every scoring call** — a student can
+say an injection out loud and speech-to-text puts it in the prompt. It is
+fenced in `<transcript>` tags with an explicit guard, the instructions come
+after it, and `strict: true` bounds the output. See
+[`PROMPTING.md`](PROMPTING.md) §B, which includes the tested result for all
+three scoring models.
 
 Criteria: `open_questions`, `probing`, `cue_pursuit`, `depth_reached`,
-`leading`, `rapport`, `neutrality`, `structure`. The two discovery criteria
+`leading`, `rapport`, `neutrality`, `structure`. These 8 are the seeded
+defaults, not a fixed list — the instructor can rename, reword, add, remove,
+or (de)activate criteria from the dashboard's Rubric screen, subject to the
+20-active cap and the 1-active minimum (`worker/admin.ts`). The two discovery
+criteria
 (`cue_pursuit`, `depth_reached`) carry `needsGroundTruth: true` and receive the
 persona's `hiddenCore` — you cannot judge whether a student reached the bottom
 without knowing what the bottom was. This is scenario knowledge, not score
@@ -346,6 +380,15 @@ the `personas` D1 table (`worker/report.ts` reads it alongside `name`,
 `title`, `researchTopic`), not from the bundled `src/personas.ts` object —
 though `src/personas.ts` is still where the built-in personas' `hiddenCore`
 is authored; see the persona-system section above.
+
+**Whether the student sees the scores is an instructor setting.**
+`share_report_with_student` (`"1"` by default) lives in the `settings` table
+and changes only the student's copy: with it at `"0"` the results screen and
+the student's email carry the transcript and a short notice instead of the
+rubric and the feedback, and `POST /api/report` answers `shared: false` with
+empty `scores` and a null `feedback` so no withheld number reaches the
+browser. Scoring, the stored submission and the instructor email are
+identical in both modes.
 
 **Models are instructor settings now, not student choices.** `scoring_model`
 lives in the `settings` table (`gpt-5.6-terra` by default) and is read fresh
@@ -407,6 +450,19 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   error blocks that path's deploy; `main` no longer auto-deploys on push (see
   Deployment below), so running `npm run lint` and `npm run build` by hand
   before `wrangler deploy` is on the person deploying.
+- **Admin authorization is two layers since 2026-08-26.** Cloudflare Access
+  authenticates; then `worker/index.ts` checks the email against
+  `MASTER_ADMINS` (a `wrangler.jsonc` var) plus the `admins` D1 table
+  (dashboard Admins screen). **Deploying with the wrong `MASTER_ADMINS`
+  locks everyone out of the dashboard until the next deploy** — the
+  variable must hold the address the instructor logs into Access with
+  (currently the Tilburg address; see DEPLOYMENT.md §1). Master admins can
+  never be added or removed from the dashboard, deliberately.
+- **Backups**: D1 Time Travel restores the whole database to any minute in
+  the last 30 days with zero setup (`wrangler d1 time-travel restore`);
+  `npm run backup` exports a SQL snapshot for long-term keeping. Worker
+  logs persist via `observability` in `wrangler.jsonc`; OPERATIONS.md §12
+  has the triage routine.
 - **`DEV_ALLOW_INSECURE_ADMIN` belongs only in `.dev.vars`, never in
   `wrangler.jsonc`.** It bypasses the Cloudflare Access check on
   `/api/admin/*` for local testing. A copy of it in `wrangler.jsonc` would
@@ -508,7 +564,9 @@ before building; full detail is in `OPENAI-MIGRATION.md` §7.
   how long a started one may run. The interview time limit is therefore
   enforced by the fallback stack `BACKEND-PLAN.md` §5 describes: token
   validity of `limitMinutes + 2` minutes, the client-side countdown, and the
-  daily `session_grants` quota as the real backstop.
+  `session_grants` quota as the real backstop (a per-student total,
+  `sessions_total`, since 2026-08-26; the dashboard Students screen (the roster) can reset
+  one student's grants).
 
 **Verified against the live OpenAI API with a real key, from the earlier
 browser-direct design (2026-08-10).** The CORS finding below described why a

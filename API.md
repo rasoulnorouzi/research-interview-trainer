@@ -186,7 +186,7 @@ this differs from `BACKEND-PLAN.md`.
 ### POST /api/session
 
 Mints a short-lived OpenAI realtime token for one interview, and
-consumes one unit of the student's daily quota.
+consumes one unit of the student's total session quota.
 
 **Authentication.** Session cookie required, with the same active-roster
 re-check as `GET /api/me`.
@@ -224,7 +224,7 @@ reaches the response body or the browser.
 | `401` | `{"error": "Not logged in."}` | No session, or deactivated student |
 | `400` | `{"error": "A persona is required."}` | Missing or non-string `personaId` |
 | `503` | `{"error": "The service is not configured yet. Tell your instructor."}` | No OpenAI key set in `settings` |
-| `429` | `{"error": "Daily interview limit reached. Try again tomorrow."}` | `sessions_per_day` exceeded for this student today |
+| `429` | `{"error": "You have used all your interview sessions. Ask your instructor if you need another one."}` | `sessions_total` used up for this student. An instructor can clear it with the reset-sessions endpoint below. |
 | `404` | `{"error": "That persona is not available."}` | No active persona with that id |
 | `502` | `{"error": "Could not start the interview. Try again in a moment."}` | The OpenAI mint call failed |
 
@@ -263,18 +263,50 @@ timestamp.
 
 ```json
 {
-  "scores": [ { "id": "open_questions", "name": "Open vs. closed questions", "score": 4, "justification": "..." } ],
+  "scores": [ { "id": "open_questions", "name": "Open vs. closed questions", "score": 4, "max": 5, "justification": "..." } ],
   "feedback": { "strengths": ["..."], "improvements": ["..."], "moments": [], "missedDepth": "...", "summary": "..." },
-  "overall": 3.8,
-  "emailed": true
+  "overall": 76.0,
+  "emailed": true,
+  "shared": true
 }
 ```
 
-`scores` is always in rubric order. `overall` is the mean of every
-non-null score, computed by the server, never by a model; it is `null`
-only when every criterion came back not-assessable. `emailed` reflects
-whether both report emails were sent successfully; a failed send does
-not fail the request; the submission is already stored either way.
+`scores` is always in rubric order. Each row now carries `max`, the top
+of that criterion's own scale (2 to 10, set per criterion from the
+dashboard; 5 for every seeded criterion), because criteria no longer
+share one fixed scale. A row stored before criteria carried their own
+scale has no `max`; every renderer defaults a missing `max` to `5`.
+`overall` is a percentage with one decimal, computed by the server,
+never by a model: the sum of `score` over the sum of `max` across every
+non-null row, times 100. It is `null` only when every criterion came
+back not-assessable. Both report emails carry two plain-text attachments:
+`interview-transcript-<date>.txt` and `interview-assessment-<date>.txt`. When
+`share_report_with_student` is `0`, the student's mail carries only the
+transcript file. `emailed` reflects whether both report emails were
+sent successfully; a failed send does not fail the request; the
+submission is already stored either way.
+
+`shared` reports whether this copy carries the scores and the feedback.
+It is `true` unless the instructor has set the `share_report_with_student`
+setting to `"0"`. With the setting off, the interview is still scored and
+still stored in full, and the instructor recipients still get the whole
+report, but the student's copy is the transcript only. The response is
+then:
+
+```json
+{
+  "scores": [],
+  "feedback": null,
+  "overall": null,
+  "emailed": true,
+  "shared": false
+}
+```
+
+The scores are held back from the response body, not only from the
+screen, so no score the student is not meant to see reaches the browser.
+The student's email in this mode is the transcript with a header block
+and one sentence, and no metrics table, rubric or feedback.
 
 **Response, failure**
 
@@ -284,8 +316,8 @@ not fail the request; the submission is already stored either way.
 | `400` | `{"error": "Malformed report."}` or a more specific message | Body fails validation |
 | `413` | `{"error": "The transcript is too large."}` | Over 200 KB serialized |
 | `404` | `{"error": "That persona is not available."}` | No active persona with that id |
-| `503` | `{"error": "The service is not configured yet. Tell your instructor."}` | No OpenAI key set |
-| `502` | `{"error": "Scoring failed. Use Retry."}` | One or more of the nine evaluator calls failed after its retry |
+| `503` | `{"error": "The service is not configured yet. Tell your instructor."}` | No OpenAI key set, or the rubric has no active criteria |
+| `502` | `{"error": "Scoring failed. Use Retry."}` | One or more evaluator calls (one per active criterion, plus the feedback call) failed after its retry |
 
 Scoring is all-or-nothing. On the `502` case, nothing is stored and no
 email is sent, so the client's retry is a clean re-`POST`, not a
@@ -368,6 +400,12 @@ That decision is unchanged; see section 3.
 
 ## 6. Admin surface
 
+Every `/api/admin/*` request passes two checks in `worker/index.ts`:
+the Cloudflare Access JWT (authentication), then the admin list
+(authorization): a master admin from the `MASTER_ADMINS` var, or a row
+in the `admins` table. A valid Access login that is not on the list gets
+`403 {"error": "Your account is not on the admin list. ..."}`.
+
 All of these live under `/api/admin/*`. Every request to this prefix
 passes through one check, in `worker/index.ts`, before it reaches any
 handler: a Cloudflare Access JWT, read from the `Cf-Access-Jwt-Assertion`
@@ -395,15 +433,28 @@ Worker.
 | PATCH | `/api/admin/roster/:id` | partial `{email?, fullName?, cohort?, active?}` | `200` RosterView, or `400`/`404`/`409` |
 | DELETE | `/api/admin/roster/:id` | none | `200 {studentId, active: false, message}`. Deactivates; never a SQL delete. |
 | DELETE | `/api/admin/roster/:id?hard=1` | none | `200 {studentId, deleted: true}`. Permanently removes the student, only when they have no stored reports (`409` otherwise, naming the count). Also clears their login codes and session grants. |
+| POST | `/api/admin/roster/:id/reset-sessions` | none | `200 {studentId, cleared}`. Deletes the student's session grants, so the `sessions_total` quota opens again. Reports are not touched. `404` for an unknown student. |
+| POST | `/api/admin/roster/bulk-remove` | `{ids: [...]}` (max 500) | `200 {deleted, kept}`. Removes the listed students permanently, exactly like the single hard delete. Students with stored reports are skipped and listed in `kept` with their report count. |
+| GET | `/api/admin/admins` | none | `{admins: [{email, note, master, createdAt, createdBy}]}`. Master admins first, marked `master: true`. |
+| POST | `/api/admin/admins` | `{email, note?}` | `200 {email, added}`. Lowercases the email. `400` for a master admin's address, `409` for a duplicate. |
+| DELETE | `/api/admin/admins/:email` | none | `200 {email, deleted}`. `400` for a master admin, `404` for an unknown address. |
 | GET | `/api/admin/personas` | none | `{"personas": [{id, name, title, active, updatedAt, updatedBy}]}`. No spoiler fields, even here; the list view does not need them. |
 | POST | `/api/admin/personas` | full persona fields, including `systemInstruction`, `hiddenCore` | `201` full persona, or `400`/`409` |
 | GET | `/api/admin/personas/:id` | none | `200` full persona including `systemInstruction` and `hiddenCore`, or `404` |
 | PUT | `/api/admin/personas/:id` | full persona fields | `200` full persona; writes one `persona_versions` snapshot in the same batch as the row update |
 | DELETE | `/api/admin/personas/:id` | none | `200 {id, deleted: true}`. Permanently removes the persona, only when no reports reference it (`409` otherwise, naming the count). `persona_versions` is kept either way; there is no route that deletes a version. |
 | GET | `/api/admin/personas/:id/versions` | none | `{"personaId", "versions": [{id, savedAt, savedBy, snapshot}]}` |
-| GET | `/api/admin/submissions` | query: `cohort`, `from`, `to`, `sort=duration`, `limit` | `{"submissions": [...], "limit"}`. Excludes the four large JSON columns. |
+| GET | `/api/admin/criteria` | none | `{"criteria": [{id, name, scaleMax, needsGroundTruth, sortOrder, active, updatedAt, updatedBy}]}` |
+| POST | `/api/admin/criteria` | full criterion fields, including `anchorLow`, `anchorMid`, `anchorHigh` | `201` full criterion, or `400`/`409` |
+| GET | `/api/admin/criteria/:id` | none | `200` full criterion including `description` and the three anchors, or `404` |
+| PUT | `/api/admin/criteria/:id` | full criterion fields | `200` full criterion; writes one `criteria_versions` snapshot in the same batch as the row update |
+| DELETE | `/api/admin/criteria/:id` | none | `200 {id, deleted: true}`. Permanently removes the criterion, only when no stored report references it and it is not the last active criterion (`409`/`400` otherwise). `criteria_versions` is kept either way. |
+| GET | `/api/admin/criteria/:id/versions` | none | `{"criterionId", "versions": [{id, savedAt, savedBy, snapshot}]}` |
+| POST | `/api/admin/criteria/reorder` | `{ids: [...]}`, every criterion exactly once | `200 {reordered}`. Rewrites `sort_order` in the given order (drag-and-drop on the Rubric screen). Writes no version snapshots: order is layout, not content. |
+| GET | `/api/admin/submissions` | query: `student` (substring match on student id), `cohort`, `from`, `to`, `sort=duration`, `limit` | `{"submissions": [...], "limit"}`. Excludes the four large JSON columns. |
 | GET | `/api/admin/submissions/:id` | none | `200` full submission, including transcript, scores, feedback, metrics; or `404` |
 | DELETE | `/api/admin/submissions/:id` | none | `200 {id, deleted: true}`. Permanently removes one submission. Nothing else references a submission, so there is no reference count and no deactivate-instead option; the dashboard offers this only from the submission's own detail view, not the list. |
+| POST | `/api/admin/submissions/bulk-delete` | `{ids: [...]}` (max 500) | `200 {deleted}`. Deletes the listed submissions in one statement. Unknown ids are ignored; `deleted` counts the rows really removed. |
 | GET | `/api/admin/submissions.csv` | same query params as list | `text/csv`, one row per submission plus one column per rubric criterion |
 | POST | `/api/admin/breakglass` | `{studentId}` | `200 {url, expiresInMinutes, studentId, fullName}`, or `404`/`400` |
 
@@ -424,6 +475,58 @@ clear the stored key. Every subsequent `POST /api/session` and
 `POST /api/report` answers `503` until a new key is saved. This is the
 one setting that supports removal; every other setting key must always
 carry a value.
+
+### The student-copy switch
+
+`share_report_with_student` is the one settings key that is a switch.
+`PUT /api/admin/settings` accepts `true` or `false` for it, and also the
+strings `"1"` and `"0"`; it stores `"1"` or `"0"`. Any other value answers
+`400`, and nothing in the batch is written.
+
+`"1"` is the default and is today's behaviour: the student receives the
+scores and the feedback. `"0"` withholds both from the student copy only.
+The interview is still scored, the submission is still stored in full,
+and the instructor recipients still receive the whole report.
+`POST /api/report` in section 3 gives the two response shapes. A missing
+or unreadable value counts as `"1"`, so a cleared row shares rather than
+withholds.
+
+### Criteria validation rules
+
+These apply to `POST /api/admin/criteria` and `PUT /api/admin/criteria/:id`.
+
+| Field | Rule |
+|---|---|
+| `id` | `POST` only, immutable after creation. 1 to 40 characters, lowercase letters, digits, underscores and hyphens: `/^[a-z0-9_-]{1,40}$/`. The underscore is allowed here and not in a persona id, because every seeded criterion id already uses one (`open_questions`, `cue_pursuit`). |
+| `name`, `description`, `anchorLow`, `anchorMid`, `anchorHigh` | All required, non-empty after trimming. |
+| `scaleMax` | Whole number from 2 to 10. Defaults to 5 on create if omitted. Changing it on an existing criterion does not reword its anchors; that stays the instructor's job. |
+| `needsGroundTruth` | Boolean. Defaults to `false` on create if omitted. |
+| `sortOrder` | Whole number, zero or more. Defaults to the current highest `sortOrder` plus 10 on create, so a new item lands at the end without renumbering the rest. |
+| `active` | Boolean. Defaults to `true` on create. |
+
+Two rules bound the size and shape of the whole rubric, checked after every
+field above is valid:
+
+- **At most 20 active criteria.** A `POST` or `PUT` that would bring the
+  count of active criteria to 21 answers `400`. Each active criterion costs
+  one evaluator call per report, so the cap is a subrequest budget as well as
+  a rubric-size limit.
+- **At least 1 active criterion.** A `PUT` that would deactivate the last
+  remaining active criterion answers `400`, naming the reason: no interview
+  could be scored otherwise.
+
+`DELETE /api/admin/criteria/:id` has its own two refusals, checked in this
+order:
+
+1. `400` if the criterion is active and is the only active criterion.
+2. `409` if any stored submission's `scores_json` contains this criterion's
+   `id` (checked with a `json_each` scan over every submission, since a
+   criterion id is not a foreign key, it is a key inside stored JSON),
+   naming the number of reports.
+
+Both refusals suggest deactivating instead. `criteria_versions` rows are
+never deleted by any route, including this one; a criterion re-created under
+the same `id` finds its history waiting.
 
 ## 7. Deviations from BACKEND-PLAN.md section 4
 
@@ -453,6 +556,17 @@ The implementation differs from the original plan in these ways.
    deployment, fails closed by default, and is documented in
    [`DEPLOYMENT.md`](DEPLOYMENT.md) with the warning never to set it in
    deployed configuration.
+5. **The scoring rubric is editable from the dashboard, not fixed in
+   code.** The plan (section 5) describes `CRITERIA` moving from
+   `src/lib/scoring.ts` to the Worker unchanged, as a fixed list. The
+   implementation goes further, as a 2026-08-21 addition: criteria live
+   in a `criteria` D1 table plus a `criteria_versions` history,
+   mirroring how personas already worked, with a per-criterion
+   `scaleMax` (2 to 10) and a 20-active cap. `overall` changed from a
+   plain mean to a percentage of points earned over points possible,
+   because criteria no longer share one scale. See
+   [`BACKEND-PLAN.md`](BACKEND-PLAN.md) sections 3 and 7 for the added
+   schema, and section 6 above for the admin surface.
 
 ## 8. Invariants
 
@@ -460,13 +574,14 @@ These properties must hold in any reimplementation of this backend. They
 are not incidental to the current code; each protects something the rest
 of the app depends on.
 
-- **The nine scoring calls stay independent.** Eight rubric criteria and
-  one qualitative-feedback call, nine separate calls to the OpenAI
-  Responses API, each with a fresh context. No evaluator call ever sees
-  another criterion's definition, another criterion's score, or the
-  persona's own system instruction. Collapsing this into one call
-  reintroduces the anchoring bias the design exists to prevent; it is
-  explicitly disallowed, not merely an optimization left undone.
+- **The scoring calls stay independent.** One call per active criterion
+  (8 in the seeded rubric, up to 20), plus one qualitative-feedback
+  call, every one a separate call to the OpenAI Responses API with a
+  fresh context. No evaluator call ever sees another criterion's
+  definition, another criterion's score, or the persona's own system
+  instruction. Collapsing this into one call reintroduces the anchoring
+  bias the design exists to prevent; it is explicitly disallowed, not
+  merely an optimization left undone.
 - **`system_instruction` and `hidden_core` never reach a student-facing
   response.** `GET /api/personas` and `POST /api/session` both exclude
   them at the query level. Only the Access-gated admin surface exposes
@@ -474,9 +589,9 @@ of the app depends on.
 - **`score: null` means not assessable, and is distinct from a score of
   `1`.** A `1` means the student did the thing being measured, and did it
   badly. `null` means the interview gave the evaluator nothing to judge.
-  `null` scores are excluded from the `overall` mean, not counted as
-  zero, and render as `n/a` in every surface: the dashboard, the emailed
-  report, and the CSV export.
+  `null` scores are excluded from the points-based `overall` score, not
+  counted as zero, and render as `n/a` in every surface: the dashboard,
+  the emailed report, and the CSV export.
 - **Money-spending calls re-check the roster, not just the cookie.**
   `POST /api/session` and `POST /api/report` both query
   `roster ... AND active = 1` themselves. The session cookie is stateless

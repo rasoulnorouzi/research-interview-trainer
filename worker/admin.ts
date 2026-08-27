@@ -8,13 +8,15 @@
 //   - Every persona save writes a persona_versions snapshot in the SAME batch
 //     as the row itself, so a save without a version is structurally
 //     impossible. Snapshots are never deleted and there is no route that
-//     deletes one, not even when the persona itself is removed.
+//     deletes one, not even when the persona itself is removed. Criteria
+//     follow the same rule against criteria_versions.
 //
 // Removal follows the one rule §7 states about it: never orphan a submission.
 // DELETE on a student or a persona is a deactivation by default, and the
 // explicit hard-delete paths below first count the reports that reference the
 // row and refuse with a 409 if there are any (§3, §7).
 
+import { masterAdmins } from "./access";
 import { sha256Hex } from "./auth";
 import { getSettings, json, readJsonBody, type Env } from "./db";
 import { validateApiKey } from "./openai";
@@ -38,15 +40,31 @@ const SETTING_KEYS = [
   "openai_api_key",
   "interview_limit_minutes",
   "interview_warn_minutes",
-  "sessions_per_day",
+  "sessions_total",
   "interview_model",
   "scoring_model",
+  "share_report_with_student",
   "instructor_recipients",
 ] as const;
 
-const NUMERIC_SETTING_KEYS = ["interview_limit_minutes", "interview_warn_minutes", "sessions_per_day"];
+const NUMERIC_SETTING_KEYS = ["interview_limit_minutes", "interview_warn_minutes", "sessions_total"];
+
+/** Settings that are a switch. Stored as the string "1" or "0", never a boolean. */
+const BOOLEAN_SETTING_KEYS = ["share_report_with_student"];
 
 const PERSONA_ID_PATTERN = /^[a-z0-9-]{1,40}$/;
+// The persona pattern plus the underscore, because every seeded criterion id
+// already uses one (open_questions, cue_pursuit). Without it the dashboard
+// could not re-create a built-in criterion under the id its stored reports and
+// the CSV export name it by.
+const CRITERION_ID_PATTERN = /^[a-z0-9_-]{1,40}$/;
+
+// Each active criterion is one evaluator call per report, so the rubric's size
+// is a subrequest budget as well as a pedagogical choice. The cap keeps a
+// report far inside the ~50-subrequest ceiling however the rubric grows.
+const MAX_ACTIVE_CRITERIA = 20;
+const MIN_SCALE_MAX = 2;
+const MAX_SCALE_MAX = 10;
 
 interface PersonaFields {
   name: string;
@@ -91,6 +109,11 @@ export async function handleAdmin(
       if (path.length === 2 && path[1] === "import" && method === "POST") {
         return await importRoster(request, env);
       }
+      // Checked before the :id branch, or "bulk-remove" would be read as an id.
+      if (path.length === 2 && path[1] === "bulk-remove") {
+        if (method !== "POST") return methodNotAllowed();
+        return await bulkRemoveStudents(request, env);
+      }
       if (path.length === 2) {
         if (method === "PATCH") return await patchRosterEntry(request, env, path[1]);
         if (method === "DELETE") {
@@ -101,6 +124,10 @@ export async function handleAdmin(
             ? await deleteRosterEntry(env, path[1])
             : await deactivateRosterEntry(env, path[1]);
         }
+        return methodNotAllowed();
+      }
+      if (path.length === 3 && path[2] === "reset-sessions") {
+        if (method === "POST") return await resetSessions(env, path[1]);
         return methodNotAllowed();
       }
       break;
@@ -123,10 +150,50 @@ export async function handleAdmin(
       }
       break;
 
+    case "criteria":
+      if (path.length === 1) {
+        if (method === "GET") return await listCriteria(env);
+        if (method === "POST") return await createCriterion(request, env, instructorEmail);
+        return methodNotAllowed();
+      }
+      // Checked before the :id branch, or "reorder" would be read as an id.
+      if (path.length === 2 && path[1] === "reorder") {
+        if (method !== "POST") return methodNotAllowed();
+        return await reorderCriteria(request, env, instructorEmail);
+      }
+      if (path.length === 2) {
+        if (method === "GET") return await getCriterion(env, path[1]);
+        if (method === "PUT") return await putCriterion(request, env, instructorEmail, path[1]);
+        if (method === "DELETE") return await deleteCriterion(env, path[1]);
+        return methodNotAllowed();
+      }
+      if (path.length === 3 && path[2] === "versions") {
+        if (method === "GET") return await listCriterionVersions(env, path[1]);
+        return methodNotAllowed();
+      }
+      break;
+
+    case "admins":
+      if (path.length === 1) {
+        if (method === "GET") return await listAdmins(env);
+        if (method === "POST") return await createAdmin(request, env, instructorEmail);
+        return methodNotAllowed();
+      }
+      if (path.length === 2) {
+        if (method === "DELETE") return await deleteAdmin(env, path[1]);
+        return methodNotAllowed();
+      }
+      break;
+
     case "submissions":
       if (path.length === 1) {
         if (method !== "GET") return methodNotAllowed();
         return await listSubmissions(env, url);
+      }
+      // Checked before the :id branch, or "bulk-delete" would be read as an id.
+      if (path.length === 2 && path[1] === "bulk-delete") {
+        if (method !== "POST") return methodNotAllowed();
+        return await bulkDeleteSubmissions(request, env);
       }
       if (path.length === 2) {
         if (method === "GET") return await getSubmission(env, path[1]);
@@ -221,6 +288,18 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
         return json(400, { error: `${key} must be a whole number greater than zero.` });
       }
       updates.push([key, String(n)]);
+      continue;
+    }
+
+    // A checkbox, sent as a boolean by the dashboard and as "1"/"0" by anything
+    // that speaks the stored form. Both are accepted and both are stored as
+    // "1" or "0", so a reader compares one shape only.
+    if (BOOLEAN_SETTING_KEYS.includes(key)) {
+      const on = raw === true || raw === "1" ? true : raw === false || raw === "0" ? false : null;
+      if (on === null) {
+        return json(400, { error: `${key} must be true or false, or the string "1" or "0".` });
+      }
+      updates.push([key, on ? "1" : "0"]);
       continue;
     }
 
@@ -498,6 +577,78 @@ async function deleteRosterEntry(env: Env, studentId: string): Promise<Response>
   ]);
 
   return json(200, { studentId, deleted: true });
+}
+
+/**
+ * POST /api/admin/roster/:id/reset-sessions — clear a student's session grants
+ * so the total quota (sessions_total) opens up again. This is the sanctioned
+ * way to give one student more interviews without raising the quota for
+ * everyone and without touching their stored reports.
+ */
+async function resetSessions(env: Env, studentId: string): Promise<Response> {
+  const student = await env.DB.prepare("SELECT student_id FROM roster WHERE student_id = ?")
+    .bind(studentId)
+    .first<{ student_id: string }>();
+  if (!student) return json(404, { error: `No student with ID ${studentId}.` });
+
+  const result = await env.DB.prepare("DELETE FROM session_grants WHERE student_id = ?")
+    .bind(studentId)
+    .run();
+  return json(200, { studentId, cleared: result.meta.changes ?? 0 });
+}
+
+const ROSTER_BULK_MAX = 500;
+
+/**
+ * POST /api/admin/roster/bulk-remove, body {ids: [...]} — the checkbox
+ * selection on the Roster screen, removed permanently. The never-orphan rule
+ * (§7) holds per student: anyone with stored reports is skipped and named in
+ * the response, not deleted. Each removed student loses their roster row,
+ * login codes and session grants, exactly like the single hard delete.
+ */
+async function bulkRemoveStudents(request: Request, env: Env): Promise<Response> {
+  const parsed = await readJsonBody<{ ids?: unknown }>(request);
+  if (!parsed.ok) return parsed.response;
+  const raw = parsed.value.ids;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return json(400, { error: "ids must be a non-empty list of student IDs." });
+  }
+  if (raw.length > ROSTER_BULK_MAX) {
+    return json(400, { error: `At most ${ROSTER_BULK_MAX} students can be removed in one request.` });
+  }
+  const ids = raw.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (ids.length !== raw.length) {
+    return json(400, { error: "ids must be a non-empty list of student IDs." });
+  }
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const students = await env.DB.prepare(
+    `SELECT student_id, email FROM roster WHERE student_id IN (${placeholders})`,
+  )
+    .bind(...ids)
+    .all<{ student_id: string; email: string }>();
+
+  const withReports = await env.DB.prepare(
+    `SELECT student_id, COUNT(*) AS n FROM submissions WHERE student_id IN (${placeholders}) GROUP BY student_id`,
+  )
+    .bind(...ids)
+    .all<{ student_id: string; n: number }>();
+  const kept = new Map(withReports.results.map((row) => [row.student_id, row.n]));
+
+  const removable = students.results.filter((s) => !kept.has(s.student_id));
+  if (removable.length > 0) {
+    const statements = removable.flatMap((s) => [
+      env.DB.prepare("DELETE FROM login_codes WHERE email = ?").bind(s.email),
+      env.DB.prepare("DELETE FROM session_grants WHERE student_id = ?").bind(s.student_id),
+      env.DB.prepare("DELETE FROM roster WHERE student_id = ?").bind(s.student_id),
+    ]);
+    await env.DB.batch(statements);
+  }
+
+  return json(200, {
+    deleted: removable.length,
+    kept: withReports.results.map((row) => ({ studentId: row.student_id, reports: row.n })),
+  });
 }
 
 // ----------------------------------------------------------- roster import
@@ -944,6 +1095,520 @@ function parseSnapshot(raw: string): Record<string, unknown> | null {
   };
 }
 
+// ---------------------------------------------------------------- criteria
+
+interface CriterionRow {
+  id: string;
+  name: string;
+  description: string;
+  anchor_low: string;
+  anchor_mid: string;
+  anchor_high: string;
+  scale_max: number;
+  needs_ground_truth: number;
+  sort_order: number;
+  active: number;
+  updated_at: number;
+  updated_by: string | null;
+}
+
+interface CriterionFields {
+  name: string;
+  description: string;
+  anchorLow: string;
+  anchorMid: string;
+  anchorHigh: string;
+  scaleMax: number;
+  needsGroundTruth: number;
+  sortOrder: number;
+  active: number;
+}
+
+/** The values a field falls back to: the current row on PUT, the new-row defaults on POST. */
+interface CriterionDefaults {
+  scaleMax: number;
+  needsGroundTruth: number;
+  sortOrder: number;
+  active: number;
+}
+
+async function listCriteria(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(
+    "SELECT id, name, scale_max, needs_ground_truth, sort_order, active, updated_at, updated_by " +
+      "FROM criteria ORDER BY sort_order, id",
+  ).all<CriterionRow>();
+  return json(200, {
+    criteria: rows.results.map((row) => ({
+      id: row.id,
+      name: row.name,
+      scaleMax: row.scale_max,
+      needsGroundTruth: row.needs_ground_truth === 1,
+      sortOrder: row.sort_order,
+      active: row.active === 1,
+      updatedAt: row.updated_at,
+      updatedBy: row.updated_by,
+    })),
+  });
+}
+
+async function getCriterion(env: Env, id: string): Promise<Response> {
+  const row = await env.DB.prepare(
+    "SELECT id, name, description, anchor_low, anchor_mid, anchor_high, scale_max, needs_ground_truth, " +
+      "sort_order, active, updated_at, updated_by FROM criteria WHERE id = ?",
+  )
+    .bind(id)
+    .first<CriterionRow>();
+  if (!row) return json(404, { error: `No criterion with ID ${id}.` });
+  return json(200, {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    anchorLow: row.anchor_low,
+    anchorMid: row.anchor_mid,
+    anchorHigh: row.anchor_high,
+    scaleMax: row.scale_max,
+    needsGroundTruth: row.needs_ground_truth === 1,
+    sortOrder: row.sort_order,
+    active: row.active === 1,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by,
+  });
+}
+
+async function createCriterion(request: Request, env: Env, instructorEmail: string): Promise<Response> {
+  const parsed = await readJsonBody<Record<string, unknown>>(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.value ?? {};
+
+  const id = readText(body.id).toLowerCase();
+  if (!CRITERION_ID_PATTERN.test(id)) {
+    return json(400, {
+      error: "id must be 1 to 40 characters of lowercase letters, digits, underscores and hyphens.",
+    });
+  }
+
+  // A new criterion lands at the end of the rubric unless the request says
+  // otherwise. genseed-criteria.ts steps by 10 for the same reason: it leaves
+  // room to insert between two existing rows without renumbering.
+  const tail = await env.DB.prepare("SELECT COALESCE(MAX(sort_order), 0) + 10 AS next FROM criteria")
+    .first<{ next: number }>();
+  const fields = readCriterionFields(body, {
+    scaleMax: 5,
+    needsGroundTruth: 0,
+    sortOrder: tail?.next ?? 10,
+    active: 1,
+  });
+  if ("error" in fields) return json(400, { error: fields.error });
+
+  const clash = await env.DB.prepare("SELECT id FROM criteria WHERE id = ?").bind(id).first<{ id: string }>();
+  if (clash) return json(409, { error: `A criterion with ID ${id} already exists.` });
+
+  const capped = await checkActiveCount(env, id, fields.active, 0);
+  if (capped) return json(400, { error: capped });
+
+  const now = nowSeconds();
+  try {
+    // The row and its first snapshot in ONE batch, the same invariant personas
+    // carry: a criterion that exists without a version must be impossible.
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO criteria (id, name, description, anchor_low, anchor_mid, anchor_high, scale_max, " +
+          "needs_ground_truth, sort_order, active, updated_at, updated_by) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(
+        id,
+        fields.name,
+        fields.description,
+        fields.anchorLow,
+        fields.anchorMid,
+        fields.anchorHigh,
+        fields.scaleMax,
+        fields.needsGroundTruth,
+        fields.sortOrder,
+        fields.active,
+        now,
+        instructorEmail,
+      ),
+      env.DB.prepare(
+        "INSERT INTO criteria_versions (criterion_id, snapshot, saved_at, saved_by) VALUES (?, ?, ?, ?)",
+      ).bind(id, criterionSnapshotJson(id, fields), now, instructorEmail),
+    ]);
+  } catch (err) {
+    if (isUniqueViolation(err)) return json(409, { error: `A criterion with ID ${id} already exists.` });
+    throw err;
+  }
+
+  return await getCriterion(env, id);
+}
+
+/**
+ * PUT /api/admin/criteria/:id — the full field set, plus a snapshot, in one
+ * batch. As with personas, restoring an old version is a PUT of that
+ * snapshot's fields, so there is no restore endpoint and no way to save
+ * without recording history.
+ */
+async function putCriterion(
+  request: Request,
+  env: Env,
+  instructorEmail: string,
+  id: string,
+): Promise<Response> {
+  const parsed = await readJsonBody<Record<string, unknown>>(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.value ?? {};
+
+  const existing = await env.DB.prepare(
+    "SELECT scale_max, needs_ground_truth, sort_order, active FROM criteria WHERE id = ?",
+  )
+    .bind(id)
+    .first<{ scale_max: number; needs_ground_truth: number; sort_order: number; active: number }>();
+  if (!existing) return json(404, { error: `No criterion with ID ${id}.` });
+
+  const fields = readCriterionFields(body, {
+    scaleMax: existing.scale_max,
+    needsGroundTruth: existing.needs_ground_truth,
+    sortOrder: existing.sort_order,
+    active: existing.active,
+  });
+  if ("error" in fields) return json(400, { error: fields.error });
+
+  const capped = await checkActiveCount(env, id, fields.active, existing.active);
+  if (capped) return json(400, { error: capped });
+
+  const now = nowSeconds();
+  await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE criteria SET name = ?, description = ?, anchor_low = ?, anchor_mid = ?, anchor_high = ?, " +
+        "scale_max = ?, needs_ground_truth = ?, sort_order = ?, active = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+    ).bind(
+      fields.name,
+      fields.description,
+      fields.anchorLow,
+      fields.anchorMid,
+      fields.anchorHigh,
+      fields.scaleMax,
+      fields.needsGroundTruth,
+      fields.sortOrder,
+      fields.active,
+      now,
+      instructorEmail,
+      id,
+    ),
+    env.DB.prepare(
+      "INSERT INTO criteria_versions (criterion_id, snapshot, saved_at, saved_by) VALUES (?, ?, ?, ?)",
+    ).bind(id, criterionSnapshotJson(id, fields), now, instructorEmail),
+  ]);
+
+  return await getCriterion(env, id);
+}
+
+/**
+ * DELETE /api/admin/criteria/:id, for a criterion nothing has been scored
+ * against: a draft, or one added by mistake. A criterion id is not a foreign
+ * key, it is a key inside every stored scores_json, so deleting one that
+ * reports carry would leave those rows scoring something that no longer
+ * exists. Counted and refused for the same reason as the roster and the
+ * personas: never orphan a submission (§7).
+ *
+ * criteria_versions is deliberately left alone, exactly as persona_versions
+ * is. Re-creating the criterion under the same id finds its old versions
+ * waiting.
+ */
+async function deleteCriterion(env: Env, id: string): Promise<Response> {
+  const row = await env.DB.prepare("SELECT id, active FROM criteria WHERE id = ?")
+    .bind(id)
+    .first<{ id: string; active: number }>();
+  if (!row) return json(404, { error: `No criterion with ID ${id}.` });
+
+  // Checked before the reference count, so an instructor is never told to
+  // deactivate a criterion that deactivation would also refuse.
+  if (row.active === 1) {
+    const others = await countOtherActive(env, id);
+    if (others === 0) return json(400, { error: LAST_ACTIVE_CRITERION });
+  }
+
+  // Criterion ids live inside the scores JSON rather than in a column of their
+  // own, so json_each unpacks each stored report's array to count them.
+  const count = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM submissions, json_each(submissions.scores_json) " +
+      "WHERE json_extract(json_each.value, '$.id') = ?",
+  )
+    .bind(id)
+    .first<{ n: number }>();
+  const reports = count?.n ?? 0;
+  if (reports > 0) {
+    return json(409, {
+      error: `${reports} ${reports === 1 ? "report references" : "reports reference"} this criterion. Deactivate it instead.`,
+    });
+  }
+
+  await env.DB.prepare("DELETE FROM criteria WHERE id = ?").bind(id).run();
+  return json(200, { id, deleted: true });
+}
+
+/** The history, newest first, in the same shape PUT accepts. Mirrors personas. */
+async function listCriterionVersions(env: Env, id: string): Promise<Response> {
+  const criterion = await env.DB.prepare("SELECT id FROM criteria WHERE id = ?").bind(id).first<{ id: string }>();
+  if (!criterion) return json(404, { error: `No criterion with ID ${id}.` });
+
+  const rows = await env.DB.prepare(
+    "SELECT id, snapshot, saved_at, saved_by FROM criteria_versions WHERE criterion_id = ? ORDER BY saved_at DESC, id DESC",
+  )
+    .bind(id)
+    .all<{ id: number; snapshot: string; saved_at: number; saved_by: string | null }>();
+
+  const versions = rows.results.map((row) => ({
+    id: row.id,
+    savedAt: row.saved_at,
+    savedBy: row.saved_by,
+    snapshot: parseCriterionSnapshot(row.snapshot),
+  }));
+  return json(200, { criterionId: id, versions });
+}
+
+const LAST_ACTIVE_CRITERION = "At least one criterion must stay active, or no interview can be scored.";
+
+function readCriterionFields(
+  body: Record<string, unknown>,
+  defaults: CriterionDefaults,
+): CriterionFields | { error: string } {
+  const name = readText(body.name);
+  // The prose fields may run to several lines, so they are trimmed and
+  // length-checked but never collapsed, the same treatment systemInstruction
+  // gets on a persona.
+  const description = typeof body.description === "string" ? body.description.trim() : "";
+  const anchorLow = typeof body.anchorLow === "string" ? body.anchorLow.trim() : "";
+  const anchorMid = typeof body.anchorMid === "string" ? body.anchorMid.trim() : "";
+  const anchorHigh = typeof body.anchorHigh === "string" ? body.anchorHigh.trim() : "";
+
+  for (const [label, value] of [
+    ["name", name],
+    ["description", description],
+    ["anchorLow", anchorLow],
+    ["anchorMid", anchorMid],
+    ["anchorHigh", anchorHigh],
+  ] as const) {
+    if (value.length === 0) return { error: `${label} is required.` };
+  }
+
+  // Unlike a model id, this one is enforced: it is rendered into the evaluator
+  // prompt and it divides the overall percentage, so a 50 typed by accident is
+  // a broken report rather than a wide scale.
+  let scaleMax = defaults.scaleMax;
+  if (body.scaleMax !== undefined) {
+    const raw = body.scaleMax;
+    const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw.trim()) : NaN;
+    if (!Number.isInteger(n) || n < MIN_SCALE_MAX || n > MAX_SCALE_MAX) {
+      return { error: `scaleMax must be a whole number from ${MIN_SCALE_MAX} to ${MAX_SCALE_MAX}.` };
+    }
+    scaleMax = n;
+  }
+
+  let needsGroundTruth = defaults.needsGroundTruth;
+  if (body.needsGroundTruth !== undefined) {
+    if (typeof body.needsGroundTruth !== "boolean") {
+      return { error: "needsGroundTruth must be true or false." };
+    }
+    needsGroundTruth = body.needsGroundTruth ? 1 : 0;
+  }
+
+  let sortOrder = defaults.sortOrder;
+  if (body.sortOrder !== undefined) {
+    const raw = body.sortOrder;
+    const n = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw.trim()) : NaN;
+    if (!Number.isInteger(n) || n < 0) {
+      return { error: "sortOrder must be a whole number of zero or more." };
+    }
+    sortOrder = n;
+  }
+
+  let active = defaults.active;
+  if (body.active !== undefined) {
+    if (typeof body.active !== "boolean") return { error: "active must be true or false." };
+    active = body.active ? 1 : 0;
+  }
+
+  return { name, description, anchorLow, anchorMid, anchorHigh, scaleMax, needsGroundTruth, sortOrder, active };
+}
+
+function countOtherActive(env: Env, id: string): Promise<number> {
+  return env.DB.prepare("SELECT COUNT(*) AS n FROM criteria WHERE active = 1 AND id != ?")
+    .bind(id)
+    .first<{ n: number }>()
+    .then((row) => row?.n ?? 0);
+}
+
+/**
+ * The two rules that bound the size of the rubric, checked after the fields
+ * are valid so a request never fails on a count when it would have failed on
+ * a field anyway. Returns the error message, or null when the save may go
+ * ahead.
+ */
+async function checkActiveCount(
+  env: Env,
+  id: string,
+  nextActive: number,
+  currentActive: number,
+): Promise<string | null> {
+  if (nextActive === 1) {
+    const others = await countOtherActive(env, id);
+    if (others >= MAX_ACTIVE_CRITERIA) {
+      return `The rubric already has ${MAX_ACTIVE_CRITERIA} active criteria, the maximum. Deactivate one first.`;
+    }
+    return null;
+  }
+  // Only a real deactivation can empty the rubric; leaving an inactive row
+  // inactive is not the thing being guarded against.
+  if (currentActive === 1) {
+    const others = await countOtherActive(env, id);
+    if (others === 0) return LAST_ACTIVE_CRITERION;
+  }
+  return null;
+}
+
+/**
+ * POST /api/admin/criteria/reorder, body {ids: [...]} — the drag-and-drop
+ * order from the Rubric screen, every criterion id exactly once. sort_order
+ * is rewritten in steps of 10, in one batch.
+ *
+ * Deliberately writes NO criteria_versions snapshots: the order is layout,
+ * not content. Twenty snapshots per drag session would bury the history that
+ * matters (wording changes) under rows in which nothing readable changed.
+ * The editor's own sortOrder field still exists and still versions, because
+ * there it is saved together with content.
+ */
+async function reorderCriteria(request: Request, env: Env, instructorEmail: string): Promise<Response> {
+  const parsed = await readJsonBody<{ ids?: unknown }>(request);
+  if (!parsed.ok) return parsed.response;
+  const raw = parsed.value.ids;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return json(400, { error: "ids must be a non-empty list of criterion IDs." });
+  }
+  const ids = raw.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (ids.length !== raw.length || new Set(ids).size !== ids.length) {
+    return json(400, { error: "ids must be a list of criterion IDs without duplicates." });
+  }
+
+  // The list must be the whole rubric: a partial list would silently push the
+  // missing criteria to arbitrary positions relative to the reordered ones.
+  const existing = await env.DB.prepare("SELECT id FROM criteria").all<{ id: string }>();
+  const known = new Set(existing.results.map((row) => row.id));
+  if (ids.length !== known.size || !ids.every((id) => known.has(id))) {
+    return json(400, { error: "ids must contain every criterion exactly once. Reload the rubric and try again." });
+  }
+
+  const now = nowSeconds();
+  await env.DB.batch(
+    ids.map((id, i) =>
+      env.DB.prepare("UPDATE criteria SET sort_order = ?, updated_at = ?, updated_by = ? WHERE id = ?").bind(
+        (i + 1) * 10,
+        now,
+        instructorEmail,
+        id,
+      ),
+    ),
+  );
+  return json(200, { reordered: ids.length });
+}
+
+/** The full row as saved, in the table's column names (matches genseed-criteria.ts). */
+function criterionSnapshotJson(id: string, fields: CriterionFields): string {
+  return JSON.stringify({
+    id,
+    name: fields.name,
+    description: fields.description,
+    anchor_low: fields.anchorLow,
+    anchor_mid: fields.anchorMid,
+    anchor_high: fields.anchorHigh,
+    scale_max: fields.scaleMax,
+    needs_ground_truth: fields.needsGroundTruth,
+    sort_order: fields.sortOrder,
+    active: fields.active,
+  });
+}
+
+function parseCriterionSnapshot(raw: string): Record<string, unknown> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const row = parsed as Record<string, unknown>;
+  return {
+    name: row.name ?? "",
+    description: row.description ?? "",
+    anchorLow: row.anchor_low ?? "",
+    anchorMid: row.anchor_mid ?? "",
+    anchorHigh: row.anchor_high ?? "",
+    scaleMax: Number(row.scale_max ?? 5) || 5,
+    needsGroundTruth: row.needs_ground_truth === 1 || row.needs_ground_truth === true,
+    sortOrder: Number(row.sort_order ?? 0) || 0,
+    active: row.active !== 0,
+  };
+}
+
+// ------------------------------------------------------------------ admins
+
+/**
+ * The admin list: the master admins from the MASTER_ADMINS var first, marked
+ * and untouchable, then the dashboard-managed rows. Access still decides who
+ * can reach the door at all; see worker/access.ts.
+ */
+async function listAdmins(env: Env): Promise<Response> {
+  const rows = await env.DB.prepare(
+    "SELECT email, note, created_at, created_by FROM admins ORDER BY email",
+  ).all<{ email: string; note: string | null; created_at: number; created_by: string | null }>();
+  return json(200, {
+    admins: [
+      ...masterAdmins(env).map((email) => ({
+        email,
+        note: "Master admin",
+        master: true,
+        createdAt: null,
+        createdBy: null,
+      })),
+      ...rows.results.map((row) => ({
+        email: row.email,
+        note: row.note,
+        master: false,
+        createdAt: row.created_at,
+        createdBy: row.created_by,
+      })),
+    ],
+  });
+}
+
+async function createAdmin(request: Request, env: Env, instructorEmail: string): Promise<Response> {
+  const parsed = await readJsonBody<{ email?: unknown; note?: unknown }>(request);
+  if (!parsed.ok) return parsed.response;
+  const email = typeof parsed.value.email === "string" ? parsed.value.email.trim().toLowerCase() : "";
+  if (!email.includes("@")) return json(400, { error: "Enter the new admin's email address." });
+  const note = typeof parsed.value.note === "string" ? parsed.value.note.trim() : "";
+
+  if (masterAdmins(env).includes(email)) {
+    return json(400, { error: "This address is a master admin already. Master admins are managed in the Worker configuration, not here." });
+  }
+  const clash = await env.DB.prepare("SELECT email FROM admins WHERE email = ?").bind(email).first();
+  if (clash) return json(409, { error: "This address is on the admin list already." });
+
+  await env.DB.prepare("INSERT INTO admins (email, note, created_at, created_by) VALUES (?, ?, ?, ?)")
+    .bind(email, note.length > 0 ? note : null, nowSeconds(), instructorEmail)
+    .run();
+  return json(200, { email, added: true });
+}
+
+async function deleteAdmin(env: Env, rawEmail: string): Promise<Response> {
+  const email = rawEmail.trim().toLowerCase();
+  if (masterAdmins(env).includes(email)) {
+    return json(400, { error: "Master admins cannot be removed from the dashboard." });
+  }
+  const result = await env.DB.prepare("DELETE FROM admins WHERE email = ?").bind(email).run();
+  if ((result.meta.changes ?? 0) === 0) return json(404, { error: "This address is not on the admin list." });
+  return json(200, { email, deleted: true });
+}
+
 // ------------------------------------------------------------- submissions
 
 interface SubmissionListRow {
@@ -965,11 +1630,19 @@ interface SubmissionFilters {
   limit: number;
 }
 
-/** ?cohort=, ?from=, ?to= (unix seconds on started_at), ?sort=duration, ?limit=. */
+/** ?student=, ?cohort=, ?from=, ?to= (unix seconds on started_at), ?sort=duration, ?limit=. */
 function submissionFilters(url: URL, defaultLimit: number, maxLimit: number): SubmissionFilters {
   const conditions: string[] = [];
   const binds: unknown[] = [];
 
+  // Substring match, so a partial student number finds the student. LIKE
+  // wildcards typed by the instructor are harmless here: the worst case is a
+  // broader match in a list they are already free to read in full.
+  const student = (url.searchParams.get("student") ?? "").trim();
+  if (student.length > 0) {
+    conditions.push("s.student_id LIKE ?");
+    binds.push(`%${student}%`);
+  }
   const cohort = (url.searchParams.get("cohort") ?? "").trim();
   if (cohort.length > 0) {
     conditions.push("r.cohort = ?");
@@ -1074,6 +1747,39 @@ async function deleteSubmission(env: Env, id: string): Promise<Response> {
 
   await env.DB.prepare("DELETE FROM submissions WHERE id = ?").bind(id).run();
   return json(200, { id, deleted: true });
+}
+
+// The list endpoint serves at most 500 rows, so a selection can never be
+// larger than that; the cap only refuses a hand-built request.
+const BULK_DELETE_MAX = 500;
+
+/**
+ * POST /api/admin/submissions/bulk-delete, body {ids: [...]}. The checkbox
+ * selection on the Submissions screen, deleted in one statement. Same nature
+ * as the single delete above: the instructor destroying their own records.
+ * Unknown ids are simply not matched, and the response says how many rows
+ * were really removed.
+ */
+async function bulkDeleteSubmissions(request: Request, env: Env): Promise<Response> {
+  const parsed = await readJsonBody<{ ids?: unknown }>(request);
+  if (!parsed.ok) return parsed.response;
+  const raw = parsed.value.ids;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return json(400, { error: "ids must be a non-empty list of submission IDs." });
+  }
+  if (raw.length > BULK_DELETE_MAX) {
+    return json(400, { error: `At most ${BULK_DELETE_MAX} submissions can be deleted in one request.` });
+  }
+  const ids = raw.filter((v): v is string => typeof v === "string" && v.length > 0);
+  if (ids.length !== raw.length) {
+    return json(400, { error: "ids must be a non-empty list of submission IDs." });
+  }
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const result = await env.DB.prepare(`DELETE FROM submissions WHERE id IN (${placeholders})`)
+    .bind(...ids)
+    .run();
+  return json(200, { deleted: result.meta.changes ?? 0 });
 }
 
 /**

@@ -89,3 +89,41 @@ CREATE TABLE IF NOT EXISTS persona_versions (
   saved_by    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_persona_versions ON persona_versions(persona_id, saved_at);
+
+-- The scoring rubric, editable from the dashboard. Seeded from src/criteria.ts.
+CREATE TABLE IF NOT EXISTS criteria (
+  id                 TEXT PRIMARY KEY,
+  name               TEXT NOT NULL,
+  description        TEXT NOT NULL,
+  anchor_low         TEXT NOT NULL,   -- what a score of 1 looks like
+  anchor_mid         TEXT NOT NULL,   -- what the midpoint score looks like
+  anchor_high        TEXT NOT NULL,   -- what the top score looks like
+  scale_max          INTEGER NOT NULL DEFAULT 5,  -- top of this item's scale, 2..10
+  needs_ground_truth INTEGER NOT NULL DEFAULT 0,
+  sort_order         INTEGER NOT NULL DEFAULT 0,
+  active             INTEGER NOT NULL DEFAULT 1,
+  updated_at         INTEGER NOT NULL,
+  updated_by         TEXT
+);
+
+-- Every save of a criterion, never deleted. Mirrors persona_versions.
+CREATE TABLE IF NOT EXISTS criteria_versions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  criterion_id TEXT NOT NULL,
+  snapshot     TEXT NOT NULL,          -- full JSON of the row as saved
+  saved_at     INTEGER NOT NULL,
+  saved_by     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_criteria_versions ON criteria_versions(criterion_id, saved_at);
+
+-- Dashboard-managed admins (student assistants, colleagues). Cloudflare
+-- Access still authenticates the person at the door; this table authorizes
+-- them for the admin surface. The master admins live in the MASTER_ADMINS
+-- Worker var, deliberately NOT in this table, so the dashboard can never
+-- add or remove one.
+CREATE TABLE IF NOT EXISTS admins (
+  email      TEXT PRIMARY KEY,           -- lowercased at write time
+  note       TEXT,                       -- who this is, e.g. 'student assistant'
+  created_at INTEGER NOT NULL,
+  created_by TEXT
+);

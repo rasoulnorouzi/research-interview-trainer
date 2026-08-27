@@ -30,6 +30,12 @@ import { fmtMs } from "../shared/format";
  * status and Resend's own `message` field (safe to surface), and never
  * includes `apiKey`.
  */
+export interface EmailAttachment {
+  filename: string;
+  /** File contents, base64-encoded (what Resend's API expects). */
+  content: string;
+}
+
 export async function sendEmail(
   apiKey: string,
   from: string,
@@ -37,6 +43,7 @@ export async function sendEmail(
   subject: string,
   text: string,
   html: string,
+  attachments?: EmailAttachment[],
 ): Promise<void> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -44,7 +51,11 @@ export async function sendEmail(
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({ from, to, subject, text, html }),
+    body: JSON.stringify(
+      attachments && attachments.length > 0
+        ? { from, to, subject, text, html, attachments }
+        : { from, to, subject, text, html },
+    ),
   });
 
   if (!res.ok) {
@@ -123,6 +134,51 @@ export function studentReportEmail(
   return { subject, text, html };
 }
 
+/** The one line the transcript-only student copy carries about the scores. */
+const WITHHELD_NOTICE = "Your instructor received the full scored report.";
+
+/**
+ * The student's copy when the instructor has switched
+ * `share_report_with_student` off: the header block and the transcript, and
+ * nothing else. No metrics table, no rubric, no feedback.
+ *
+ * The data passed in is the same complete `ReportEmailData` the instructor
+ * copy is built from. This function selects what the student sees; the
+ * caller does not have to hold back a second, thinner object.
+ */
+export function studentTranscriptEmail(
+  d: ReportEmailData,
+): { subject: string; text: string; html: string } {
+  const subject = `Interview transcript: ${d.personaName}, ${formatDateOnly(d.startedAt)}`;
+
+  const lines: string[] = [];
+  lines.push(`${d.personaName} (${d.personaTitle})`);
+  lines.push(`Student: ${d.studentName}`);
+  lines.push(`Date: ${formatDateTime(d.startedAt)}`);
+  lines.push(`Duration: ${fmtMs(d.durationMs)}`);
+  lines.push(``);
+  lines.push(WITHHELD_NOTICE);
+  lines.push(``);
+  lines.push(`TRANSCRIPT`);
+  lines.push(``);
+  lines.push(...transcriptTextLines(d));
+  const text = lines.join("\n");
+
+  const parts: string[] = [];
+  parts.push(
+    `<h1 style="${H1_STYLE}">${escapeHtml(d.personaName)} (${escapeHtml(d.personaTitle)})</h1>`,
+  );
+  parts.push(`<p style="${P_STYLE}">Student: ${escapeHtml(d.studentName)}</p>`);
+  parts.push(`<p style="${P_STYLE}">Date: ${escapeHtml(formatDateTime(d.startedAt))}</p>`);
+  parts.push(`<p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>`);
+  parts.push(`<p style="${P_STYLE}">${escapeHtml(WITHHELD_NOTICE)}</p>`);
+  parts.push(`<h2 style="${H2_STYLE}">Transcript</h2>`);
+  parts.push(...transcriptHtmlParts(d));
+  const html = htmlDocument(subject, parts.join("\n"));
+
+  return { subject, text, html };
+}
+
 /**
  * The instructor's copy. Same report body as the student version, prefixed
  * with an identity block (student name, id, cohort, persona, start time,
@@ -178,40 +234,58 @@ function metricsRows(m: Metrics): [string, string][] {
   ];
 }
 
-/** "n/a" for a null score, `X / 5` for a real one. Never renders null as 0. */
-function formatScore(score: number | null): string {
-  return score === null ? "n/a" : `${roundTo1(score)} / 5`;
+/** "n/a" for a null score, `X / max` for a real one. Never renders null as 0. */
+function formatScore(score: number | null, max: number): string {
+  return score === null ? "n/a" : `${roundTo1(score)} / ${max}`;
 }
 
 function roundTo1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-function reportBodyText(d: ReportEmailData): string {
+/**
+ * Points-out-of-possible presentation for the overall line, e.g.
+ * "12 / 15 points (80%)". Sums score and max over rows the evaluators could
+ * actually assess (score !== null); a not-assessable criterion contributes
+ * to neither sum. `pct` prefers the report's own overall percentage and
+ * only falls back to computing one locally if that is unavailable. "n/a"
+ * when nothing was assessable at all.
+ */
+function formatOverall(d: ReportEmailData): string {
+  const assessed = d.scores.filter((c) => c.score !== null);
+  if (assessed.length === 0) return "n/a";
+  const points = assessed.reduce((sum, c) => sum + (c.score as number), 0);
+  const possible = assessed.reduce((sum, c) => sum + (c.max ?? 5), 0);
+  const pct = d.overall ?? Math.round((100 * points) / possible);
+  return `${points} / ${possible} points (${pct}%)`;
+}
+
+function headerTextLines(d: ReportEmailData): string[] {
+  return [
+    `${d.personaName} (${d.personaTitle})`,
+    `Student: ${d.studentName} (${d.studentId})`,
+    `Date: ${formatDateTime(d.startedAt)}`,
+    `Duration: ${fmtMs(d.durationMs)}`,
+    ``,
+  ];
+}
+
+function rubricTextLines(d: ReportEmailData): string[] {
   const lines: string[] = [];
-
-  lines.push(`${d.personaName} (${d.personaTitle})`);
-  lines.push(`Date: ${formatDateTime(d.startedAt)}`);
-  lines.push(`Duration: ${fmtMs(d.durationMs)}`);
-  lines.push(``);
-
-  lines.push(`SPEAKING METRICS`);
-  lines.push(``);
-  for (const [label, value] of metricsRows(d.metrics)) {
-    lines.push(`${label}: ${value}`);
-  }
-  lines.push(``);
-
   lines.push(`RUBRIC ASSESSMENT`);
   lines.push(``);
-  lines.push(`Overall score: ${formatScore(d.overall)}`);
+  lines.push(`Overall score: ${formatOverall(d)}`);
   lines.push(``);
   for (const c of d.scores) {
-    lines.push(`${c.name}: ${formatScore(c.score)}`);
+    lines.push(`${c.name}: ${formatScore(c.score, c.max ?? 5)}`);
     lines.push(c.justification);
     lines.push(``);
   }
+  return lines;
+}
 
+function feedbackTextLines(d: ReportEmailData): string[] {
+  const lines: string[] = [];
   lines.push(`FEEDBACK`);
   lines.push(``);
   lines.push(`Strengths:`);
@@ -232,15 +306,85 @@ function reportBodyText(d: ReportEmailData): string {
   lines.push(`Summary:`);
   lines.push(d.feedback.summary);
   lines.push(``);
+  return lines;
+}
+
+function reportBodyText(d: ReportEmailData): string {
+  const lines: string[] = [];
+
+  lines.push(`${d.personaName} (${d.personaTitle})`);
+  lines.push(`Date: ${formatDateTime(d.startedAt)}`);
+  lines.push(`Duration: ${fmtMs(d.durationMs)}`);
+  lines.push(``);
+
+  lines.push(`SPEAKING METRICS`);
+  lines.push(``);
+  for (const [label, value] of metricsRows(d.metrics)) {
+    lines.push(`${label}: ${value}`);
+  }
+  lines.push(``);
+
+  lines.push(...rubricTextLines(d));
+  lines.push(...feedbackTextLines(d));
 
   lines.push(`TRANSCRIPT`);
   lines.push(``);
-  for (const e of d.transcript) {
-    const speaker = e.speaker === "student" ? "Student" : d.personaName;
-    lines.push(`[${fmtMs(e.tStart)}, spoke ${fmtMs(e.speechMs)}] ${speaker}: ${e.text}`);
-  }
+  lines.push(...transcriptTextLines(d));
 
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------
+// Attachments: the transcript and the assessment as two plain-text files
+// ---------------------------------------------------------------------
+
+/** UTF-8 text to the base64 form Resend's attachment API expects. */
+function toBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+function attachmentDate(d: ReportEmailData): string {
+  return new Date(d.startedAt).toISOString().slice(0, 10); // UTC YYYY-MM-DD
+}
+
+/** The interview transcript as a standalone .txt file. */
+export function transcriptAttachment(d: ReportEmailData): EmailAttachment {
+  const lines = [...headerTextLines(d), `TRANSCRIPT`, ``, ...transcriptTextLines(d), ``];
+  return {
+    filename: `interview-transcript-${attachmentDate(d)}.txt`,
+    content: toBase64(lines.join("\n")),
+  };
+}
+
+/** The rubric scores and the qualitative feedback as a standalone .txt file. */
+export function assessmentAttachment(d: ReportEmailData): EmailAttachment {
+  const lines = [...headerTextLines(d), ...rubricTextLines(d), ...feedbackTextLines(d)];
+  return {
+    filename: `interview-assessment-${attachmentDate(d)}.txt`,
+    content: toBase64(lines.join("\n")),
+  };
+}
+
+/** The transcript body, shared by the full report and the transcript-only copy. */
+function transcriptTextLines(d: ReportEmailData): string[] {
+  return d.transcript.map((e) => {
+    const speaker = e.speaker === "student" ? "Student" : d.personaName;
+    return `[${fmtMs(e.tStart)}, spoke ${fmtMs(e.speechMs)}] ${speaker}: ${e.text}`;
+  });
+}
+
+function transcriptHtmlParts(d: ReportEmailData): string[] {
+  return d.transcript.map((e) => {
+    const speaker = e.speaker === "student" ? "Student" : d.personaName;
+    return (
+      `<p style="${P_STYLE}"><strong>${escapeHtml(speaker)}</strong> ` +
+      `<span style="color:#666666;">[${escapeHtml(fmtMs(e.tStart))}, spoke ${escapeHtml(fmtMs(e.speechMs))}]</span><br>` +
+      `${escapeHtmlMultiline(e.text)}</p>`
+    );
+  });
 }
 
 function reportBodyHtml(d: ReportEmailData): string {
@@ -263,7 +407,7 @@ function reportBodyHtml(d: ReportEmailData): string {
 
   parts.push(`<h2 style="${H2_STYLE}">Rubric assessment</h2>`);
   parts.push(
-    `<p style="${P_STYLE}"><strong>Overall score: ${escapeHtml(formatScore(d.overall))}</strong></p>`,
+    `<p style="${P_STYLE}"><strong>Overall score: ${escapeHtml(formatOverall(d))}</strong></p>`,
   );
   parts.push(`<table style="${TABLE_STYLE}">`);
   parts.push(
@@ -272,7 +416,7 @@ function reportBodyHtml(d: ReportEmailData): string {
   for (const c of d.scores) {
     parts.push(
       `<tr><td style="${TD_STYLE}">${escapeHtml(c.name)}</td>` +
-        `<td style="${TD_STYLE}">${escapeHtml(formatScore(c.score))}</td>` +
+        `<td style="${TD_STYLE}">${escapeHtml(formatScore(c.score, c.max ?? 5))}</td>` +
         `<td style="${TD_STYLE}">${escapeHtmlMultiline(c.justification)}</td></tr>`,
     );
   }
@@ -298,14 +442,7 @@ function reportBodyHtml(d: ReportEmailData): string {
   parts.push(`<p style="${P_STYLE}">${escapeHtmlMultiline(d.feedback.summary)}</p>`);
 
   parts.push(`<h2 style="${H2_STYLE}">Transcript</h2>`);
-  for (const e of d.transcript) {
-    const speaker = e.speaker === "student" ? "Student" : d.personaName;
-    parts.push(
-      `<p style="${P_STYLE}"><strong>${escapeHtml(speaker)}</strong> ` +
-        `<span style="color:#666666;">[${escapeHtml(fmtMs(e.tStart))}, spoke ${escapeHtml(fmtMs(e.speechMs))}]</span><br>` +
-        `${escapeHtmlMultiline(e.text)}</p>`,
-    );
-  }
+  parts.push(...transcriptHtmlParts(d));
 
   return parts.join("\n");
 }

@@ -7,7 +7,8 @@
 INSERT OR IGNORE INTO settings (key, value, updated_at, updated_by) VALUES
   ('interview_limit_minutes', '12', strftime('%s','now'), 'seed'),
   ('interview_warn_minutes', '10', strftime('%s','now'), 'seed'),
-  ('sessions_per_day', '5', strftime('%s','now'), 'seed'),
+  ('sessions_total', '10', strftime('%s','now'), 'seed'),
   ('interview_model', 'gpt-realtime-2.1-mini', strftime('%s','now'), 'seed'),
   ('scoring_model', 'gpt-5.6-terra', strftime('%s','now'), 'seed'),
+  ('share_report_with_student', '1', strftime('%s','now'), 'seed'),
   ('instructor_recipients', '', strftime('%s','now'), 'seed');

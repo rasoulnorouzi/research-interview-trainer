@@ -52,6 +52,12 @@
   --danger-border: #e2c2c2;
   --danger-soft: #f7eeee;
 
+  /* Confirmation */
+  --success: #2e6b46;
+  --success-text: #245c3b;
+  --success-border: #c2dccd;
+  --success-soft: #eef6f1;
+
   /* Disabled */
   --disabled: #b9bcc7;
   --disabled-text: #ffffff;
@@ -111,6 +117,11 @@
     --danger-text: #f0b4b4;
     --danger-border: rgba(217, 128, 128, 0.4);
     --danger-soft: rgba(200, 80, 80, 0.14);
+
+    --success: #82c49b;
+    --success-text: #b0dec2;
+    --success-border: rgba(130, 196, 155, 0.4);
+    --success-soft: rgba(80, 160, 110, 0.14);
 
     --disabled: #333944;
     --disabled-text: #8a919d;
@@ -472,6 +483,76 @@ textarea {
   width: auto;
 }
 
+/* On/off switch for binary settings. A real checkbox underneath; the track
+   and knob are drawn here. No motion: the knob changes side, nothing slides. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+  margin-top: 0.6rem;
+  cursor: pointer;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle .toggle-track {
+  flex: none;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  border: 1px solid var(--border-hover);
+  background: var(--surface-subtle);
+  position: relative;
+}
+
+.toggle .toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.toggle input:checked + .toggle-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.toggle input:checked + .toggle-track::after {
+  left: auto;
+  right: 2px;
+  background: var(--on-accent);
+}
+
+.toggle input:focus-visible + .toggle-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.toggle-state {
+  min-width: 1.9em;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* The drag handle on reorderable table rows (the rubric list). */
+.drag-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  user-select: none;
+  width: 1.5em;
+  text-align: center;
+}
+
 input[type="checkbox"],
 input[type="radio"] {
   accent-color: var(--accent);
@@ -591,7 +672,8 @@ td.num {
    ------------------------------------------------------------------------ */
 
 .banner-error,
-.banner-info {
+.banner-info,
+.banner-success {
   border-radius: var(--radius-control);
   padding: 12px 14px;
   margin-bottom: 1.1rem;
@@ -610,8 +692,15 @@ td.num {
   color: var(--text);
 }
 
+.banner-success {
+  border: 1px solid var(--success-border);
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
 .banner-error :last-child,
-.banner-info :last-child {
+.banner-info :last-child,
+.banner-success :last-child {
   margin-bottom: 0;
 }
 
@@ -875,15 +964,41 @@ td.num {
   flex: none;
 }
 
+/* Row actions stay on ONE line: compact buttons, no wrapping. On a narrow
+   screen the table's own horizontal scroll takes over; a half-wrapped button
+   stack reads as broken, a scrollable row does not. */
 .admin-row-actions {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .admin-row-actions .btn {
-  padding: 5px 12px;
-  font-size: 0.85rem;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+}
+
+/* Small screens: the frame loses its side margins, the nav pills and toolbar
+   fields wrap, and cards tighten up, so every admin screen stays usable on a
+   phone without a separate layout. */
+@media (max-width: 640px) {
+  .admin-page .card {
+    padding: 14px;
+  }
+
+  .admin-nav {
+    flex-wrap: wrap;
+  }
+
+  .admin-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-toolbar .field {
+    width: 100%;
+  }
 }
 
 /* Tables get the card treatment without needing a wrapper in the markup. */
@@ -979,6 +1094,10 @@ textarea.admin-large {
     --danger-text: #000000;
     --danger-border: #999999;
     --danger-soft: transparent;
+    --success: #000000;
+    --success-text: #000000;
+    --success-border: #999999;
+    --success-soft: transparent;
     --shadow-card: none;
   }
 

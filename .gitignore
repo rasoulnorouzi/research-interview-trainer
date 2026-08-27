@@ -11,6 +11,9 @@ voice-auditions/
 # backend secrets and generated seeds
 set-key.sql
 seed-personas.sql
+seed-criteria.sql
 .genseed.mjs
+.genseed-criteria.mjs
 .dev.vars
 .wrangler/
+backup-*.sql

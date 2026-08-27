@@ -3,17 +3,22 @@ import { ApiError } from "./api";
 import { Settings } from "./Settings";
 import { Roster } from "./Roster";
 import { Personas } from "./Personas";
+import { Rubric } from "./Rubric";
+import { Admins } from "./Admins";
 import { Submissions } from "./Submissions";
 import { Breakglass } from "./Breakglass";
 
-type Tab = "settings" | "roster" | "personas" | "submissions" | "breakglass";
+type Tab = "settings" | "roster" | "personas" | "rubric" | "submissions" | "breakglass"
+  | "admins";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "settings", label: "Settings" },
-  { id: "roster", label: "Roster" },
+  { id: "roster", label: "Students" },
   { id: "personas", label: "Personas" },
+  { id: "rubric", label: "Rubric" },
   { id: "submissions", label: "Submissions" },
   { id: "breakglass", label: "Break-glass" },
+  { id: "admins", label: "Admins" },
 ];
 
 /** The active tab lives in location.hash (#roster), so Back moves between the
@@ -53,7 +58,7 @@ export function AdminApp() {
   return (
     <div className="admin-root">
       <div className="page admin-page">
-        <header className="app-header">
+        <header className="app-header no-print">
           <span className="app-name">
             Research Interview Trainer - Instructor Dashboard
           </span>
@@ -81,7 +86,7 @@ export function AdminApp() {
           </div>
         ) : (
           <>
-            <nav className="admin-nav">
+            <nav className="admin-nav no-print">
               {TABS.map((t) => (
                 <button
                   key={t.id}
@@ -97,8 +102,10 @@ export function AdminApp() {
             {tab === "settings" && <Settings onApiError={onApiError} />}
             {tab === "roster" && <Roster onApiError={onApiError} />}
             {tab === "personas" && <Personas onApiError={onApiError} />}
+            {tab === "rubric" && <Rubric onApiError={onApiError} />}
             {tab === "submissions" && <Submissions onApiError={onApiError} />}
             {tab === "breakglass" && <Breakglass onApiError={onApiError} />}
+            {tab === "admins" && <Admins onApiError={onApiError} />}
           </>
         )}
       </div>

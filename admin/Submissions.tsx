@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Toggle } from "./Toggle";
 import { api, adminUrl } from "./api";
 import { fmtMs } from "../shared/format";
 import type { CriterionScore, Metrics, QualitativeFeedback, TranscriptEntry } from "../shared/types";
@@ -57,11 +58,32 @@ function toUnixSeconds(dateInput: string): number | null {
   return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
 }
 
+/**
+ * Points-out-of-possible for the overall figure, summed over rows the
+ * evaluators could actually assess (score !== null); a not-assessable
+ * criterion contributes to neither sum. Null when nothing was assessable
+ * (including an empty scores array).
+ */
+function computeOverallPoints(
+  scores: CriterionScore[],
+): { points: number; possible: number } | null {
+  const assessed = scores.filter((s) => s.score !== null);
+  if (assessed.length === 0) return null;
+  const points = assessed.reduce((sum, s) => sum + (s.score as number), 0);
+  const possible = assessed.reduce((sum, s) => sum + (s.max ?? 5), 0);
+  return { points, possible };
+}
+
 export function Submissions({ onApiError }: Props) {
   const [cohort, setCohort] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sort, setSort] = useState<"date" | "duration">("date");
+  const [student, setStudent] = useState("");
+
+  // The checkbox selection for bulk delete, by submission id.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const [list, setList] = useState<SubmissionListItem[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
@@ -73,6 +95,7 @@ export function Submissions({ onApiError }: Props) {
 
   const buildQuery = (): string => {
     const params = new URLSearchParams();
+    if (student.trim().length > 0) params.set("student", student.trim());
     if (cohort.trim().length > 0) params.set("cohort", cohort.trim());
     const fromSec = toUnixSeconds(from);
     if (fromSec !== null) params.set("from", String(fromSec));
@@ -84,6 +107,7 @@ export function Submissions({ onApiError }: Props) {
 
   const load = () => {
     setListError(null);
+    setSelected(new Set());
     const qs = buildQuery();
     api<{ submissions: SubmissionListItem[] }>(`/submissions${qs ? `?${qs}` : ""}`)
       .then(({ submissions }) => setList(submissions))
@@ -98,6 +122,44 @@ export function Submissions({ onApiError }: Props) {
   const search = (e: React.FormEvent) => {
     e.preventDefault();
     load();
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (!list) return;
+    setSelected((prev) => (prev.size === list.length ? new Set<string>() : new Set(list.map((s) => s.id))));
+  };
+
+  const bulkDelete = () => {
+    if (selected.size === 0) return;
+    const n = selected.size;
+    if (
+      !confirm(
+        `Delete ${n} ${n === 1 ? "submission" : "submissions"} permanently? This cannot be undone. The emailed copies are not affected.`,
+      )
+    ) {
+      return;
+    }
+    setBulkDeleting(true);
+    setListError(null);
+    api<{ deleted: number }>(`/submissions/bulk-delete`, {
+      method: "POST",
+      body: JSON.stringify({ ids: [...selected] }),
+    })
+      .then(() => load())
+      .catch((err) => {
+        setListError(err instanceof Error ? err.message : "Could not delete the selected submissions.");
+        onApiError(err);
+      })
+      .finally(() => setBulkDeleting(false));
   };
 
   const openDetail = (id: string) => {
@@ -133,7 +195,7 @@ export function Submissions({ onApiError }: Props) {
   if (detailLoading || detail || detailError) {
     return (
       <div>
-        <p>
+        <p className="no-print">
           <button className="btn btn-secondary" type="button" onClick={() => setDetail(null)}>
             Back to submissions
           </button>
@@ -150,6 +212,16 @@ export function Submissions({ onApiError }: Props) {
       <h2>Submissions</h2>
 
       <form className="card admin-toolbar" onSubmit={search}>
+        <div className="field">
+          <label htmlFor="sub-student">Student ID</label>
+          <input
+            id="sub-student"
+            type="text"
+            placeholder="u000000"
+            value={student}
+            onChange={(e) => setStudent(e.target.value)}
+          />
+        </div>
         <div className="field">
           <label htmlFor="sub-cohort">Cohort</label>
           <input id="sub-cohort" type="text" value={cohort} onChange={(e) => setCohort(e.target.value)} />
@@ -184,6 +256,14 @@ export function Submissions({ onApiError }: Props) {
           <table>
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all submissions in the list"
+                    checked={list.length > 0 && selected.size === list.length}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
                 <th>Started</th>
                 <th>Student</th>
                 <th>Cohort</th>
@@ -196,6 +276,14 @@ export function Submissions({ onApiError }: Props) {
             <tbody>
               {list.map((s) => (
                 <tr key={s.id} className="admin-clickable-row" onClick={() => openDetail(s.id)}>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select the submission of ${s.studentId}`}
+                      checked={selected.has(s.id)}
+                      onChange={() => toggleSelected(s.id)}
+                    />
+                  </td>
                   <td className="num">{formatUnixOrMs(s.startedAt)}</td>
                   <td>
                     {s.fullName} <span className="small">({s.studentId})</span>
@@ -207,7 +295,7 @@ export function Submissions({ onApiError }: Props) {
                     {s.overallScore === null ? (
                       <span className="not-assessed">n/a</span>
                     ) : (
-                      <span className="chip">{s.overallScore} / 5</span>
+                      <span className="chip">{s.overallScore}%</span>
                     )}
                   </td>
                   <td>{s.emailedAt !== null ? "Yes" : "No"}</td>
@@ -215,13 +303,20 @@ export function Submissions({ onApiError }: Props) {
               ))}
               {list.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="small">
+                  <td colSpan={8} className="small">
                     No submissions match.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+      )}
+      {list && selected.size > 0 && (
+        <div className="btn-row" style={{ marginTop: "0.8rem" }}>
+          <button className="btn btn-danger" type="button" onClick={bulkDelete} disabled={bulkDeleting}>
+            {bulkDeleting ? "Deleting…" : `Delete ${selected.size} selected`}
+          </button>
         </div>
       )}
     </div>
@@ -237,6 +332,25 @@ interface SubmissionDetailViewProps {
 function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailViewProps) {
   const assessed = detail.scores.filter((s) => s.score !== null).length;
   const notAssessedCount = detail.scores.length - assessed;
+  const overallPoints = computeOverallPoints(detail.scores);
+
+  // One switch governs the screen, the Markdown download and the print
+  // output together: what you see is what you get in the file.
+  const [includeFeedback, setIncludeFeedback] = useState(true);
+
+  const downloadMarkdown = () => {
+    const md = buildSubmissionMarkdown(detail, includeFeedback);
+    const blob = new Blob([md], { type: "text/markdown" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `interview-${detail.studentId}-${new Date(
+      detail.startedAt > 1e11 ? detail.startedAt : detail.startedAt * 1000,
+    )
+      .toISOString()
+      .slice(0, 10)}.md`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 
   return (
     <div>
@@ -250,6 +364,26 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
           {formatUnixOrMs(detail.startedAt)} · Duration {fmtMs(detail.durationMs)}
           <br />
           Emailed: {detail.emailedAt !== null ? "Yes" : "No"}
+        </p>
+      </div>
+
+      <div className="card no-print">
+        <Toggle
+          id="detail-include-feedback"
+          label="Include scores and feedback (on screen, in the file, and in print)"
+          checked={includeFeedback}
+          onChange={setIncludeFeedback}
+        />
+        <div className="btn-row" style={{ marginTop: "0.8rem" }}>
+          <button className="btn btn-secondary" type="button" onClick={downloadMarkdown}>
+            Download Markdown
+          </button>
+          <button className="btn btn-secondary" type="button" onClick={() => window.print()}>
+            Print / Save as PDF
+          </button>
+        </div>
+        <p className="admin-help">
+          Print opens the browser dialog. Choose &ldquo;Save as PDF&rdquo; there for a PDF file.
         </p>
       </div>
 
@@ -301,11 +435,15 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
       </table>
       </div>
 
+      {includeFeedback && (
       <div className="card">
       <h3>Rubric assessment</h3>
-      {detail.overallScore !== null && (
+      {detail.overallScore !== null && overallPoints && (
         <p className="overall-score">
-          Overall score: {detail.overallScore.toFixed(1)} / 5
+          Overall score: {overallPoints.points} / {overallPoints.possible} points (
+          {detail.overallScore ??
+            Math.round((100 * overallPoints.points) / overallPoints.possible)}
+          %)
           {notAssessedCount > 0 && (
             <span className="small">
               {" "}
@@ -330,7 +468,7 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
                 {s.score === null ? (
                   <span className="not-assessed">n/a</span>
                 ) : (
-                  <span className="chip">{s.score} / 5</span>
+                  <span className="chip">{s.score} / {s.max ?? 5}</span>
                 )}
               </td>
               <td>{s.justification}</td>
@@ -339,7 +477,9 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
         </tbody>
       </table>
       </div>
+      )}
 
+      {includeFeedback && (
       <div className="card">
       <h3>Feedback</h3>
       <h3>Strengths</h3>
@@ -366,6 +506,7 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
       <h3>Summary</h3>
       <p>{detail.feedback.summary}</p>
       </div>
+      )}
 
       <div className="card">
       <h3>Transcript</h3>
@@ -388,7 +529,7 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
           reaches for. There is no per-row delete in the list above: opening
           this view first is what makes sure the instructor sees what they
           are about to remove. */}
-      <div className="danger-zone">
+      <div className="danger-zone no-print">
         <button className="btn btn-danger" type="button" disabled={deleting} onClick={onDelete}>
           {deleting ? "Deleting…" : "Delete submission"}
         </button>
@@ -399,4 +540,87 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
       </div>
     </div>
   );
+}
+/**
+ * The submission as a Markdown file, for the instructor's records. The
+ * includeFeedback flag removes the rubric and the feedback, so the file can
+ * be passed to a student even when scores are withheld.
+ */
+function buildSubmissionMarkdown(detail: SubmissionDetail, includeFeedback: boolean): string {
+  const lines: string[] = [];
+  const overallPoints = computeOverallPoints(detail.scores);
+
+  lines.push(`# Interview report`);
+  lines.push(``);
+  lines.push(`- Student: ${detail.fullName} (${detail.studentId})`);
+  if (detail.cohort) lines.push(`- Cohort: ${detail.cohort}`);
+  lines.push(`- Persona: ${detail.personaId}`);
+  lines.push(`- Date: ${formatUnixOrMs(detail.startedAt)}`);
+  lines.push(`- Duration: ${fmtMs(detail.durationMs)}`);
+  lines.push(``);
+
+  lines.push(`## Speaking metrics`);
+  lines.push(``);
+  lines.push(`| Metric | Value |`);
+  lines.push(`| --- | --- |`);
+  lines.push(`| Total duration | ${fmtMs(detail.metrics.durationMs)} |`);
+  lines.push(`| Student speaking time | ${fmtMs(detail.metrics.studentSpeakingMs)} |`);
+  lines.push(`| Interviewee speaking time | ${fmtMs(detail.metrics.intervieweeSpeakingMs)} |`);
+  lines.push(`| Talk ratio (student) | ${Math.round(detail.metrics.talkRatioStudent * 100)}% |`);
+  lines.push(`| Questions asked | ${detail.metrics.questionsAsked} |`);
+  lines.push(`| Student turns / interviewee turns | ${detail.metrics.studentTurns} / ${detail.metrics.intervieweeTurns} |`);
+  lines.push(`| Words spoken (student / interviewee) | ${detail.metrics.studentWords} / ${detail.metrics.intervieweeWords} |`);
+  lines.push(``);
+
+  if (includeFeedback) {
+    lines.push(`## Rubric assessment`);
+    lines.push(``);
+    if (overallPoints) {
+      const pct =
+        detail.overallScore ?? Math.round((100 * overallPoints.points) / overallPoints.possible);
+      lines.push(`Overall score: **${overallPoints.points} / ${overallPoints.possible} points (${pct}%)**`);
+      lines.push(``);
+    }
+    lines.push(`| Criterion | Score | Justification |`);
+    lines.push(`| --- | --- | --- |`);
+    for (const c of detail.scores) {
+      const score = c.score === null ? "n/a" : `${c.score} / ${c.max ?? 5}`;
+      lines.push(`| ${c.name} | ${score} | ${c.justification.replace(/\|/g, "\\|")} |`);
+    }
+    lines.push(``);
+
+    lines.push(`## Feedback`);
+    lines.push(``);
+    lines.push(`### Strengths`);
+    detail.feedback.strengths.forEach((t) => lines.push(`- ${t}`));
+    lines.push(``);
+    lines.push(`### Areas to improve`);
+    detail.feedback.improvements.forEach((t) => lines.push(`- ${t}`));
+    lines.push(``);
+    lines.push(`### Notable moments`);
+    detail.feedback.moments.forEach((m) => {
+      lines.push(`> ${m.quote}`);
+      lines.push(``);
+      lines.push(m.comment);
+      lines.push(``);
+    });
+    lines.push(`### What the student did not reach`);
+    lines.push(detail.feedback.missedDepth);
+    lines.push(``);
+    lines.push(`### Summary`);
+    lines.push(detail.feedback.summary);
+    lines.push(``);
+  }
+
+  lines.push(`## Transcript`);
+  lines.push(``);
+  for (const e of detail.transcript) {
+    const speaker = e.speaker === "student" ? "Student" : "Interviewee";
+    lines.push(`**${speaker}** (${fmtMs(e.tStart)}, spoke ${fmtMs(e.speechMs)})`);
+    lines.push(``);
+    lines.push(e.text);
+    lines.push(``);
+  }
+
+  return lines.join("\n");
 }

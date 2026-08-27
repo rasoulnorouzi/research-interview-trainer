@@ -66,9 +66,11 @@ export interface CriterionDefinition {
   id: string;
   name: string;
   description: string;
-  anchor1: string; // what a score of 1 looks like
-  anchor3: string;
-  anchor5: string;
+  anchorLow: string; // what a score of 1 looks like
+  anchorMid: string; // what the midpoint of this criterion's scale looks like
+  anchorHigh: string; // what the top of this criterion's scale looks like
+  /** Top of this criterion's scale; 5 for the built-in rubric. */
+  scaleMax: number;
   /** Evaluator needs the persona's hidden backstory to judge this. */
   needsGroundTruth?: boolean;
 }
@@ -77,11 +79,16 @@ export interface CriterionScore {
   id: string;
   name: string;
   /**
-   * 1..5, or null when the transcript contains too little of the relevant
+   * 1..max, or null when the transcript contains too little of the relevant
    * behaviour to judge. "Not assessable" is not the same as 1: a 1 means the
    * student did the thing badly, null means they never had the chance.
    */
   score: number | null;
+  /**
+   * Top of the scale this score was given on. Absent in reports stored before
+   * the rubric became editable; renderers default to 5.
+   */
+  max?: number;
   justification: string;
 }
 
@@ -120,12 +127,27 @@ export interface ReportRequest {
   metrics: Metrics;
 }
 
-/** Response of POST /api/report. Scores arrive in rubric order. */
+/**
+ * Response of POST /api/report. Scores arrive in rubric order.
+ *
+ * The interview is always scored and always stored in full, and the
+ * instructor copy always carries the whole report. The
+ * `share_report_with_student` setting controls only what the student gets
+ * back: with it off, `shared` is false, `scores` is empty, `feedback` is
+ * null and `overall` is null.
+ */
 export interface ReportResponse {
   scores: CriterionScore[];
-  feedback: QualitativeFeedback;
+  feedback: QualitativeFeedback | null;
+  /**
+   * Overall result as a percentage of possible points across assessable
+   * criteria, 1 decimal; null when nothing was assessable, and also null
+   * when the scores are withheld from the student.
+   */
   overall: number | null;
   emailed: boolean;
+  /** True when this copy includes the scores and the feedback. */
+  shared: boolean;
 }
 
 /** Response of GET /api/me. */

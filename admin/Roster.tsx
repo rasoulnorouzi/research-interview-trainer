@@ -45,12 +45,18 @@ export function Roster({ onApiError }: Props) {
   // time, so a single slot is enough.
   const [rowError, setRowError] = useState<{ studentId: string; message: string } | null>(null);
 
+  // Checkbox selection for bulk removal, by student id.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkRemoving, setBulkRemoving] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+
   const [csv, setCsv] = useState("");
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importBusy, setImportBusy] = useState(false);
 
   const load = () => {
+    setSelected(new Set());
     setState({ status: "loading" });
     const params = new URLSearchParams();
     if (q.trim().length > 0) params.set("q", q.trim());
@@ -139,7 +145,11 @@ export function Roster({ onApiError }: Props) {
    * message names the number of reports, so it is shown on the row as written.
    */
   const remove = (s: Student) => {
-    if (!confirm(`Remove ${s.fullName} permanently? This only works when the student has no stored reports.`)) {
+    if (
+      !confirm(
+        `Remove ${s.fullName} (${s.studentId}) permanently?\n\nThis deletes the roster row, their login codes and their session grants. It cannot be undone. It only works when the student has no stored reports.`,
+      )
+    ) {
       return;
     }
     setRowError(null);
@@ -152,6 +162,76 @@ export function Roster({ onApiError }: Props) {
         });
         onApiError(err);
       });
+  };
+
+  /**
+   * Clear the student's session grants so the total quota opens up again.
+   * Reports are untouched; this is the "give this student another interview"
+   * control.
+   */
+  const resetSessions = (s: Student) => {
+    if (
+      !confirm(
+        `Reset the interview sessions of ${s.fullName} (${s.studentId})?\n\nTheir used-session count goes back to zero and they can start interviews again. Reports are kept. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setRowError(null);
+    api<{ cleared: number }>(`/roster/${encodeURIComponent(s.studentId)}/reset-sessions`, { method: "POST" })
+      .then((r) => {
+        setRowError({
+          studentId: s.studentId,
+          message: r.cleared > 0 ? "Sessions reset. The student can interview again." : "Nothing to reset. The student has not used any sessions.",
+        });
+      })
+      .catch((err) => {
+        setRowError({
+          studentId: s.studentId,
+          message: err instanceof Error ? err.message : "Could not reset the sessions.",
+        });
+        onApiError(err);
+      });
+  };
+
+  const toggleSelected = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const bulkRemove = (students: Student[]) => {
+    if (selected.size === 0) return;
+    const n = selected.size;
+    if (
+      !confirm(
+        `Remove ${n} ${n === 1 ? "student" : "students"} permanently?\n\nThis deletes their roster rows, login codes and session grants. It cannot be undone. Students with stored reports are not removed; the result names them, and you can deactivate them instead.`,
+      )
+    ) {
+      return;
+    }
+    setBulkRemoving(true);
+    setBulkMessage(null);
+    api<{ deleted: number; kept: { studentId: string; reports: number }[] }>(`/roster/bulk-remove`, {
+      method: "POST",
+      body: JSON.stringify({ ids: [...selected] }),
+    })
+      .then((r) => {
+        const keptNote =
+          r.kept.length > 0
+            ? ` Kept (have reports): ${r.kept.map((k) => `${k.studentId} (${k.reports})`).join(", ")}.`
+            : "";
+        setBulkMessage(`Removed ${r.deleted} ${r.deleted === 1 ? "student" : "students"}.${keptNote}`);
+        load();
+      })
+      .catch((err) => {
+        setBulkMessage(err instanceof Error ? err.message : "Could not remove the selected students.");
+        onApiError(err);
+      })
+      .finally(() => setBulkRemoving(false));
   };
 
   const reactivate = (s: Student) => {
@@ -180,7 +260,7 @@ export function Roster({ onApiError }: Props) {
 
   return (
     <div>
-      <h2>Roster</h2>
+      <h2>Students</h2>
 
       <form className="card admin-toolbar" onSubmit={search}>
         <div className="field">
@@ -214,6 +294,20 @@ export function Roster({ onApiError }: Props) {
           <table>
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all students in the list"
+                    checked={state.students.length > 0 && selected.size === state.students.length}
+                    onChange={() =>
+                      setSelected((prev) =>
+                        prev.size === state.students.length
+                          ? new Set<string>()
+                          : new Set(state.students.map((s) => s.studentId)),
+                      )
+                    }
+                  />
+                </th>
                 <th>Student ID</th>
                 <th>Email</th>
                 <th>Full name</th>
@@ -227,6 +321,7 @@ export function Roster({ onApiError }: Props) {
               {state.students.map((s) =>
                 editingId === s.studentId ? (
                   <tr key={s.studentId}>
+                    <td></td>
                     <td>{s.studentId}</td>
                     <td>
                       <input
@@ -274,6 +369,14 @@ export function Roster({ onApiError }: Props) {
                   </tr>
                 ) : (
                   <tr key={s.studentId}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${s.fullName}`}
+                        checked={selected.has(s.studentId)}
+                        onChange={() => toggleSelected(s.studentId)}
+                      />
+                    </td>
                     <td>{s.studentId}</td>
                     <td>{s.email}</td>
                     <td>{s.fullName}</td>
@@ -294,6 +397,9 @@ export function Roster({ onApiError }: Props) {
                             Reactivate
                           </button>
                         )}
+                        <button className="btn btn-secondary" type="button" onClick={() => resetSessions(s)}>
+                          Reset sessions
+                        </button>
                         <button className="btn btn-danger" type="button" onClick={() => remove(s)}>
                           Remove
                         </button>
@@ -314,6 +420,19 @@ export function Roster({ onApiError }: Props) {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+      {bulkMessage && <div className="banner-info" style={{ marginTop: "0.8rem" }}>{bulkMessage}</div>}
+      {state.status === "done" && selected.size > 0 && (
+        <div className="btn-row" style={{ marginTop: "0.8rem" }}>
+          <button
+            className="btn btn-danger"
+            type="button"
+            disabled={bulkRemoving}
+            onClick={() => bulkRemove(state.students)}
+          >
+            {bulkRemoving ? "Removing…" : `Remove ${selected.size} selected`}
+          </button>
         </div>
       )}
 

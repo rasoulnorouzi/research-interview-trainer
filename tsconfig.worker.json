@@ -15,8 +15,9 @@
     "isolatedModules": true
   },
   "include": ["worker", "shared", "src/personas.ts", "src/types.ts"],
-  // genseed.ts runs under Node via esbuild (see npm run seed:gen), not in the
-  // Worker — it has its own header comment saying so and is excluded here so
-  // a Node-only script isn't type-checked against workers-types.
-  "exclude": ["worker/genseed.ts"]
+  // genseed.ts and genseed-criteria.ts run under Node via esbuild (see
+  // npm run seed:gen / seed:gen:criteria), not in the Worker — each has its
+  // own header comment saying so, and both are excluded here so a Node-only
+  // script isn't type-checked against workers-types.
+  "exclude": ["worker/genseed.ts", "worker/genseed-criteria.ts"]
 }

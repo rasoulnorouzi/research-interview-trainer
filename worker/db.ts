@@ -21,6 +21,13 @@ export interface Env {
    * admin surface, including the roster and the OpenAI key.
    */
   DEV_ALLOW_INSECURE_ADMIN?: string;
+  /**
+   * Comma-separated master admin emails (wrangler.jsonc vars). Always
+   * authorized for /api/admin/*, never stored in the admins table, and the
+   * dashboard can neither add nor remove them. The escape hatch that makes
+   * "an admin removed every other admin" recoverable.
+   */
+  MASTER_ADMINS?: string;
 }
 
 /** The roster columns auth needs. The roster row is authoritative for identity (§6). */

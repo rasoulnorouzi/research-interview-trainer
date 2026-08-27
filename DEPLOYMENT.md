@@ -73,20 +73,26 @@ run again later.
 npx wrangler d1 execute riv-trainer --remote --file=seed-settings.sql
 ```
 
-This sets the interview time limit, the daily quota, and the default
+This sets the interview time limit, the total session quota, and the default
 models. It does not set the OpenAI key or the instructor email list. Step 6
 sets the key. [OPERATIONS.md](OPERATIONS.md) covers the instructor email list.
 
-**5. Generate and load the built-in personas.**
+**5. Generate and load the built-in personas and rubric.**
 
 ```bash
 npm run seed:gen
 npx wrangler d1 execute riv-trainer --remote --file=seed-personas.sql
+npm run seed:gen:criteria
+npx wrangler d1 execute riv-trainer --remote --file=seed-criteria.sql
 ```
 
 `npm run seed:gen` reads `src/personas.ts` and writes `seed-personas.sql`.
-That generated file is gitignored. Delete it after this step if you want a
-clean working tree; regenerate it any time from `src/personas.ts`.
+`npm run seed:gen:criteria` reads `src/criteria.ts` and writes
+`seed-criteria.sql`. Both generated files are gitignored. Delete them
+after this step if you want a clean working tree; regenerate either one
+any time from its source file. Skipping the second command leaves the
+`criteria` table empty, and every `POST /api/report` then answers `503`
+until it is seeded.
 
 **6. Set the two Worker secrets.**
 
@@ -321,6 +327,77 @@ Run this after any code change to `worker/`, `shared/`, or `src/`.
 alters a table, run the matching `wrangler d1 execute` command from section
 2, step 3, against the remote database, before or after the deploy as the
 change requires.
+
+### Deploying the editable rubric to an existing database
+
+The rubric feature (2026-08-21) adds two tables, `criteria` and
+`criteria_versions`, and changes what `submissions.overall_score` means:
+it used to store a 1-to-5 mean, and now stores a 0-to-100 percentage. Run
+all three steps below against the remote database **before** running
+`wrangler deploy` with the new Worker code. The currently running old
+code does not read the new tables and does not know about the new score
+scale, so applying all of this ahead of the deploy is always safe.
+
+**1. Re-apply the schema.**
+
+```bash
+npx wrangler d1 execute riv-trainer --remote --file=schema.sql
+```
+
+`schema.sql` uses `CREATE TABLE IF NOT EXISTS`, so this adds `criteria`
+and `criteria_versions` without touching any table that already exists.
+
+**2. Load the built-in rubric.**
+
+```bash
+npm run seed:gen:criteria
+npx wrangler d1 execute riv-trainer --remote --file=seed-criteria.sql
+```
+
+**3. Convert stored scores to the new percentage scale, once.**
+
+```bash
+npx wrangler d1 execute riv-trainer --remote --command="UPDATE submissions SET overall_score = ROUND(overall_score * 20.0, 1) WHERE overall_score IS NOT NULL AND overall_score <= 5;"
+```
+
+Every report scored before this change stored a mean out of 5. This
+statement multiplies each of those old values by 20, converting them onto
+the same 0-to-100 scale every new report stores. The `<= 5` guard means
+running this command twice is harmless: a row already converted is
+already above 5 and is left alone.
+
+**4. Move the session quota setting to its new key, once.**
+
+The same feature round (2026-08-26) replaced `sessions_per_day` with
+`sessions_total`: the quota is now a per-student total for the course,
+not a daily allowance. Remove the old row and seed the new one:
+
+```bash
+npx wrangler d1 execute riv-trainer --remote --command="DELETE FROM settings WHERE key='sessions_per_day';"
+npx wrangler d1 execute riv-trainer --remote --file=seed-settings.sql
+```
+
+`seed-settings.sql` uses `INSERT OR IGNORE`, so it adds `sessions_total`
+(default 10) and `share_report_with_student` (default 1) without touching
+any value the dashboard has already set.
+
+**5. Deploy the Worker.**
+
+```bash
+npm run build && npx wrangler deploy
+```
+
+### Deploying the admin list (2026-08-26)
+
+The dashboard now authorizes against `MASTER_ADMINS` (wrangler.jsonc)
+plus the `admins` table. **Before deploying this change, put the email
+address you log into Cloudflare Access with into `MASTER_ADMINS`.** If
+that variable holds the wrong addresses, every dashboard request
+answers 403 after the deploy, and the fix is another deploy with the
+corrected variable. Re-apply `schema.sql` remotely first (adds the
+`admins` table; idempotent). To let the Admins screen alone control
+access for new people, widen the Access policy once to the university
+email domain; OPERATIONS.md section 10 explains the two layers.
 
 ## 6. Rollback
 

@@ -9,7 +9,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
-    "seed:gen": "esbuild worker/genseed.ts --bundle --platform=node --format=esm --outfile=.genseed.mjs && node .genseed.mjs > seed-personas.sql && rm .genseed.mjs"
+    "seed:gen": "esbuild worker/genseed.ts --bundle --platform=node --format=esm --outfile=.genseed.mjs && node .genseed.mjs > seed-personas.sql && rm .genseed.mjs",
+    "seed:gen:criteria": "esbuild worker/genseed-criteria.ts --bundle --platform=node --format=esm --outfile=.genseed-criteria.mjs && node .genseed-criteria.mjs > seed-criteria.sql && rm .genseed-criteria.mjs",
+    "backup": "wrangler d1 export riv-trainer --remote --output=backup-$(date +%F).sql",
+    "backup:local": "wrangler d1 export riv-trainer --local --output=backup-local-$(date +%F).sql"
   },
   "dependencies": {
     "react": "^19.0.1",
