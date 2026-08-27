@@ -487,29 +487,18 @@ often, and to which students.
 
 ## 10. Manage admins
 
-Admin access has two layers. Cloudflare Access checks who the person is.
-The admin list decides whether they may use the dashboard. A person needs
-both.
+One rule: **whoever passes the Cloudflare Access login is the admin.**
+There is no second list in the app. (A dashboard-managed admin list
+existed for two days, 2026-08-26 to 2026-08-27, and was removed at the
+instructor's request.)
 
-- **Master admins** are set in `wrangler.jsonc`, in the `MASTER_ADMINS`
-  variable. They are always authorized. The dashboard does not show them
-  and can neither add nor remove them; to see who they are, read
-  `wrangler.jsonc` or the Worker's variables in the Cloudflare dashboard.
-  Changing them needs a deploy, and the new address must already pass the
-  Cloudflare Access policy. This is deliberate: no admin, and no mistake,
-  can lock the owners out.
-- **All other admins** (colleagues, student assistants) are managed on
-  the dashboard's Admins screen: add an email, remove an email. Removal
-  blocks their dashboard access at once.
-
-One more step for a NEW person: their email must also pass the
-Cloudflare Access door. Open the Cloudflare Zero Trust dashboard, find
-the "Interview Trainer Admin" application, and add their email to the
-policy - or widen the policy once to the university domain (emails
-ending in your university's domain) so the Admins screen alone controls
-access from then on. The Worker's own admin list stays authoritative
-either way: passing Access without being on the list gets a clear
-"not on the admin list" answer.
+To add or remove an admin, open the Cloudflare Zero Trust dashboard
+(one.dash.cloudflare.com), go to Access → Applications, open
+"Research Interview Trainer Admin", and edit the policy's email list.
+Removal blocks dashboard access at once. To make every university
+address an allowed admin in one step, add an "Emails ending in" rule
+with the university domain — but then anyone at the university can open
+the dashboard, so prefer listing individual addresses for a small team.
 
 ## 11. Backups and disaster recovery
 
@@ -568,6 +557,4 @@ refused the send (check the Resend dashboard and the API key);
 "scoring failed: OpenAI rate limit hit" = the OpenAI organization is
 over its rate or spend limit (check platform.openai.com limits);
 "scoring aborted: the rubric has no active criteria" = the rubric was
-emptied (activate an item); "admin authorization refused for <email>" =
-someone passed Access but is not on the admin list (add them on the
-Admins screen if they should be).
+emptied (activate an item).

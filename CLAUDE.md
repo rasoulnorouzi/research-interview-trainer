@@ -450,17 +450,14 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   error blocks that path's deploy; `main` no longer auto-deploys on push (see
   Deployment below), so running `npm run lint` and `npm run build` by hand
   before `wrangler deploy` is on the person deploying.
-- **Admin authorization is two layers since 2026-08-26.** Cloudflare Access
-  authenticates; then `worker/index.ts` checks the email against
-  `MASTER_ADMINS` (a `wrangler.jsonc` var) plus the `admins` D1 table
-  (dashboard Admins screen). **Deploying with the wrong `MASTER_ADMINS`
-  locks everyone out of the dashboard until the next deploy** — the
-  variable must hold an address that passes the Cloudflare Access policy
-  (since 2026-08-27: `rasoulnorouzi@live.com`; the policy allows it and
-  the gmail address — the Tilburg address is NOT in the Access policy).
-  Master admins can never be added, removed, or even listed from the
-  dashboard, deliberately; the Admins screen shows only the
-  dashboard-managed rows.
+- **Admin authorization is Cloudflare Access alone.** Whoever passes the
+  Access login is the admin; the Access policy in the Zero Trust
+  dashboard is the one and only admin list (it currently allows
+  `rasoulnorouzi@live.com` and `rslnorouzi@gmail.com` — the Tilburg
+  address is NOT in it). A second, dashboard-managed admin list
+  (`MASTER_ADMINS` var + `admins` table + Admins screen) existed
+  2026-08-26 to 2026-08-27 and was **removed at the instructor's
+  request** — do not rebuild it without being asked.
 - **Backups**: D1 Time Travel restores the whole database to any minute in
   the last 30 days with zero setup (`wrangler d1 time-travel restore`);
   `npm run backup` exports a SQL snapshot for long-term keeping. Worker

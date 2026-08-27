@@ -400,11 +400,11 @@ That decision is unchanged; see section 3.
 
 ## 6. Admin surface
 
-Every `/api/admin/*` request passes two checks in `worker/index.ts`:
-the Cloudflare Access JWT (authentication), then the admin list
-(authorization): a master admin from the `MASTER_ADMINS` var, or a row
-in the `admins` table. A valid Access login that is not on the list gets
-`403 {"error": "Your account is not on the admin list. ..."}`.
+Whoever passes the Cloudflare Access login is the admin; the Access
+policy in the Zero Trust dashboard is the one and only admin list. (A
+second, dashboard-managed list with `/api/admin/admins` endpoints
+existed 2026-08-26 to 2026-08-27 and was removed at the instructor's
+request.)
 
 All of these live under `/api/admin/*`. Every request to this prefix
 passes through one check, in `worker/index.ts`, before it reaches any
@@ -435,9 +435,6 @@ Worker.
 | DELETE | `/api/admin/roster/:id?hard=1` | none | `200 {studentId, deleted: true}`. Permanently removes the student, only when they have no stored reports (`409` otherwise, naming the count). Also clears their login codes and session grants. |
 | POST | `/api/admin/roster/:id/reset-sessions` | none | `200 {studentId, cleared}`. Deletes the student's session grants, so the `sessions_total` quota opens again. Reports are not touched. `404` for an unknown student. |
 | POST | `/api/admin/roster/bulk-remove` | `{ids: [...]}` (max 500) | `200 {deleted, kept}`. Removes the listed students permanently, exactly like the single hard delete. Students with stored reports are skipped and listed in `kept` with their report count. |
-| GET | `/api/admin/admins` | none | `{admins: [{email, note, createdAt, createdBy}]}`. Dashboard-managed rows only; master admins are not listed (they live in `wrangler.jsonc` and the Cloudflare dashboard). |
-| POST | `/api/admin/admins` | `{email, note?}` | `200 {email, added}`. Lowercases the email. `400` for a master admin's address, `409` for a duplicate. |
-| DELETE | `/api/admin/admins/:email` | none | `200 {email, deleted}`. `400` for a master admin, `404` for an unknown address. |
 | GET | `/api/admin/personas` | none | `{"personas": [{id, name, title, active, updatedAt, updatedBy}]}`. No spoiler fields, even here; the list view does not need them. |
 | POST | `/api/admin/personas` | full persona fields, including `systemInstruction`, `hiddenCore` | `201` full persona, or `400`/`409` |
 | GET | `/api/admin/personas/:id` | none | `200` full persona including `systemInstruction` and `hiddenCore`, or `404` |

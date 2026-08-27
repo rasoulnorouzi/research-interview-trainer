@@ -387,17 +387,16 @@ any value the dashboard has already set.
 npm run build && npx wrangler deploy
 ```
 
-### Deploying the admin list (2026-08-26)
+### The admin list experiment (2026-08-26 to 2026-08-27, removed)
 
-The dashboard now authorizes against `MASTER_ADMINS` (wrangler.jsonc)
-plus the `admins` table. **Before deploying this change, put the email
-address you log into Cloudflare Access with into `MASTER_ADMINS`.** If
-that variable holds the wrong addresses, every dashboard request
-answers 403 after the deploy, and the fix is another deploy with the
-corrected variable. Re-apply `schema.sql` remotely first (adds the
-`admins` table; idempotent). To let the Admins screen alone control
-access for new people, widen the Access policy once to the university
-email domain; OPERATIONS.md section 10 explains the two layers.
+For two days the Worker had a second authorization layer: a
+`MASTER_ADMINS` var plus an `admins` D1 table with a dashboard screen.
+The instructor removed it the same week — too much machinery for one
+course team. Since 2026-08-27 the rule is the original one again:
+**whoever passes the Cloudflare Access login is the admin.** Manage
+admins in one place only, the Access policy of the "Research Interview
+Trainer Admin" application in the Zero Trust dashboard (section 3). The
+`admins` table was dropped from the live database.
 
 ## 6. Rollback
 

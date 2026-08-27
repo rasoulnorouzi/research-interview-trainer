@@ -115,15 +115,3 @@ CREATE TABLE IF NOT EXISTS criteria_versions (
   saved_by     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_criteria_versions ON criteria_versions(criterion_id, saved_at);
-
--- Dashboard-managed admins (student assistants, colleagues). Cloudflare
--- Access still authenticates the person at the door; this table authorizes
--- them for the admin surface. The master admins live in the MASTER_ADMINS
--- Worker var, deliberately NOT in this table, so the dashboard can never
--- add or remove one.
-CREATE TABLE IF NOT EXISTS admins (
-  email      TEXT PRIMARY KEY,           -- lowercased at write time
-  note       TEXT,                       -- who this is, e.g. 'student assistant'
-  created_at INTEGER NOT NULL,
-  created_by TEXT
-);

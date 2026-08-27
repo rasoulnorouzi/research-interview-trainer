@@ -4,7 +4,7 @@
 
 import { handleAdmin } from "./admin";
 import { handleAuthLogout, handleAuthRequest, handleAuthVerify, handleMe, handleRedeem, identify } from "./auth";
-import { identifyInstructor, isAuthorizedAdmin } from "./access";
+import { identifyInstructor } from "./access";
 import { json, type Env } from "./db";
 import { handleReport, handleSession } from "./report";
 import type { PersonaSummary } from "../shared/types";
@@ -42,16 +42,12 @@ export default {
         // The single Access check for the whole admin surface. It lives here and
         // nowhere else, so a missing check on an individual admin endpoint is
         // structurally impossible — BACKEND-PLAN.md §10 names that the top risk.
+        // Whoever passes Cloudflare Access IS the admin; the Access policy in
+        // the Zero Trust dashboard is the one and only admin list. (A
+        // dashboard-managed second list existed 2026-08-26/27 and was removed
+        // the same week at the instructor's request.)
         const instructor = await identifyInstructor(request, env);
         if (!instructor) return json(403, { error: "Access denied." });
-        // Authentication above, authorization here, still in the one place:
-        // Access proved who this is, the admin list decides whether they may
-        // act. Master admins come from the MASTER_ADMINS var, the rest from
-        // the admins table, managed on the dashboard's Admins screen.
-        if (!(await isAuthorizedAdmin(env, instructor.email))) {
-          console.error("admin authorization refused for", instructor.email);
-          return json(403, { error: "Your account is not on the admin list. Ask a master admin to add you." });
-        }
         return await handleAdmin(request, env, instructor.email, segments.slice(2));
       }
 

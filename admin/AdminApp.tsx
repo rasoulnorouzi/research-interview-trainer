@@ -4,12 +4,10 @@ import { Settings } from "./Settings";
 import { Roster } from "./Roster";
 import { Personas } from "./Personas";
 import { Rubric } from "./Rubric";
-import { Admins } from "./Admins";
 import { Submissions } from "./Submissions";
 import { Breakglass } from "./Breakglass";
 
-type Tab = "settings" | "roster" | "personas" | "rubric" | "submissions" | "breakglass"
-  | "admins";
+type Tab = "settings" | "roster" | "personas" | "rubric" | "submissions" | "breakglass";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "settings", label: "Settings" },
@@ -18,7 +16,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "rubric", label: "Rubric" },
   { id: "submissions", label: "Submissions" },
   { id: "breakglass", label: "Break-glass" },
-  { id: "admins", label: "Admins" },
 ];
 
 /** The active tab lives in location.hash (#roster), so Back moves between the
@@ -105,7 +102,6 @@ export function AdminApp() {
             {tab === "rubric" && <Rubric onApiError={onApiError} />}
             {tab === "submissions" && <Submissions onApiError={onApiError} />}
             {tab === "breakglass" && <Breakglass onApiError={onApiError} />}
-            {tab === "admins" && <Admins onApiError={onApiError} />}
           </>
         )}
       </div>

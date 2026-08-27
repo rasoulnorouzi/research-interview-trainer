@@ -16,7 +16,6 @@
 // explicit hard-delete paths below first count the reports that reference the
 // row and refuse with a 409 if there are any (§3, §7).
 
-import { masterAdmins } from "./access";
 import { sha256Hex } from "./auth";
 import { getSettings, json, readJsonBody, type Env } from "./db";
 import { validateApiKey } from "./openai";
@@ -169,18 +168,6 @@ export async function handleAdmin(
       }
       if (path.length === 3 && path[2] === "versions") {
         if (method === "GET") return await listCriterionVersions(env, path[1]);
-        return methodNotAllowed();
-      }
-      break;
-
-    case "admins":
-      if (path.length === 1) {
-        if (method === "GET") return await listAdmins(env);
-        if (method === "POST") return await createAdmin(request, env, instructorEmail);
-        return methodNotAllowed();
-      }
-      if (path.length === 2) {
-        if (method === "DELETE") return await deleteAdmin(env, path[1]);
         return methodNotAllowed();
       }
       break;
@@ -1547,65 +1534,6 @@ function parseCriterionSnapshot(raw: string): Record<string, unknown> | null {
     sortOrder: Number(row.sort_order ?? 0) || 0,
     active: row.active !== 0,
   };
-}
-
-// ------------------------------------------------------------------ admins
-
-/**
- * The admin list: only the dashboard-managed rows. Master admins come from
- * the MASTER_ADMINS var and are deliberately not listed here — they are
- * visible in wrangler.jsonc and in the Cloudflare dashboard, and this screen
- * can neither add nor remove one (the guards below still refuse both).
- * Access still decides who can reach the door at all; see worker/access.ts.
- */
-async function listAdmins(env: Env): Promise<Response> {
-  const rows = await env.DB.prepare(
-    "SELECT email, note, created_at, created_by FROM admins ORDER BY email",
-  ).all<{ email: string; note: string | null; created_at: number; created_by: string | null }>();
-  return json(200, {
-    admins: rows.results.map((row) => ({
-      email: row.email,
-      note: row.note,
-      createdAt: row.created_at,
-      createdBy: row.created_by,
-    })),
-  });
-}
-
-async function createAdmin(request: Request, env: Env, instructorEmail: string): Promise<Response> {
-  const parsed = await readJsonBody<{ email?: unknown; note?: unknown }>(request);
-  if (!parsed.ok) return parsed.response;
-  const email = typeof parsed.value.email === "string" ? parsed.value.email.trim().toLowerCase() : "";
-  if (!email.includes("@")) return json(400, { error: "Enter the new admin's email address." });
-  const note = typeof parsed.value.note === "string" ? parsed.value.note.trim() : "";
-
-  if (masterAdmins(env).includes(email)) {
-    return json(400, { error: "This address is a master admin already. Master admins are managed in the Worker configuration, not here." });
-  }
-  const clash = await env.DB.prepare("SELECT email FROM admins WHERE email = ?").bind(email).first();
-  if (clash) return json(409, { error: "This address is on the admin list already." });
-
-  await env.DB.prepare("INSERT INTO admins (email, note, created_at, created_by) VALUES (?, ?, ?, ?)")
-    .bind(email, note.length > 0 ? note : null, nowSeconds(), instructorEmail)
-    .run();
-  return json(200, { email, added: true });
-}
-
-async function deleteAdmin(env: Env, rawEmail: string): Promise<Response> {
-  // The email arrives as a URL path segment, so "@" is percent-encoded.
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(rawEmail);
-  } catch {
-    return json(400, { error: "This is not a valid email address." });
-  }
-  const email = decoded.trim().toLowerCase();
-  if (masterAdmins(env).includes(email)) {
-    return json(400, { error: "Master admins cannot be removed from the dashboard." });
-  }
-  const result = await env.DB.prepare("DELETE FROM admins WHERE email = ?").bind(email).run();
-  if ((result.meta.changes ?? 0) === 0) return json(404, { error: "This address is not on the admin list." });
-  return json(200, { email, deleted: true });
 }
 
 // ------------------------------------------------------------- submissions
