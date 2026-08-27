@@ -492,9 +492,12 @@ The admin list decides whether they may use the dashboard. A person needs
 both.
 
 - **Master admins** are set in `wrangler.jsonc`, in the `MASTER_ADMINS`
-  variable. They are always authorized. The dashboard can neither add nor
-  remove them. Changing them needs a deploy. This is deliberate: no
-  admin, and no mistake, can lock the owners out.
+  variable. They are always authorized. The dashboard does not show them
+  and can neither add nor remove them; to see who they are, read
+  `wrangler.jsonc` or the Worker's variables in the Cloudflare dashboard.
+  Changing them needs a deploy, and the new address must already pass the
+  Cloudflare Access policy. This is deliberate: no admin, and no mistake,
+  can lock the owners out.
 - **All other admins** (colleagues, student assistants) are managed on
   the dashboard's Admins screen: add an email, remove an email. Removal
   blocks their dashboard access at once.

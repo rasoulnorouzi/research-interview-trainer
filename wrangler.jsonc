@@ -25,8 +25,10 @@
     "EMAIL_FROM": "Research Interview Trainer <trainer@rslnorouzi.site>",
     // The master admins: always authorized, never listed in the admins table,
     // and the dashboard can neither add nor remove them. Comma-separated
-    // emails. These addresses must also pass the Cloudflare Access door.
-    "MASTER_ADMINS": "r.norouzinikjeh@tilburguniversity.edu,rslnorouzi@gmail.com,rasoulzaryab@gmail.com"
+    // emails. These addresses must also pass the Cloudflare Access door —
+    // check the Access policy BEFORE changing this line, or the deploy locks
+    // the dashboard for everyone (fix = another deploy).
+    "MASTER_ADMINS": "rasoulnorouzi@live.com"
   },
   "observability": { "enabled": true }
 }

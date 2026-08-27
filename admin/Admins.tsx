@@ -3,14 +3,13 @@ import { api } from "./api";
 
 // Who may use this dashboard. Cloudflare Access authenticates the person at
 // the door; this list authorizes them (worker/access.ts). Master admins come
-// from the Worker configuration and are shown locked: the panel can neither
-// add nor remove one, so a handover team can manage assistants here without
-// ever being able to lock the owners out.
+// from the Worker configuration and are not listed here at all: the panel can
+// neither add nor remove one, so a handover team can manage assistants here
+// without ever being able to lock the owners out.
 
 interface AdminRow {
   email: string;
   note: string | null;
-  master: boolean;
   createdAt: number | null;
   createdBy: string | null;
 }
@@ -88,8 +87,8 @@ export function Admins({ onApiError }: Props) {
             and to be on this list.
           </li>
           <li>
-            Master admins are set in the Worker configuration. This screen can neither add nor
-            remove them, so nobody can lock the owners out.
+            Master admins are set in the Worker configuration and are not shown here. This screen
+            can neither add nor remove them, so nobody can lock the owners out.
           </li>
           <li>Everyone else, for example a student assistant, is managed here.</li>
           <li>
@@ -117,19 +116,17 @@ export function Admins({ onApiError }: Props) {
               {list.map((row) => (
                 <tr key={row.email}>
                   <td>{row.email}</td>
-                  <td>{row.master ? <span className="chip">Master admin</span> : (row.note ?? "")}</td>
+                  <td>{row.note ?? ""}</td>
                   <td className="num">
                     {row.createdAt !== null ? new Date(row.createdAt * 1000).toLocaleDateString() : ""}
                   </td>
                   <td>{row.createdBy ?? ""}</td>
                   <td>
-                    {!row.master && (
-                      <div className="admin-row-actions">
-                        <button className="btn btn-danger" type="button" onClick={() => remove(row)}>
-                          Remove
-                        </button>
-                      </div>
-                    )}
+                    <div className="admin-row-actions">
+                      <button className="btn btn-danger" type="button" onClick={() => remove(row)}>
+                        Remove
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -435,7 +435,7 @@ Worker.
 | DELETE | `/api/admin/roster/:id?hard=1` | none | `200 {studentId, deleted: true}`. Permanently removes the student, only when they have no stored reports (`409` otherwise, naming the count). Also clears their login codes and session grants. |
 | POST | `/api/admin/roster/:id/reset-sessions` | none | `200 {studentId, cleared}`. Deletes the student's session grants, so the `sessions_total` quota opens again. Reports are not touched. `404` for an unknown student. |
 | POST | `/api/admin/roster/bulk-remove` | `{ids: [...]}` (max 500) | `200 {deleted, kept}`. Removes the listed students permanently, exactly like the single hard delete. Students with stored reports are skipped and listed in `kept` with their report count. |
-| GET | `/api/admin/admins` | none | `{admins: [{email, note, master, createdAt, createdBy}]}`. Master admins first, marked `master: true`. |
+| GET | `/api/admin/admins` | none | `{admins: [{email, note, createdAt, createdBy}]}`. Dashboard-managed rows only; master admins are not listed (they live in `wrangler.jsonc` and the Cloudflare dashboard). |
 | POST | `/api/admin/admins` | `{email, note?}` | `200 {email, added}`. Lowercases the email. `400` for a master admin's address, `409` for a duplicate. |
 | DELETE | `/api/admin/admins/:email` | none | `200 {email, deleted}`. `400` for a master admin, `404` for an unknown address. |
 | GET | `/api/admin/personas` | none | `{"personas": [{id, name, title, active, updatedAt, updatedBy}]}`. No spoiler fields, even here; the list view does not need them. |

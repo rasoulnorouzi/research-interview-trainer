@@ -1552,31 +1552,23 @@ function parseCriterionSnapshot(raw: string): Record<string, unknown> | null {
 // ------------------------------------------------------------------ admins
 
 /**
- * The admin list: the master admins from the MASTER_ADMINS var first, marked
- * and untouchable, then the dashboard-managed rows. Access still decides who
- * can reach the door at all; see worker/access.ts.
+ * The admin list: only the dashboard-managed rows. Master admins come from
+ * the MASTER_ADMINS var and are deliberately not listed here — they are
+ * visible in wrangler.jsonc and in the Cloudflare dashboard, and this screen
+ * can neither add nor remove one (the guards below still refuse both).
+ * Access still decides who can reach the door at all; see worker/access.ts.
  */
 async function listAdmins(env: Env): Promise<Response> {
   const rows = await env.DB.prepare(
     "SELECT email, note, created_at, created_by FROM admins ORDER BY email",
   ).all<{ email: string; note: string | null; created_at: number; created_by: string | null }>();
   return json(200, {
-    admins: [
-      ...masterAdmins(env).map((email) => ({
-        email,
-        note: "Master admin",
-        master: true,
-        createdAt: null,
-        createdBy: null,
-      })),
-      ...rows.results.map((row) => ({
-        email: row.email,
-        note: row.note,
-        master: false,
-        createdAt: row.created_at,
-        createdBy: row.created_by,
-      })),
-    ],
+    admins: rows.results.map((row) => ({
+      email: row.email,
+      note: row.note,
+      createdAt: row.created_at,
+      createdBy: row.created_by,
+    })),
   });
 }
 

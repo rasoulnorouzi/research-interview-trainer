@@ -455,9 +455,12 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   `MASTER_ADMINS` (a `wrangler.jsonc` var) plus the `admins` D1 table
   (dashboard Admins screen). **Deploying with the wrong `MASTER_ADMINS`
   locks everyone out of the dashboard until the next deploy** — the
-  variable must hold the address the instructor logs into Access with
-  (currently the Tilburg address; see DEPLOYMENT.md §1). Master admins can
-  never be added or removed from the dashboard, deliberately.
+  variable must hold an address that passes the Cloudflare Access policy
+  (since 2026-08-27: `rasoulnorouzi@live.com`; the policy allows it and
+  the gmail address — the Tilburg address is NOT in the Access policy).
+  Master admins can never be added, removed, or even listed from the
+  dashboard, deliberately; the Admins screen shows only the
+  dashboard-managed rows.
 - **Backups**: D1 Time Travel restores the whole database to any minute in
   the last 30 days with zero setup (`wrangler d1 time-travel restore`);
   `npm run backup` exports a SQL snapshot for long-term keeping. Worker
