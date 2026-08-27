@@ -1592,7 +1592,14 @@ async function createAdmin(request: Request, env: Env, instructorEmail: string):
 }
 
 async function deleteAdmin(env: Env, rawEmail: string): Promise<Response> {
-  const email = rawEmail.trim().toLowerCase();
+  // The email arrives as a URL path segment, so "@" is percent-encoded.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawEmail);
+  } catch {
+    return json(400, { error: "This is not a valid email address." });
+  }
+  const email = decoded.trim().toLowerCase();
   if (masterAdmins(env).includes(email)) {
     return json(400, { error: "Master admins cannot be removed from the dashboard." });
   }
