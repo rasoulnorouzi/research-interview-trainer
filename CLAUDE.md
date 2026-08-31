@@ -39,7 +39,10 @@ reports, and an instructor dashboard behind Cloudflare Access that owns the
 roster, the personas, the key and the limits. For a cohort of 400.
 [`BACKEND-PLAN.md`](BACKEND-PLAN.md) is the design that drove the build;
 [`DEPLOYMENT.md`](DEPLOYMENT.md), [`OPERATIONS.md`](OPERATIONS.md) and
-[`API.md`](API.md) document the result. Read the plan first if a change
+[`API.md`](API.md) document the result. [`PROTOCOLS.md`](PROTOCOLS.md)
+records each feature round since 2026-08-31 as a protocol — what changed,
+the decisions, the tests, the deploy — newest first; append a section
+there when a round ships. Read the plan first if a change
 touches keys, scoring or personas, since the implementation is authoritative
 over the plan wherever the two differ, and `API.md` §7 lists the known
 differences.
