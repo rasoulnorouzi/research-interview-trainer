@@ -7,6 +7,17 @@ one instruction per action.
 
 ---
 
+## 2026-08-31 — Remember-device on by default
+
+Branch `remember-default`, one commit. One line plus a comment in
+`src/screens/LoginScreen.tsx`: the "Remember this device" box on the
+login code step starts checked, so the default session lasts 90 days
+instead of 8 hours. Students on a shared computer untick it. No server
+change: the checkbox already carried the choice to `/api/auth/verify`.
+Verified in a browser against wrangler dev.
+
+---
+
 ## 2026-08-31 — Distinct report emails
 
 Branch `email-distinct`, one commit, merged fast-forward into `main`.

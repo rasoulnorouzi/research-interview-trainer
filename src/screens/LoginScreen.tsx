@@ -13,7 +13,11 @@ export function LoginScreen({ onLoggedIn }: Props) {
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [remember, setRemember] = useState(false);
+  // Checked by default (instructor decision, 2026-08-31): most students use
+  // their own device, and the unchecked default cost them a fresh mailed code
+  // every 8 hours. Unticking it still gives the short session for a shared
+  // or public computer.
+  const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
