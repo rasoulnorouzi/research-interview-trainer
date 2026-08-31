@@ -1,5 +1,6 @@
 // Every call this service makes to OpenAI: minting a realtime client secret,
-// running one evaluator, and validating a key on save.
+// running one evaluator, speaking a voice preview, and validating a key on
+// save.
 //
 // This module has ZERO Cloudflare imports and imports nothing else from
 // worker/. Plain `fetch` and plain types only, deliberately, so it lifts to
@@ -25,6 +26,13 @@
 const CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
 const RESPONSES_URL = "https://api.openai.com/v1/responses";
 const MODELS_URL = "https://api.openai.com/v1/models";
+const SPEECH_URL = "https://api.openai.com/v1/audio/speech";
+
+// The model behind the dashboard's per-voice preview button. Verified against
+// the live API (2026-08-31): it accepts all ten REALTIME_VOICES, including
+// marin and cedar, and answers audio/mpeg. Only the preview uses TTS; the
+// interviews themselves speak through the realtime session.
+const VOICE_PREVIEW_MODEL = "gpt-4o-mini-tts";
 
 // The complete set of messages this module can throw. Nothing is interpolated
 // into them, ever.
@@ -185,6 +193,35 @@ function extractOutputText(payload: unknown): string {
     }
   }
   return "";
+}
+
+/**
+ * One short spoken sample of a realtime voice, for the persona editor's
+ * preview button. Returns the MP3 bytes; the caller streams them to the
+ * dashboard unchanged. The same key hygiene as every other call here: on any
+ * failure one of the four fixed strings, and the response body is never read.
+ */
+export async function synthesizeVoicePreview(
+  apiKey: string,
+  voice: string,
+  text: string,
+): Promise<ArrayBuffer> {
+  let res: Response;
+  try {
+    res = await fetch(SPEECH_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: VOICE_PREVIEW_MODEL, voice, input: text }),
+    });
+  } catch {
+    throw new Error(ERR_GENERIC);
+  }
+  if (!res.ok) throw statusError(res.status);
+  try {
+    return await res.arrayBuffer();
+  } catch {
+    throw new Error(ERR_GENERIC);
+  }
 }
 
 /**

@@ -286,6 +286,12 @@ transcript file. `emailed` reflects whether both report emails were
 sent successfully; a failed send does not fail the request; the
 submission is already stored either way.
 
+`feedback` can be `null` even in a shared response: when the instructor
+has switched the `generate_feedback` setting to `"0"`, no feedback is
+written at all, and every copy of the report — this response, both
+emails, and the stored submission — has scores without a feedback
+section. See "The two report switches" in section 6.
+
 `shared` reports whether this copy carries the scores and the feedback.
 It is `true` unless the instructor has set the `share_report_with_student`
 setting to `"0"`. With the setting off, the interview is still scored and
@@ -454,6 +460,7 @@ Worker.
 | POST | `/api/admin/submissions/bulk-delete` | `{ids: [...]}` (max 500) | `200 {deleted}`. Deletes the listed submissions in one statement. Unknown ids are ignored; `deleted` counts the rows really removed. |
 | GET | `/api/admin/submissions.csv` | same query params as list | `text/csv`, one row per submission plus one column per rubric criterion |
 | POST | `/api/admin/breakglass` | `{studentId}` | `200 {url, expiresInMinutes, studentId, fullName}`, or `404`/`400` |
+| POST | `/api/admin/voice-preview` | `{voice}` | `200` with `audio/mpeg` bytes: a short fixed sample sentence spoken in that voice, for the persona editor's preview button. The voice must be on the same list persona saves enforce (`400` otherwise). The sample text is fixed server-side; the client cannot send text to speak. `503` when no OpenAI key is set, `502` when OpenAI refuses. |
 
 ### Key masking rule
 
@@ -473,20 +480,40 @@ clear the stored key. Every subsequent `POST /api/session` and
 one setting that supports removal; every other setting key must always
 carry a value.
 
-### The student-copy switch
+### The two report switches
 
-`share_report_with_student` is the one settings key that is a switch.
-`PUT /api/admin/settings` accepts `true` or `false` for it, and also the
-strings `"1"` and `"0"`; it stores `"1"` or `"0"`. Any other value answers
-`400`, and nothing in the batch is written.
+Two settings keys are switches: `share_report_with_student` and
+`generate_feedback`. For each, `PUT /api/admin/settings` accepts `true`
+or `false`, and also the strings `"1"` and `"0"`; it stores `"1"` or
+`"0"`. Any other value answers `400`, and nothing in the batch is
+written. For each, a missing or unreadable value counts as `"1"`.
 
-`"1"` is the default and is today's behaviour: the student receives the
-scores and the feedback. `"0"` withholds both from the student copy only.
-The interview is still scored, the submission is still stored in full,
-and the instructor recipients still receive the whole report.
-`POST /api/report` in section 3 gives the two response shapes. A missing
-or unreadable value counts as `"1"`, so a cleared row shares rather than
-withholds.
+`share_report_with_student` controls the student's copy only. `"1"` is
+the default: the student receives the scores and the feedback. `"0"`
+withholds both from the student copy. The interview is still scored, the
+submission is still stored in full, and the instructor recipients still
+receive the whole report. `POST /api/report` in section 3 gives the two
+response shapes.
+
+`generate_feedback` (added 2026-08-31) controls whether the qualitative
+feedback is written at all. `"1"` is the default. With `"0"`, the
+feedback evaluator call is never made: the report holds the rubric
+scores and the transcript with no feedback section, in every copy — the
+student's, the instructor recipients', and the stored submission
+(`feedback_json` holds the JSON value `null`). Scoring is unchanged.
+The switch applies to reports scored after the change; stored reports
+keep whatever they have.
+
+### The recipients list format
+
+`instructor_recipients` is one comma-separated string of email
+addresses. An address prefixed with `!` is switched off (2026-08-31): it
+stays on the list, and the dashboard shows it with its switch off, but
+it receives no report emails until the `!` is removed. A value stored
+before this format existed has no `!` and behaves as all-on.
+`PUT /api/admin/settings` validates every address, switched off or not,
+and rejects an empty list; a list where every address is switched off is
+accepted, and no instructor copy is sent while it stays that way.
 
 ### Criteria validation rules
 

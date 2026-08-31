@@ -119,7 +119,8 @@ export interface ReportEmailData {
   durationMs: number;
   metrics: Metrics;
   scores: CriterionScore[];
-  feedback: QualitativeFeedback;
+  /** Null when the instructor has switched qualitative feedback off. */
+  feedback: QualitativeFeedback | null;
   overall: number | null;
   transcript: TranscriptEntry[];
 }
@@ -285,26 +286,30 @@ function rubricTextLines(d: ReportEmailData): string[] {
 }
 
 function feedbackTextLines(d: ReportEmailData): string[] {
+  // With feedback switched off there is no section at all, rather than an
+  // empty heading that reads as something having failed.
+  const feedback = d.feedback;
+  if (!feedback) return [];
   const lines: string[] = [];
   lines.push(`FEEDBACK`);
   lines.push(``);
   lines.push(`Strengths:`);
-  d.feedback.strengths.forEach((s) => lines.push(`- ${s}`));
+  feedback.strengths.forEach((s) => lines.push(`- ${s}`));
   lines.push(``);
   lines.push(`Areas to improve:`);
-  d.feedback.improvements.forEach((s) => lines.push(`- ${s}`));
+  feedback.improvements.forEach((s) => lines.push(`- ${s}`));
   lines.push(``);
   lines.push(`Notable moments:`);
-  d.feedback.moments.forEach((m) => {
+  feedback.moments.forEach((m) => {
     lines.push(`"${m.quote}"`);
     lines.push(m.comment);
     lines.push(``);
   });
   lines.push(`What you did not reach:`);
-  lines.push(d.feedback.missedDepth);
+  lines.push(feedback.missedDepth);
   lines.push(``);
   lines.push(`Summary:`);
-  lines.push(d.feedback.summary);
+  lines.push(feedback.summary);
   lines.push(``);
   return lines;
 }
@@ -422,24 +427,28 @@ function reportBodyHtml(d: ReportEmailData): string {
   }
   parts.push(`</table>`);
 
-  parts.push(`<h2 style="${H2_STYLE}">Feedback</h2>`);
-  parts.push(`<h3 style="${H3_STYLE}">Strengths</h3>`);
-  parts.push(
-    `<ul style="${P_STYLE}">${d.feedback.strengths.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`,
-  );
-  parts.push(`<h3 style="${H3_STYLE}">Areas to improve</h3>`);
-  parts.push(
-    `<ul style="${P_STYLE}">${d.feedback.improvements.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`,
-  );
-  parts.push(`<h3 style="${H3_STYLE}">Notable moments</h3>`);
-  for (const m of d.feedback.moments) {
-    parts.push(`<p style="${QUOTE_STYLE}">&ldquo;${escapeHtmlMultiline(m.quote)}&rdquo;</p>`);
-    parts.push(`<p style="${P_STYLE}">${escapeHtmlMultiline(m.comment)}</p>`);
+  // Same rule as feedbackTextLines: no section at all when feedback is off.
+  const feedback = d.feedback;
+  if (feedback) {
+    parts.push(`<h2 style="${H2_STYLE}">Feedback</h2>`);
+    parts.push(`<h3 style="${H3_STYLE}">Strengths</h3>`);
+    parts.push(
+      `<ul style="${P_STYLE}">${feedback.strengths.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`,
+    );
+    parts.push(`<h3 style="${H3_STYLE}">Areas to improve</h3>`);
+    parts.push(
+      `<ul style="${P_STYLE}">${feedback.improvements.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`,
+    );
+    parts.push(`<h3 style="${H3_STYLE}">Notable moments</h3>`);
+    for (const m of feedback.moments) {
+      parts.push(`<p style="${QUOTE_STYLE}">&ldquo;${escapeHtmlMultiline(m.quote)}&rdquo;</p>`);
+      parts.push(`<p style="${P_STYLE}">${escapeHtmlMultiline(m.comment)}</p>`);
+    }
+    parts.push(`<h3 style="${H3_STYLE}">What you did not reach</h3>`);
+    parts.push(`<p style="${P_STYLE}">${escapeHtmlMultiline(feedback.missedDepth)}</p>`);
+    parts.push(`<h3 style="${H3_STYLE}">Summary</h3>`);
+    parts.push(`<p style="${P_STYLE}">${escapeHtmlMultiline(feedback.summary)}</p>`);
   }
-  parts.push(`<h3 style="${H3_STYLE}">What you did not reach</h3>`);
-  parts.push(`<p style="${P_STYLE}">${escapeHtmlMultiline(d.feedback.missedDepth)}</p>`);
-  parts.push(`<h3 style="${H3_STYLE}">Summary</h3>`);
-  parts.push(`<p style="${P_STYLE}">${escapeHtmlMultiline(d.feedback.summary)}</p>`);
 
   parts.push(`<h2 style="${H2_STYLE}">Transcript</h2>`);
   parts.push(...transcriptHtmlParts(d));

@@ -24,6 +24,7 @@ import {
 } from "./email";
 import { mintRealtimeToken } from "./openai";
 import { scoreAll, type ScoringPersona } from "./scoring";
+import { parseRecipients } from "../shared/recipients";
 import { SHARED_DISCLOSURE_MECHANICS } from "../src/personas";
 import type {
   CriterionDefinition,
@@ -192,6 +193,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     "openai_api_key",
     "instructor_recipients",
     "share_report_with_student",
+    "generate_feedback",
   ]);
   const apiKey = settings.openai_api_key ?? "";
   if (!apiKey) return json(503, { error: NOT_CONFIGURED });
@@ -201,6 +203,12 @@ export async function handleReport(request: Request, env: Env): Promise<Response
   // either way. Anything other than the stored "0" means share, so a cleared or
   // hand-edited row keeps today's behaviour rather than silently withholding.
   const shareWithStudent = settings.share_report_with_student !== "0";
+
+  // The second switch (2026-08-31): whether the AI assessor writes qualitative
+  // feedback at all. Off means the feedback call is never made and every copy
+  // of the report, the student's, the instructor's and the stored one, carries
+  // scores without a feedback section. Same missing-row default as above.
+  const generateFeedback = settings.generate_feedback !== "0";
 
   // The evaluators see the name, the title, the topic and the ground truth.
   // Not the system instruction, not the voice, not the short bio.
@@ -219,6 +227,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
       persona,
       transcript,
       criteria,
+      generateFeedback,
     );
   } catch (err) {
     console.error("scoring failed:", err instanceof Error ? err.message : "unknown");
@@ -285,10 +294,11 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     transcript,
   };
 
-  const recipients = (settings.instructor_recipients ?? "")
-    .split(",")
-    .map((address) => address.trim())
-    .filter((address) => address.length > 0);
+  // Only the switched-on addresses receive a copy. A recipient the instructor
+  // has toggled off stays stored (as "!address") but is filtered out here.
+  const recipients = parseRecipients(settings.instructor_recipients ?? "")
+    .filter((recipient) => recipient.active)
+    .map((recipient) => recipient.email);
 
   // A failed send must never fail the report. The submission is already stored
   // and the scores are already in the response; email is a delivery mechanism,

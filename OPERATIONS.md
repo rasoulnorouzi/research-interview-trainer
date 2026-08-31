@@ -21,17 +21,18 @@ on the very next request. No redeploy is needed.
 | `sessions_total` | How many interviews one student may start, in total, for the whole course. | 10 | 1 to 30. This is the real backstop on cost: see section 9. Use the Reset sessions button on the Students screen (the roster) to give one student more. |
 | `interview_model` | The OpenAI realtime model used for the spoken interview. | `gpt-realtime-2.1-mini` | Any realtime model id your key can reach. |
 | `scoring_model` | The OpenAI model used for every scoring call: one per active rubric item, plus feedback. | `gpt-5.6-terra` | Any text model id your key can reach. |
-| `share_report_with_student` | Whether the student's copy of the report includes the scores and the feedback. | `1` (students receive them) | `1` or `0`. The dashboard shows this as a checkbox. Report mail always attaches the transcript as a text file; the assessment text file goes to the student only with `1`, and to the instructors always. |
-| `instructor_recipients` | Email addresses that get a copy of every report. Stored as one comma-joined string. | none, must be set | At least one address. The dashboard rejects an empty list. |
+| `share_report_with_student` | Whether the student's copy of the report includes the scores and the feedback. | `1` (students receive them) | `1` or `0`. The dashboard shows this as a switch. Report mail always attaches the transcript as a text file; the assessment text file goes to the student only with `1`, and to the instructors always. |
+| `generate_feedback` | Whether the AI assessor writes the qualitative feedback at all. | `1` (feedback is written) | `1` or `0`. The dashboard shows this as a switch. With `0`, every copy of the report has scores and the transcript, and no feedback section. |
+| `instructor_recipients` | Email addresses that get a copy of every report. Stored as one comma-joined string; a `!` prefix marks an address that is switched off. | none, must be set | At least one address. The dashboard rejects an empty list. A list where every address is switched off is allowed, and no instructor copy is sent while it stays that way. |
 
 The Settings screen presents `interview_model` and `scoring_model` as
 dropdowns over a curated list of ids, and `instructor_recipients` as a
-list with Add and Remove controls, not a text box. Picking a model this
+list with per-address controls, not a text box. Picking a model this
 way is the normal path. The API itself still accepts any non-empty model
 id, so a value set straight in the database also works and shows in the
 dropdown as the current choice.
 
-**Sending scores to students.** The checkbox "Send scores and feedback to
+**Sending scores to students.** The switch "Send scores and feedback to
 students" controls the student copy of the report, and nothing else. With
 it off, the student sees only the speaking metrics, the transcript and a
 short notice on the results screen, and their email contains only the
@@ -40,6 +41,25 @@ receive the full scored report, and the complete report is still stored
 and readable under Submissions and in the CSV export. Switch it back on
 and the next interview submitted shows the student everything again.
 Reports already sent are not resent.
+
+**Switching AI feedback off.** The switch "Generate AI feedback" controls
+whether the feedback is written at all. With it off, the feedback
+evaluator never runs: reports carry the rubric scores and the transcript
+with no feedback section, for the student, for the assessment recipients,
+and in Submissions. Rubric scoring does not change. The switch applies to
+interviews scored after the change; stored reports keep the feedback they
+already have. Use this switch when you want scores without AI-written
+prose; use "Send scores and feedback to students" when you want the
+feedback written but held back from students.
+
+**Managing assessment recipients.** Each address on the list has its own
+On/Off switch and a Remove control. Switch an address off to pause its
+report copies without removing it; the address stays on the list, marked
+off. Remove asks for confirmation first, because removal is an edit you
+must save, and after the save the address is gone from the list. Both
+changes take effect when you click Save, and apply to reports submitted
+after that. If every address is switched off, the screen warns you, and
+no assessment copy is emailed until one is switched on again.
 
 **Caution.** The dashboard validates `openai_api_key` live against OpenAI
 before saving it. It does not validate `interview_model` or
@@ -211,6 +231,11 @@ including the fields that must stay hidden from students.
   voices the realtime API knows. The server also checks this itself, so
   a name outside that list is rejected at save time, not discovered later
   when a student tries to start an interview.
+- **Preview a voice before you cast it.** The "Preview voice" button next
+  to the dropdown plays a short sample sentence in the selected voice, so
+  you choose by ear, not by name. Each voice is fetched once per visit and
+  replayed from memory after that. The sample is spoken by a text-to-speech
+  model on the university key; one click costs a fraction of a cent.
 
 ### Version history and restore
 

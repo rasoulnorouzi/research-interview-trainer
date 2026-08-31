@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Toggle } from "./Toggle";
 import { api } from "./api";
 import { INTERVIEW_MODEL_OPTIONS, SCORING_MODEL_OPTIONS } from "../shared/models";
+import { parseRecipients, serializeRecipients, type Recipient } from "../shared/recipients";
 import type { ModelChoice } from "../shared/types";
 
 interface SettingEntry {
@@ -15,7 +16,7 @@ type SettingsView = Record<string, SettingEntry>;
 const NUMERIC_KEYS = ["interview_limit_minutes", "interview_warn_minutes", "sessions_total"] as const;
 const TEXT_KEYS = ["interview_model", "scoring_model", "instructor_recipients"] as const;
 // Switches. Held in the form as the stored "1" or "0" and sent as a boolean.
-const BOOLEAN_KEYS = ["share_report_with_student"] as const;
+const BOOLEAN_KEYS = ["share_report_with_student", "generate_feedback"] as const;
 
 interface FormState {
   interview_limit_minutes: string;
@@ -24,6 +25,7 @@ interface FormState {
   interview_model: string;
   scoring_model: string;
   share_report_with_student: string;
+  generate_feedback: string;
   instructor_recipients: string;
 }
 
@@ -34,6 +36,7 @@ const EMPTY_FORM: FormState = {
   interview_model: "",
   scoring_model: "",
   share_report_with_student: "1",
+  generate_feedback: "1",
   instructor_recipients: "",
 };
 
@@ -41,23 +44,12 @@ interface Props {
   onApiError: (err: unknown) => void;
 }
 
-/**
- * The recipients setting is stored, and sent, as one comma-separated string.
- * The list editor below is a view over that string: it parses on render and
- * rewrites the string only when an address is added or removed, so a value
- * nobody touched reaches the save diff byte for byte as it was loaded and does
- * not read as a change.
- */
-function parseRecipients(value: string): string[] {
-  return value
-    .split(",")
-    .map((address) => address.trim())
-    .filter((address) => address.length > 0);
-}
-
-function joinRecipients(list: string[]): string {
-  return list.join(", ");
-}
+// The recipients setting is stored, and sent, as one comma-separated string
+// (shared/recipients.ts; a "!" prefix means switched off). The list editor
+// below is a view over that string: it parses on render and rewrites the
+// string only when an address is added, removed or toggled, so a value nobody
+// touched reaches the save diff byte for byte as it was loaded and does not
+// read as a change.
 
 const RECIPIENTS_REQUIRED_NOTE =
   "At least one assessment recipient is required. The previous list is kept.";
@@ -140,6 +132,7 @@ export function Settings({ onApiError }: Props) {
           scoring_model: settings.scoring_model?.value ?? "",
           // A missing row means the built-in default, which is to share.
           share_report_with_student: settings.share_report_with_student?.value ?? "1",
+          generate_feedback: settings.generate_feedback?.value ?? "1",
           instructor_recipients: settings.instructor_recipients?.value ?? "",
         });
       })
@@ -158,28 +151,59 @@ export function Settings({ onApiError }: Props) {
   };
 
   const recipients = parseRecipients(form.instructor_recipients);
+  const activeRecipients = recipients.filter((r) => r.active).length;
 
   const addRecipient = () => {
     const address = recipientInput.trim();
     if (address.length === 0) return;
+    if (address.startsWith("!")) {
+      // "!" is the stored marker for a switched-off address, so an address
+      // must not begin with one or the list would misread it on reload.
+      setRecipientError("An address cannot start with an exclamation mark.");
+      return;
+    }
     if (!address.includes("@")) {
       setRecipientError("Enter an email address, including the @ sign.");
       return;
     }
-    if (recipients.some((existing) => existing.toLowerCase() === address.toLowerCase())) {
+    if (recipients.some((existing) => existing.email.toLowerCase() === address.toLowerCase())) {
       setRecipientError("That address is already on the list.");
       return;
     }
     setRecipientError(null);
     setRecipientsNote(null);
-    setField("instructor_recipients", joinRecipients([...recipients, address]));
+    setField(
+      "instructor_recipients",
+      serializeRecipients([...recipients, { email: address, active: true }]),
+    );
     setRecipientInput("");
   };
 
-  const removeRecipient = (address: string) => {
+  const toggleRecipient = (email: string, active: boolean) => {
     setRecipientError(null);
     setRecipientsNote(null);
-    setField("instructor_recipients", joinRecipients(recipients.filter((entry) => entry !== address)));
+    setField(
+      "instructor_recipients",
+      serializeRecipients(recipients.map((r): Recipient => (r.email === email ? { email, active } : r))),
+    );
+  };
+
+  const removeRecipient = (address: string) => {
+    if (
+      !window.confirm(
+        `Remove ${address} from the assessment recipients?\n\n` +
+          `They stop receiving interview reports after you save. Emails already sent are not affected.\n\n` +
+          `To pause their copies without removing the address, switch it off instead.`,
+      )
+    ) {
+      return;
+    }
+    setRecipientError(null);
+    setRecipientsNote(null);
+    setField(
+      "instructor_recipients",
+      serializeRecipients(recipients.filter((entry) => entry.email !== address)),
+    );
   };
 
   // Client-side warning ahead of the server's own check, so a mismatched pair
@@ -249,6 +273,7 @@ export function Settings({ onApiError }: Props) {
           scoring_model: settings.scoring_model?.value ?? "",
           // A missing row means the built-in default, which is to share.
           share_report_with_student: settings.share_report_with_student?.value ?? "1",
+          generate_feedback: settings.generate_feedback?.value ?? "1",
           instructor_recipients: settings.instructor_recipients?.value ?? "",
         });
         setApiKeyInput("");
@@ -364,18 +389,44 @@ export function Settings({ onApiError }: Props) {
         </div>
 
         <div className="field">
+          <Toggle
+            id="generate_feedback"
+            label="Generate AI feedback"
+            checked={form.generate_feedback === "1"}
+            onChange={(on) => setField("generate_feedback", on ? "1" : "0")}
+          />
+          <p className="admin-help">
+            When this is off, the AI assessor writes no qualitative feedback at all.
+            Every copy of the report carries the rubric scores and the transcript
+            without a feedback section: the student&apos;s, the assessment
+            recipients&apos;, and the one stored in Submissions. Scoring itself does
+            not change. Reports already stored keep the feedback they have.
+          </p>
+        </div>
+
+        <div className="field">
           <label htmlFor="instructor_recipients">Assessment recipients</label>
           {recipients.length > 0 ? (
             <table>
               <tbody>
-                {recipients.map((address) => (
-                  <tr key={address}>
-                    <td>{address}</td>
+                {recipients.map((recipient, i) => (
+                  <tr key={recipient.email}>
+                    <td style={recipient.active ? undefined : { color: "var(--text-muted)" }}>
+                      {recipient.email}
+                    </td>
+                    <td style={{ width: "1%", whiteSpace: "nowrap" }}>
+                      <Toggle
+                        id={`recipient-active-${i}`}
+                        label=""
+                        checked={recipient.active}
+                        onChange={(on) => toggleRecipient(recipient.email, on)}
+                      />
+                    </td>
                     <td style={{ textAlign: "right", width: "1%", whiteSpace: "nowrap" }}>
                       <button
                         className="link-btn"
                         type="button"
-                        onClick={() => removeRecipient(address)}
+                        onClick={() => removeRecipient(recipient.email)}
                       >
                         Remove
                       </button>
@@ -386,6 +437,12 @@ export function Settings({ onApiError }: Props) {
             </table>
           ) : (
             <p className="admin-help">No addresses yet. Add at least one below.</p>
+          )}
+          {recipients.length > 0 && activeRecipients === 0 && (
+            <p className="admin-warn">
+              Every address is switched off. Reports are not emailed to any assessment
+              recipient until one is switched on.
+            </p>
           )}
 
           <div className="admin-toolbar">
@@ -424,8 +481,10 @@ export function Settings({ onApiError }: Props) {
           {recipientsNote && <p className="admin-warn">{recipientsNote}</p>}
           <p className="admin-help">
             When a student submits an interview, the full report (scores, feedback, and
-            the complete transcript) is emailed to every address here. The student also
-            receives their own copy at their roster email address.
+            the complete transcript) is emailed to every address here that is switched
+            on. Switch an address off to pause its copies without removing it. The
+            student also receives their own copy at their roster email address. Changes
+            apply when you save.
           </p>
         </div>
 

@@ -48,6 +48,36 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /**
+ * Same as api<T>, for the one admin endpoint that answers bytes instead of
+ * JSON: POST /api/admin/voice-preview. Errors still arrive as JSON and are
+ * thrown the same way.
+ */
+export async function apiBlob(path: string, init?: RequestInit): Promise<Blob> {
+  let res: Response;
+  try {
+    res = await fetch(API_BASE + ADMIN_PREFIX + path, {
+      credentials: "include",
+      ...init,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new ApiError(0, "Could not reach the server. Check your network connection.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const message =
+      body && typeof body.error === "string"
+        ? body.error
+        : `The server returned an error (HTTP ${res.status}).`;
+    throw new ApiError(res.status, message);
+  }
+  return res.blob();
+}
+
+/**
  * A non-fetch admin URL, for the one endpoint the browser needs as a plain
  * link rather than a JSON call: GET /api/admin/submissions.csv. The browser
  * carries the Access cookie on a normal navigation the same way it does on

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Toggle } from "./Toggle";
-import { api } from "./api";
+import { api, apiBlob } from "./api";
 import { REALTIME_VOICES } from "../shared/voices";
 
 interface PersonaListItem {
@@ -88,6 +88,38 @@ export function Personas({ onApiError }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [versions, setVersions] = useState<PersonaVersion[] | null>(null);
   const [versionsError, setVersionsError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  // One fetched clip per voice, kept for the whole dashboard visit, so
+  // clicking through the voices costs one TTS call each rather than one per
+  // click. Refs, not state: neither should trigger a render by itself.
+  const previewCache = useRef(new Map<string, string>());
+  const previewAudio = useRef<HTMLAudioElement | null>(null);
+
+  const previewVoice = async () => {
+    const voice = form.voiceName;
+    setPreviewError(null);
+    previewAudio.current?.pause();
+    try {
+      let url = previewCache.current.get(voice);
+      if (!url) {
+        setPreviewLoading(true);
+        const blob = await apiBlob("/voice-preview", {
+          method: "POST",
+          body: JSON.stringify({ voice }),
+        });
+        url = URL.createObjectURL(blob);
+        previewCache.current.set(voice, url);
+      }
+      const audio = new Audio(url);
+      previewAudio.current = audio;
+      await audio.play();
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : "Could not play the voice sample.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   const loadList = () => {
     setListError(null);
@@ -335,29 +367,46 @@ export function Personas({ onApiError }: Props) {
           </div>
           <div className="field">
             <label htmlFor="persona-voice">Voice</label>
-            <select
-              id="persona-voice"
-              style={{ font: "inherit" }}
-              required
-              value={form.voiceName}
-              onChange={(e) => setForm((f) => ({ ...f, voiceName: e.target.value }))}
-            >
-              {/* A voice that predates this list is kept rather than swapped
-                  for the first entry, the same way the settings form keeps an
-                  unknown model id. The server rejects it on save, which is the
-                  point at which the instructor should be told. */}
-              {!(REALTIME_VOICES as readonly string[]).includes(form.voiceName) && (
-                <option value={form.voiceName}>{`(current) ${form.voiceName}`}</option>
-              )}
-              {REALTIME_VOICES.map((voice) => (
-                <option key={voice} value={voice}>
-                  {voice}
-                </option>
-              ))}
-            </select>
+            <div className="admin-toolbar">
+              <div className="field">
+                <select
+                  id="persona-voice"
+                  style={{ font: "inherit" }}
+                  required
+                  value={form.voiceName}
+                  onChange={(e) => {
+                    setPreviewError(null);
+                    setForm((f) => ({ ...f, voiceName: e.target.value }));
+                  }}
+                >
+                  {/* A voice that predates this list is kept rather than swapped
+                      for the first entry, the same way the settings form keeps an
+                      unknown model id. The server rejects it on save, which is the
+                      point at which the instructor should be told. */}
+                  {!(REALTIME_VOICES as readonly string[]).includes(form.voiceName) && (
+                    <option value={form.voiceName}>{`(current) ${form.voiceName}`}</option>
+                  )}
+                  {REALTIME_VOICES.map((voice) => (
+                    <option key={voice} value={voice}>
+                      {voice}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={previewLoading || !(REALTIME_VOICES as readonly string[]).includes(form.voiceName)}
+                onClick={previewVoice}
+              >
+                {previewLoading ? "Loading…" : "Preview voice"}
+              </button>
+            </div>
+            {previewError && <p className="admin-warn">{previewError}</p>}
             <p className="admin-help">
               marin and cedar are the most natural of these. The built-in personas use marin,
-              cedar and coral. Listen before casting a persona in a new voice.
+              cedar and coral. Preview plays a short sample sentence in the chosen voice;
+              listen before casting a persona in a new voice.
             </p>
           </div>
           <div className="field">

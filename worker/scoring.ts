@@ -279,7 +279,8 @@ ${PLAIN_WRITING_RULE}`;
 export interface ScoringResult {
   /** In the order the criteria were passed, so the report reads in rubric order. */
   scores: CriterionScore[];
-  feedback: QualitativeFeedback;
+  /** Null when the instructor has switched qualitative feedback off. */
+  feedback: QualitativeFeedback | null;
 }
 
 /**
@@ -308,6 +309,10 @@ export async function scoreAll(
   persona: ScoringPersona,
   transcript: TranscriptEntry[],
   criteria: CriterionDefinition[],
+  // The instructor's `generate_feedback` switch. False skips the feedback call
+  // entirely: no call is made, and `feedback` comes back null. The criterion
+  // calls are untouched, so a report is still scored the same way.
+  includeFeedback: boolean,
 ): Promise<ScoringResult> {
   // The caller guards this first, so reaching it means the rubric was emptied
   // between its check and this call. Scoring nothing is not a report.
@@ -321,7 +326,10 @@ export async function scoreAll(
 
   // Launch order matters only in that they all launch before any is awaited.
   const criterionCalls = criteria.map(runCriterion);
-  const settled = await Promise.allSettled([...criterionCalls.map((run) => run()), runFeedback()]);
+  const settled = await Promise.allSettled([
+    ...criterionCalls.map((run) => run()),
+    ...(includeFeedback ? [runFeedback()] : []),
+  ]);
 
   // One sequential retry each, after the parallel round, so a rate limit does
   // not immediately meet a second full round of requests.
@@ -338,6 +346,6 @@ export async function scoreAll(
 
   return {
     scores: resolved.slice(0, criterionCalls.length) as CriterionScore[],
-    feedback: resolved[criterionCalls.length] as QualitativeFeedback,
+    feedback: includeFeedback ? (resolved[criterionCalls.length] as QualitativeFeedback) : null,
   };
 }

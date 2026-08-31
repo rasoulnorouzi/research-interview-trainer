@@ -28,7 +28,8 @@ interface SubmissionDetail {
   durationMs: number;
   overallScore: number | null;
   scores: CriterionScore[];
-  feedback: QualitativeFeedback;
+  /** Null in reports scored while the generate_feedback switch was off. */
+  feedback: QualitativeFeedback | null;
   metrics: Metrics;
   transcript: TranscriptEntry[];
   emailedAt: number | null;
@@ -653,7 +654,7 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
       </div>
       )}
 
-      {includeFeedback && (
+      {includeFeedback && detail.feedback && (
       <div className="card">
       <h3>Feedback</h3>
       <h3>Strengths</h3>
@@ -763,27 +764,32 @@ function buildSubmissionMarkdown(detail: SubmissionDetail, includeFeedback: bool
     }
     lines.push(``);
 
-    lines.push(`## Feedback`);
-    lines.push(``);
-    lines.push(`### Strengths`);
-    detail.feedback.strengths.forEach((t) => lines.push(`- ${t}`));
-    lines.push(``);
-    lines.push(`### Areas to improve`);
-    detail.feedback.improvements.forEach((t) => lines.push(`- ${t}`));
-    lines.push(``);
-    lines.push(`### Notable moments`);
-    detail.feedback.moments.forEach((m) => {
-      lines.push(`> ${m.quote}`);
+    // A report scored with the generate_feedback switch off has no feedback
+    // to include, so the file simply has no Feedback section.
+    const feedback = detail.feedback;
+    if (feedback) {
+      lines.push(`## Feedback`);
       lines.push(``);
-      lines.push(m.comment);
+      lines.push(`### Strengths`);
+      feedback.strengths.forEach((t) => lines.push(`- ${t}`));
       lines.push(``);
-    });
-    lines.push(`### What the student did not reach`);
-    lines.push(detail.feedback.missedDepth);
-    lines.push(``);
-    lines.push(`### Summary`);
-    lines.push(detail.feedback.summary);
-    lines.push(``);
+      lines.push(`### Areas to improve`);
+      feedback.improvements.forEach((t) => lines.push(`- ${t}`));
+      lines.push(``);
+      lines.push(`### Notable moments`);
+      feedback.moments.forEach((m) => {
+        lines.push(`> ${m.quote}`);
+        lines.push(``);
+        lines.push(m.comment);
+        lines.push(``);
+      });
+      lines.push(`### What the student did not reach`);
+      lines.push(feedback.missedDepth);
+      lines.push(``);
+      lines.push(`### Summary`);
+      lines.push(feedback.summary);
+      lines.push(``);
+    }
   }
 
   lines.push(`## Transcript`);

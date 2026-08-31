@@ -18,7 +18,8 @@
 
 import { sha256Hex } from "./auth";
 import { getSettings, json, readJsonBody, type Env } from "./db";
-import { validateApiKey } from "./openai";
+import { synthesizeVoicePreview, validateApiKey } from "./openai";
+import { parseRecipients, serializeRecipients } from "../shared/recipients";
 import { REALTIME_VOICES } from "../shared/voices";
 
 const ROSTER_LIST_LIMIT = 500;
@@ -43,13 +44,14 @@ const SETTING_KEYS = [
   "interview_model",
   "scoring_model",
   "share_report_with_student",
+  "generate_feedback",
   "instructor_recipients",
 ] as const;
 
 const NUMERIC_SETTING_KEYS = ["interview_limit_minutes", "interview_warn_minutes", "sessions_total"];
 
 /** Settings that are a switch. Stored as the string "1" or "0", never a boolean. */
-const BOOLEAN_SETTING_KEYS = ["share_report_with_student"];
+const BOOLEAN_SETTING_KEYS = ["share_report_with_student", "generate_feedback"];
 
 const PERSONA_ID_PATTERN = /^[a-z0-9-]{1,40}$/;
 // The persona pattern plus the underscore, because every seeded criterion id
@@ -198,6 +200,11 @@ export async function handleAdmin(
       if (path.length !== 1) break;
       if (method !== "POST") return methodNotAllowed();
       return await breakglass(request, env);
+
+    case "voice-preview":
+      if (path.length !== 1) break;
+      if (method !== "POST") return methodNotAllowed();
+      return await voicePreview(request, env);
   }
 
   return json(404, { error: "Not found." });
@@ -294,14 +301,20 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
     const value = raw.trim();
 
     if (key === "instructor_recipients") {
-      const parts = value.split(",").map((part) => part.trim()).filter((part) => part.length > 0);
+      // The stored format is shared/recipients.ts: comma-separated, with a "!"
+      // prefix on an address that is switched off. Switched-off addresses are
+      // still validated; a bad address should be refused when it is typed, not
+      // discovered the day it is switched back on.
+      const parts = parseRecipients(value);
       // Reports have to reach the instructors (§0), so an empty list is a
-      // configuration error rather than a valid state.
+      // configuration error rather than a valid state. A list where every
+      // address is switched off is allowed: the addresses are kept, and the
+      // dashboard warns that no assessor is receiving reports.
       if (parts.length === 0) return json(400, { error: "instructor_recipients needs at least one address." });
-      if (parts.some((part) => !part.includes("@"))) {
+      if (parts.some((part) => !part.email.includes("@"))) {
         return json(400, { error: "Each instructor recipient must be an email address." });
       }
-      updates.push([key, parts.join(",")]);
+      updates.push([key, serializeRecipients(parts)]);
       continue;
     }
 
@@ -352,6 +365,47 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
   );
 
   return json(200, { settings: await settingsView(env) });
+}
+
+// The one fixed sentence every voice preview speaks. Conversational on
+// purpose, so the instructor hears the voice the way a student will: answering
+// a question, not reading an announcement. Never taken from the request; this
+// endpoint spends the university key, so the client chooses only the voice.
+const VOICE_PREVIEW_TEXT =
+  "Thanks for asking. I have thought about it a lot, and honestly, it is a bit complicated. Where would you like me to start?";
+
+/**
+ * POST /api/admin/voice-preview, body {voice}. Answers a short MP3 clip of the
+ * voice, for the persona editor's preview button. The voice is checked against
+ * the same list persona saves enforce, so this cannot be used to probe
+ * arbitrary strings against OpenAI on the university key.
+ */
+async function voicePreview(request: Request, env: Env): Promise<Response> {
+  const parsed = await readJsonBody<{ voice?: unknown }>(request);
+  if (!parsed.ok) return parsed.response;
+  const voice = typeof parsed.value.voice === "string" ? parsed.value.voice : "";
+  if (!(REALTIME_VOICES as readonly string[]).includes(voice)) {
+    return json(400, { error: "voice must be one of the available voices." });
+  }
+
+  const settings = await getSettings(env, ["openai_api_key"]);
+  const apiKey = settings.openai_api_key ?? "";
+  if (!apiKey) return json(503, { error: "No OpenAI API key is set. Save one under Settings first." });
+
+  let audio: ArrayBuffer;
+  try {
+    audio = await synthesizeVoicePreview(apiKey, voice, VOICE_PREVIEW_TEXT);
+  } catch (err) {
+    // openai.ts throws only its four fixed strings; nothing from OpenAI's
+    // response can end up in this log line or the body below.
+    console.error("voice preview failed:", err instanceof Error ? err.message : "unknown");
+    return json(502, { error: "Could not fetch the voice sample. Try again." });
+  }
+
+  return new Response(audio, {
+    status: 200,
+    headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
+  });
 }
 
 // ------------------------------------------------------------------ roster

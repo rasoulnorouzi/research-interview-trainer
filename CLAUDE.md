@@ -320,7 +320,8 @@ that touches one. Therefore:
   `scale_max` — never the other criteria, never another score, never the
   persona's system instruction.
 - A **separate, independent call** writes the qualitative feedback and never
-  sees any numbers.
+  sees any numbers. The `generate_feedback` setting can switch this one call
+  off entirely (see below); the criterion calls are never optional.
 - All of those calls, one per active criterion plus feedback, launch together
   from `scoreAll()`; wall-clock ≈ one call. Each gets one sequential retry if
   it fails the first parallel round. `worker/admin.ts` caps the rubric at 20
@@ -399,6 +400,29 @@ rubric and the feedback, and `POST /api/report` answers `shared: false` with
 empty `scores` and a null `feedback` so no withheld number reaches the
 browser. Scoring, the stored submission and the instructor email are
 identical in both modes.
+
+**Whether the feedback is written at all is a second instructor setting
+(2026-08-31).** `generate_feedback` (`"1"` by default) switches the
+qualitative-feedback call off entirely: `scoreAll` skips it, `feedback` is
+null in the response, the stored `feedback_json` holds the JSON value
+`null`, and every renderer (results screen, both emails, the assessment
+attachment, the Submissions detail and its Markdown export) omits the
+feedback section rather than showing an empty one. Criterion scoring is
+untouched. This is orthogonal to `share_report_with_student`: that one
+hides written feedback from the student; this one stops it being written.
+Old submissions keep their stored feedback either way, so
+`SubmissionDetail.feedback` and `ReportEmailData.feedback` are nullable
+and every reader guards.
+
+**Assessment recipients carry per-address switches (2026-08-31).**
+`instructor_recipients` is still one comma-separated settings string, but
+an address prefixed with `!` is switched off: kept on the list, excluded
+from report emails. `shared/recipients.ts` is the one parse/serialize
+definition, used by the dashboard form, the settings validation and
+`worker/report.ts`; a pre-existing value without `!` parses as all-on. The
+dashboard's Settings screen gives each address an on/off Toggle and a
+Remove button behind a confirm dialog; an all-off list is legal (the
+screen warns) and simply sends no instructor copies.
 
 **Models are instructor settings now, not student choices.** `scoring_model`
 lives in the `settings` table (`gpt-5.6-terra` by default) and is read fresh
@@ -522,7 +546,13 @@ needs first.
 `voice-auditions/` holds the `.wav` clips the voice casting was decided from
 (each persona against its rejected alternatives, plus Elena before and after
 the reverted 0.9 playback slowdown). It is gitignored and local-only. Re-record
-into it before changing any `voiceName`; do not commit it.
+into it before changing any `voiceName`; do not commit it. The dashboard's
+persona editor now also has a "Preview voice" button (2026-08-31): `POST
+/api/admin/voice-preview` speaks one fixed sample sentence through
+`gpt-4o-mini-tts` on the university key — verified live to accept all ten
+realtime voices, marin and cedar included — so the instructor can cast by
+ear without this folder. The auditions stay the record of why the built-in
+casting is what it is.
 
 ## Deployment
 
