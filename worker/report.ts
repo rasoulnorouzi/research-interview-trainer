@@ -204,17 +204,23 @@ export async function handleReport(request: Request, env: Env): Promise<Response
   const apiKey = settings.openai_api_key ?? "";
   if (!apiKey) return json(503, { error: NOT_CONFIGURED });
 
-  // The instructor's switch, and the only thing it touches: the student's copy
-  // of the report. Scoring, storage and the instructor email below are the same
-  // either way. Anything other than the stored "0" means share, so a cleared or
-  // hand-edited row keeps today's behaviour rather than silently withholding.
-  const shareWithStudent = settings.share_report_with_student !== "0";
-
-  // The second switch (2026-08-31): whether the AI assessor writes qualitative
-  // feedback at all. Off means the feedback call is never made and every copy
-  // of the report, the student's, the instructor's and the stored one, carries
-  // scores without a feedback section. Same missing-row default as above.
+  // The feedback switch (2026-08-31): whether the AI assessor writes
+  // qualitative feedback at all. Off means the feedback call is never made and
+  // no copy of the report has a feedback section. Anything other than the
+  // stored "0" means on, so a cleared or hand-edited row keeps the default
+  // behaviour rather than silently changing it.
   const generateFeedback = settings.generate_feedback !== "0";
+
+  // The share switch touches only the student's copy of the report. Scoring,
+  // storage and the instructor email below are the same either way. Since
+  // 2026-08-31 (instructor decision) it is SUBORDINATE to the feedback switch:
+  // with feedback off, the student's copy is the transcript only, whatever the
+  // stored share value says — the dashboard shows the share switch as disabled
+  // and off in that state, and this line is what makes that true even for a
+  // value edited straight in the database. The stored share value itself is
+  // not rewritten, so switching feedback back on restores the configured
+  // sharing without anyone having to remember to.
+  const shareWithStudent = generateFeedback && settings.share_report_with_student !== "0";
 
   // The evaluators see the name, the title, the topic and the ground truth.
   // Not the system instruction, not the voice, not the short bio.

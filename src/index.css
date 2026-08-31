@@ -538,6 +538,14 @@ textarea {
   outline-offset: 2px;
 }
 
+/* A switch another setting has made inert (the share switch while AI
+   feedback is off). Dimmed as a whole so the Off it shows reads as forced,
+   not chosen. */
+.toggle:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .toggle-state {
   min-width: 1.9em;
   font-size: 0.85rem;

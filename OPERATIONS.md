@@ -45,13 +45,14 @@ Reports already sent are not resent.
 
 **Switching AI feedback off.** The switch "Generate AI feedback" controls
 whether the feedback is written at all. With it off, the feedback
-evaluator never runs: reports carry the rubric scores and the transcript
-with no feedback section, for the student, for the assessment recipients,
-and in Submissions. Rubric scoring does not change. The switch applies to
-interviews scored after the change; stored reports keep the feedback they
-already have. Use this switch when you want scores without AI-written
-prose; use "Send scores and feedback to students" when you want the
-feedback written but held back from students.
+evaluator never runs: your assessment recipients receive the rubric
+scores and the transcript with no feedback section, the same is stored
+in Submissions, and students receive only their transcript — the "Send
+scores and feedback to students" switch is disabled while this one is
+off. Your saved choice on that switch is kept, and comes back when you
+switch AI feedback on again. Rubric scoring does not change. The switch
+applies to interviews scored after the change; stored reports keep the
+feedback they already have.
 
 **Managing assessment recipients.** Each address on the list has its own
 On/Off switch and a Remove control. Switch an address off to pause its

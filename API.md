@@ -510,12 +510,20 @@ response shapes.
 
 `generate_feedback` (added 2026-08-31) controls whether the qualitative
 feedback is written at all. `"1"` is the default. With `"0"`, the
-feedback evaluator call is never made: the report holds the rubric
-scores and the transcript with no feedback section, in every copy — the
-student's, the instructor recipients', and the stored submission
-(`feedback_json` holds the JSON value `null`). Scoring is unchanged.
-The switch applies to reports scored after the change; stored reports
-keep whatever they have.
+feedback evaluator call is never made: the instructor recipients' copy
+and the stored submission hold the rubric scores and the transcript with
+no feedback section (`feedback_json` holds the JSON value `null`).
+Scoring is unchanged. The switch applies to reports scored after the
+change; stored reports keep whatever they have.
+
+The share switch is subordinate to the feedback switch (instructor
+decision, 2026-08-31): with `generate_feedback` at `"0"`, the student's
+copy is the transcript only and `POST /api/report` answers the
+`shared: false` shape, whatever `share_report_with_student` says. The
+server applies this rule itself, so it holds even for a value edited
+straight in the database. The stored `share_report_with_student` value
+is not rewritten — the dashboard shows its switch as disabled and off —
+so switching feedback back on restores the configured sharing.
 
 ### The recipients list format
 

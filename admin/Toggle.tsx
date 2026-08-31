@@ -7,13 +7,21 @@ interface Props {
   id: string;
   label: string;
   checked: boolean;
+  /** Renders the switch inert and dimmed; used when another setting overrides this one. */
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
 }
 
-export function Toggle({ id, label, checked, onChange }: Props) {
+export function Toggle({ id, label, checked, disabled, onChange }: Props) {
   return (
     <label className="toggle" htmlFor={id}>
-      <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
       <span className="toggle-track" aria-hidden="true"></span>
       <span className="toggle-state">{checked ? "On" : "Off"}</span>
       <span>{label}</span>

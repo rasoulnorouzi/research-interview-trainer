@@ -396,39 +396,48 @@ export function Settings({ onApiError }: Props) {
 
         <div className="field">
           <Toggle
-            id="share_report_with_student"
-            label="Send scores and feedback to students"
-            checked={form.share_report_with_student === "1"}
-            onChange={(on) => setField("share_report_with_student", on ? "1" : "0")}
-          />
-          <p className="admin-help">
-            When this is off, a student receives only the interview transcript, on the
-            results screen and by email. The interview is still scored. The full scored
-            report still goes to the assessment recipients below, and it stays in
-            Submissions.
-          </p>
-          {form.share_report_with_student === "1" && form.generate_feedback === "0" && (
-            <p className="admin-help">
-              <strong>Right now students receive scores only:</strong> AI feedback is
-              switched off below, so there is no feedback to send anyone.
-            </p>
-          )}
-        </div>
-
-        <div className="field">
-          <Toggle
             id="generate_feedback"
             label="Generate AI feedback"
             checked={form.generate_feedback === "1"}
             onChange={(on) => setField("generate_feedback", on ? "1" : "0")}
           />
           <p className="admin-help">
-            When this is off, the AI assessor writes no qualitative feedback at all.
-            Every copy of the report carries the rubric scores and the transcript
-            without a feedback section: the student&apos;s, the assessment
-            recipients&apos;, and the one stored in Submissions. Scoring itself does
-            not change. Reports already stored keep the feedback they have.
+            When this is off, the AI assessor writes no qualitative feedback at all,
+            and students receive only their transcript: the switch below is disabled
+            while this one is off. The interview is still scored. The assessment
+            recipients still receive the scored report and it stays in Submissions,
+            both without a feedback section. Reports already stored keep the feedback
+            they have.
           </p>
+        </div>
+
+        <div className="field">
+          <Toggle
+            id="share_report_with_student"
+            label="Send scores and feedback to students"
+            // Subordinate to the feedback switch above (instructor decision,
+            // 2026-08-31): with feedback off this switch is inert and shows the
+            // forced Off, but the stored value underneath is untouched, so
+            // switching feedback back on restores it. worker/report.ts applies
+            // the same rule server-side.
+            checked={form.generate_feedback === "1" && form.share_report_with_student === "1"}
+            disabled={form.generate_feedback === "0"}
+            onChange={(on) => setField("share_report_with_student", on ? "1" : "0")}
+          />
+          {form.generate_feedback === "0" ? (
+            <p className="admin-help">
+              Disabled while Generate AI feedback is off: students receive only the
+              interview transcript. Your saved choice here is kept and comes back when
+              you switch AI feedback on again.
+            </p>
+          ) : (
+            <p className="admin-help">
+              When this is off, a student receives only the interview transcript, on the
+              results screen and by email. The interview is still scored. The full scored
+              report still goes to the assessment recipients below, and it stays in
+              Submissions.
+            </p>
+          )}
         </div>
 
         <div className="field">

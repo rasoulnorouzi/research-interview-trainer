@@ -418,9 +418,14 @@ null in the response, the stored `feedback_json` holds the JSON value
 `null`, and every renderer (results screen, both emails, the assessment
 attachment, the Submissions detail and its Markdown export) omits the
 feedback section rather than showing an empty one. Criterion scoring is
-untouched. This is orthogonal to `share_report_with_student`: that one
-hides written feedback from the student; this one stops it being written.
-Old submissions keep their stored feedback either way, so
+untouched. `share_report_with_student` is **subordinate** to this switch
+(instructor decision, 2026-08-31, revising the same-day orthogonal
+design): feedback off forces the student copy to the transcript-only
+`shared: false` shape regardless of the stored share value —
+`worker/report.ts` ANDs the two, and the dashboard renders the share
+toggle disabled-and-off — while the stored share value itself is never
+rewritten, so feedback returning restores the configured sharing. Old
+submissions keep their stored feedback either way, so
 `SubmissionDetail.feedback` and `ReportEmailData.feedback` are nullable
 and every reader guards.
 
