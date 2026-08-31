@@ -7,7 +7,46 @@ one instruction per action.
 
 ---
 
-## 2026-08-31 — Assessor controls
+## 2026-08-31 — Distinct report emails
+
+Branch `email-distinct`, one commit, merged fast-forward into `main`.
+No database change. Instructor request, after the student copy of a
+report was mistaken for an assessor copy in an inbox that serves both
+roles.
+
+### What changed
+
+The student's copy and the assessor's copy of a report email are now
+marked apart in four ways:
+
+1. **Subject.** Student: "Your interview report: <persona>, <date>"
+   (or "Your interview transcript: ..." when scores are withheld).
+   Assessor: "Assessor copy: <student name> (<id>), <persona>".
+2. **Label band.** Each body opens with one line that names the copy:
+   "Student copy. Sent to the student who did the interview." or
+   "Assessor copy. Sent only to the assessment recipients, not to the
+   student."
+3. **Accent color.** Student mail keeps the app's navy. Assessor mail
+   uses the dashboard's deep green. This is the same pairing that keeps
+   the student app and the dashboard unconfusable.
+4. **Structure and filenames.** The assessor body leads with the
+   student identity block and no longer repeats the persona header.
+   The assessor's two `.txt` attachments carry the student id in their
+   filenames; the student's keep the short names.
+
+### Tests done
+
+- `npm run lint` clean. All three variants rendered from the real
+  module (esbuild bundle, no re-implementation) and inspected in a
+  browser: labels, colors, subjects, and the de-duplicated assessor
+  header verified.
+- One real report sent through wrangler dev; the assessor copy
+  delivered in the new format.
+
+### Deploy
+
+Steps 1, 2, 4, 5 of the 2026-08-31 assessor-controls protocol below
+(no seed step: no settings change).
 
 Branch `assessor-controls`, four commits, merged fast-forward into
 `main`. No database schema change.

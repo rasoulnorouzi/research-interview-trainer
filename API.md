@@ -279,10 +279,21 @@ scale has no `max`; every renderer defaults a missing `max` to `5`.
 `overall` is a percentage with one decimal, computed by the server,
 never by a model: the sum of `score` over the sum of `max` across every
 non-null row, times 100. It is `null` only when every criterion came
-back not-assessable. Both report emails carry two plain-text attachments:
-`interview-transcript-<date>.txt` and `interview-assessment-<date>.txt`. When
-`share_report_with_student` is `0`, the student's mail carries only the
-transcript file. `emailed` reflects whether both report emails were
+back not-assessable. Both report emails carry two plain-text attachments. The student's copy
+names them `interview-transcript-<date>.txt` and
+`interview-assessment-<date>.txt`; the assessor's copy puts the student
+id in the names (`interview-<studentId>-transcript-<date>.txt`,
+`interview-<studentId>-assessment-<date>.txt`), because assessors save
+files from many students. When `share_report_with_student` is `0`, the
+student's mail carries only the transcript file.
+
+The two copies are marked apart (2026-08-31): the student's subject
+starts with "Your interview report:" (or "Your interview transcript:"
+when withheld) and the assessor's with "Assessor copy:", each body opens
+with a band naming which copy it is, and the accent color differs —
+student navy, assessor green, the same pairing the app and the dashboard
+use. The assessor body leads with the student identity block and does
+not repeat the persona header. `emailed` reflects whether both report emails were
 sent successfully; a failed send does not fail the request; the
 submission is already stored either way.
 

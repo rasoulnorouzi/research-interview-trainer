@@ -54,6 +54,16 @@ switch AI feedback on again. Rubric scoring does not change. The switch
 applies to interviews scored after the change; stored reports keep the
 feedback they already have.
 
+**Telling the two report emails apart.** The student's copy and the
+assessor's copy are marked differently (2026-08-31). The student's
+subject starts with "Your interview report:"; the assessor's starts
+with "Assessor copy:" and names the student with their id. Each body
+opens with a band that says which copy it is, in navy for the student
+and in the dashboard's green for the assessor. A report email in an
+unexpected inbox is identified by its subject: if the subject carries a
+student id in parentheses, it is the assessor copy; if not, it is the
+student's own copy, sent to that student's roster address.
+
 **Managing assessment recipients.** Each address on the list has its own
 On/Off switch and a Remove control. Switch an address off to pause its
 report copies without removing it; the address stays on the list, marked

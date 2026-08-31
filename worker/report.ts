@@ -319,10 +319,8 @@ export async function handleReport(request: Request, env: Env): Promise<Response
   try {
     // The transcript and the assessment also travel as two separate .txt
     // files (instructor request, 2026-08-26). The student's mail carries the
-    // assessment file only when sharing is on; the instructor's always
-    // carries both.
-    const transcriptFile = transcriptAttachment(emailData);
-    const assessmentFile = assessmentAttachment(emailData);
+    // assessment file only when sharing is on; the assessor's always carries
+    // both, under filenames that include the student id (2026-08-31).
     const forStudent = shareWithStudent
       ? studentReportEmail(emailData)
       : studentTranscriptEmail(emailData);
@@ -333,7 +331,9 @@ export async function handleReport(request: Request, env: Env): Promise<Response
       forStudent.subject,
       forStudent.text,
       forStudent.html,
-      shareWithStudent ? [transcriptFile, assessmentFile] : [transcriptFile],
+      shareWithStudent
+        ? [transcriptAttachment(emailData), assessmentAttachment(emailData)]
+        : [transcriptAttachment(emailData)],
     );
     if (recipients.length > 0) {
       const forInstructor = instructorReportEmail(emailData);
@@ -344,7 +344,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
         forInstructor.subject,
         forInstructor.text,
         forInstructor.html,
-        [transcriptFile, assessmentFile],
+        [transcriptAttachment(emailData, true), assessmentAttachment(emailData, true)],
       );
     }
     emailed = true;

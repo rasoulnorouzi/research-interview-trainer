@@ -125,13 +125,22 @@ export interface ReportEmailData {
   transcript: TranscriptEntry[];
 }
 
+// The two copies of a report must be tellable apart at a glance (instructor
+// request, 2026-08-31, after a switched-off assessor address seemed to get
+// mail that was in fact the student copy). Three markers, applied everywhere:
+// the subject starts with "Your ..." or "Assessor copy:", a labelled band
+// opens the body, and the accent color differs — student navy, assessor
+// green, the same pairing the app and the dashboard use.
+const STUDENT_COPY_LABEL = "Student copy. Sent to the student who did the interview.";
+const ASSESSOR_COPY_LABEL = "Assessor copy. Sent only to the assessment recipients, not to the student.";
+
 /** The student's copy of the report. Addressed to the student. */
 export function studentReportEmail(
   d: ReportEmailData,
 ): { subject: string; text: string; html: string } {
-  const subject = `Interview report: ${d.personaName}, ${formatDateOnly(d.startedAt)}`;
-  const text = reportBodyText(d);
-  const html = htmlDocument(subject, reportBodyHtml(d));
+  const subject = `Your interview report: ${d.personaName}, ${formatDateOnly(d.startedAt)}`;
+  const text = `${STUDENT_COPY_LABEL}\n\n${reportBodyText(d)}`;
+  const html = htmlDocument(subject, copyLabelHtml(STUDENT_COPY_LABEL, ACCENT) + reportBodyHtml(d, ACCENT));
   return { subject, text, html };
 }
 
@@ -150,9 +159,11 @@ const WITHHELD_NOTICE = "Your instructor received the full scored report.";
 export function studentTranscriptEmail(
   d: ReportEmailData,
 ): { subject: string; text: string; html: string } {
-  const subject = `Interview transcript: ${d.personaName}, ${formatDateOnly(d.startedAt)}`;
+  const subject = `Your interview transcript: ${d.personaName}, ${formatDateOnly(d.startedAt)}`;
 
   const lines: string[] = [];
+  lines.push(STUDENT_COPY_LABEL);
+  lines.push(``);
   lines.push(`${d.personaName} (${d.personaTitle})`);
   lines.push(`Student: ${d.studentName}`);
   lines.push(`Date: ${formatDateTime(d.startedAt)}`);
@@ -166,6 +177,7 @@ export function studentTranscriptEmail(
   const text = lines.join("\n");
 
   const parts: string[] = [];
+  parts.push(copyLabelHtml(STUDENT_COPY_LABEL, ACCENT));
   parts.push(
     `<h1 style="${H1_STYLE}">${escapeHtml(d.personaName)} (${escapeHtml(d.personaTitle)})</h1>`,
   );
@@ -173,7 +185,7 @@ export function studentTranscriptEmail(
   parts.push(`<p style="${P_STYLE}">Date: ${escapeHtml(formatDateTime(d.startedAt))}</p>`);
   parts.push(`<p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>`);
   parts.push(`<p style="${P_STYLE}">${escapeHtml(WITHHELD_NOTICE)}</p>`);
-  parts.push(`<h2 style="${H2_STYLE}">Transcript</h2>`);
+  parts.push(`<h2 style="${h2Style(ACCENT)}">Transcript</h2>`);
   parts.push(...transcriptHtmlParts(d));
   const html = htmlDocument(subject, parts.join("\n"));
 
@@ -181,16 +193,20 @@ export function studentTranscriptEmail(
 }
 
 /**
- * The instructor's copy. Same report body as the student version, prefixed
- * with an identity block (student name, id, cohort, persona, start time,
- * duration) so the report is attributable at cohort scale.
+ * The assessor's copy, for the assessment recipients. Same report body as the
+ * student version, prefixed with an identity block (student name, id, cohort,
+ * persona, start time, duration) so the report is attributable at cohort
+ * scale — and marked apart from the student copy in subject, label band and
+ * accent color (see the note above STUDENT_COPY_LABEL).
  */
 export function instructorReportEmail(
   d: ReportEmailData,
 ): { subject: string; text: string; html: string } {
-  const subject = `Interview report: ${d.studentName} (${d.studentId}), ${d.personaName}`;
+  const subject = `Assessor copy: ${d.studentName} (${d.studentId}), ${d.personaName}`;
 
   const identityTextLines = [
+    ASSESSOR_COPY_LABEL,
+    ``,
     `Student: ${d.studentName} (${d.studentId})`,
     ...(d.cohort === null ? [] : [`Cohort: ${d.cohort}`]),
     `Persona: ${d.personaName} (${d.personaTitle})`,
@@ -200,9 +216,10 @@ export function instructorReportEmail(
     `----------------------------------------`,
     ``,
   ];
-  const text = identityTextLines.join("\n") + reportBodyText(d);
+  const text = identityTextLines.join("\n") + reportBodyText(d, false);
 
   const identityHtml = `
+${copyLabelHtml(ASSESSOR_COPY_LABEL, ASSESSOR_ACCENT)}
 <h1 style="${H1_STYLE}">${escapeHtml(d.studentName)} (${escapeHtml(d.studentId)})</h1>
 ${d.cohort === null ? "" : `<p style="${P_STYLE}">Cohort: ${escapeHtml(d.cohort)}</p>`}
 <p style="${P_STYLE}">Persona: ${escapeHtml(d.personaName)} (${escapeHtml(d.personaTitle)})</p>
@@ -210,7 +227,7 @@ ${d.cohort === null ? "" : `<p style="${P_STYLE}">Cohort: ${escapeHtml(d.cohort)
 <p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>
 <hr style="border:none; border-top:1px solid ${BORDER_COLOR}; margin:20px 0;">
 `;
-  const html = htmlDocument(subject, identityHtml + reportBodyHtml(d));
+  const html = htmlDocument(subject, identityHtml + reportBodyHtml(d, ASSESSOR_ACCENT, false));
 
   return { subject, text, html };
 }
@@ -314,13 +331,18 @@ function feedbackTextLines(d: ReportEmailData): string[] {
   return lines;
 }
 
-function reportBodyText(d: ReportEmailData): string {
+function reportBodyText(d: ReportEmailData, withHeader = true): string {
   const lines: string[] = [];
 
-  lines.push(`${d.personaName} (${d.personaTitle})`);
-  lines.push(`Date: ${formatDateTime(d.startedAt)}`);
-  lines.push(`Duration: ${fmtMs(d.durationMs)}`);
-  lines.push(``);
+  // The assessor copy skips this header: its identity block above already
+  // names the persona, the start time and the duration, and saying it twice
+  // makes the two copies harder to tell apart, not easier.
+  if (withHeader) {
+    lines.push(`${d.personaName} (${d.personaTitle})`);
+    lines.push(`Date: ${formatDateTime(d.startedAt)}`);
+    lines.push(`Duration: ${fmtMs(d.durationMs)}`);
+    lines.push(``);
+  }
 
   lines.push(`SPEAKING METRICS`);
   lines.push(``);
@@ -355,20 +377,29 @@ function attachmentDate(d: ReportEmailData): string {
   return new Date(d.startedAt).toISOString().slice(0, 10); // UTC YYYY-MM-DD
 }
 
-/** The interview transcript as a standalone .txt file. */
-export function transcriptAttachment(d: ReportEmailData): EmailAttachment {
+/**
+ * The interview transcript as a standalone .txt file. The assessor's copy
+ * carries the student id in the filename, because an assessor saves files
+ * from many students and "interview-transcript-<date>.txt" collides on day
+ * one; the student's own copy keeps the short name.
+ */
+export function transcriptAttachment(d: ReportEmailData, forAssessor = false): EmailAttachment {
   const lines = [...headerTextLines(d), `TRANSCRIPT`, ``, ...transcriptTextLines(d), ``];
   return {
-    filename: `interview-transcript-${attachmentDate(d)}.txt`,
+    filename: forAssessor
+      ? `interview-${d.studentId}-transcript-${attachmentDate(d)}.txt`
+      : `interview-transcript-${attachmentDate(d)}.txt`,
     content: toBase64(lines.join("\n")),
   };
 }
 
 /** The rubric scores and the qualitative feedback as a standalone .txt file. */
-export function assessmentAttachment(d: ReportEmailData): EmailAttachment {
+export function assessmentAttachment(d: ReportEmailData, forAssessor = false): EmailAttachment {
   const lines = [...headerTextLines(d), ...rubricTextLines(d), ...feedbackTextLines(d)];
   return {
-    filename: `interview-assessment-${attachmentDate(d)}.txt`,
+    filename: forAssessor
+      ? `interview-${d.studentId}-assessment-${attachmentDate(d)}.txt`
+      : `interview-assessment-${attachmentDate(d)}.txt`,
     content: toBase64(lines.join("\n")),
   };
 }
@@ -392,16 +423,20 @@ function transcriptHtmlParts(d: ReportEmailData): string[] {
   });
 }
 
-function reportBodyHtml(d: ReportEmailData): string {
+function reportBodyHtml(d: ReportEmailData, accent: string, withHeader = true): string {
   const parts: string[] = [];
 
-  parts.push(
-    `<h1 style="${H1_STYLE}">${escapeHtml(d.personaName)} (${escapeHtml(d.personaTitle)})</h1>`,
-  );
-  parts.push(`<p style="${P_STYLE}">Date: ${escapeHtml(formatDateTime(d.startedAt))}</p>`);
-  parts.push(`<p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>`);
+  // Same rule as reportBodyText: the assessor copy's identity block already
+  // carries the persona, the start time and the duration.
+  if (withHeader) {
+    parts.push(
+      `<h1 style="${H1_STYLE}">${escapeHtml(d.personaName)} (${escapeHtml(d.personaTitle)})</h1>`,
+    );
+    parts.push(`<p style="${P_STYLE}">Date: ${escapeHtml(formatDateTime(d.startedAt))}</p>`);
+    parts.push(`<p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>`);
+  }
 
-  parts.push(`<h2 style="${H2_STYLE}">Speaking metrics</h2>`);
+  parts.push(`<h2 style="${h2Style(accent)}">Speaking metrics</h2>`);
   parts.push(`<table style="${TABLE_STYLE}">`);
   for (const [label, value] of metricsRows(d.metrics)) {
     parts.push(
@@ -410,7 +445,7 @@ function reportBodyHtml(d: ReportEmailData): string {
   }
   parts.push(`</table>`);
 
-  parts.push(`<h2 style="${H2_STYLE}">Rubric assessment</h2>`);
+  parts.push(`<h2 style="${h2Style(accent)}">Rubric assessment</h2>`);
   parts.push(
     `<p style="${P_STYLE}"><strong>Overall score: ${escapeHtml(formatOverall(d))}</strong></p>`,
   );
@@ -430,7 +465,7 @@ function reportBodyHtml(d: ReportEmailData): string {
   // Same rule as feedbackTextLines: no section at all when feedback is off.
   const feedback = d.feedback;
   if (feedback) {
-    parts.push(`<h2 style="${H2_STYLE}">Feedback</h2>`);
+    parts.push(`<h2 style="${h2Style(accent)}">Feedback</h2>`);
     parts.push(`<h3 style="${H3_STYLE}">Strengths</h3>`);
     parts.push(
       `<ul style="${P_STYLE}">${feedback.strengths.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`,
@@ -450,7 +485,7 @@ function reportBodyHtml(d: ReportEmailData): string {
     parts.push(`<p style="${P_STYLE}">${escapeHtmlMultiline(feedback.summary)}</p>`);
   }
 
-  parts.push(`<h2 style="${H2_STYLE}">Transcript</h2>`);
+  parts.push(`<h2 style="${h2Style(accent)}">Transcript</h2>`);
   parts.push(...transcriptHtmlParts(d));
 
   return parts.join("\n");
@@ -491,6 +526,11 @@ function formatDateTime(ms: number): string {
 // ---------------------------------------------------------------------
 
 const ACCENT = "#1a4a8a";
+// The dashboard's deep green (src/index.css .admin-root --accent, light
+// theme). Emails are always rendered light, so the light value is the one
+// that matters. Student mail keeps navy; assessor mail goes green — the same
+// pairing that keeps the app and the dashboard unconfusable.
+const ASSESSOR_ACCENT = "#1f5c4a";
 const BORDER_COLOR = "#c8c8c8";
 const FONT_SANS =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
@@ -498,7 +538,14 @@ const FONT_SERIF = "Georgia, 'Times New Roman', serif";
 
 const BODY_STYLE = `font-family:${FONT_SANS}; color:#1a1a1a; font-size:15px; line-height:1.5;`;
 const H1_STYLE = `font-family:${FONT_SERIF}; color:#1a1a1a; font-size:22px; font-weight:normal; margin:0 0 4px 0;`;
-const H2_STYLE = `font-family:${FONT_SERIF}; color:${ACCENT}; font-size:18px; font-weight:normal; margin:28px 0 8px 0; border-bottom:1px solid ${BORDER_COLOR}; padding-bottom:4px;`;
+// The one accent-carrying style, a function so the two copies can differ.
+const h2Style = (accent: string) =>
+  `font-family:${FONT_SERIF}; color:${accent}; font-size:18px; font-weight:normal; margin:28px 0 8px 0; border-bottom:1px solid ${BORDER_COLOR}; padding-bottom:4px;`;
+
+/** The band that opens every report email and names which copy it is. */
+function copyLabelHtml(label: string, accent: string): string {
+  return `<p style="font-family:${FONT_SANS}; font-size:12px; letter-spacing:1px; text-transform:uppercase; color:${accent}; border-left:3px solid ${accent}; padding:2px 0 2px 8px; margin:0 0 18px 0;">${escapeHtml(label)}</p>`;
+}
 const H3_STYLE = `font-family:${FONT_SERIF}; color:#1a1a1a; font-size:15px; font-weight:bold; margin:16px 0 4px 0;`;
 const P_STYLE = `margin:6px 0;`;
 const TABLE_STYLE = `border-collapse:collapse; width:100%; margin:8px 0;`;
