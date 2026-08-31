@@ -149,9 +149,11 @@ string, so an id typed straight into the database keeps working and adding a
 newly shipped model is a one-line edit — whereas **voices in
 `shared/voices.ts` are enforced server-side**, deliberately, because an
 unknown voice fails at session start in front of a student. Input
-transcription is still pinned to `gpt-live-transcribe`, now in
-`worker/openai.ts` — see the voice-only constraint for why that one is not
-negotiable.
+transcription joined the enforced side on 2026-08-31: `transcription_model`
+is a settings row (default `gpt-live-transcribe`), validated against
+`TRANSCRIPTION_MODEL_IDS` in `shared/models.ts` because a bad id fails the
+mint in front of a student and because only streaming transcribers may ever
+be offered — see the voice-only constraint for why that is not negotiable.
 
 `src/personas.ts` stays in the repo as the origin point for the built-in
 personas, even though the Worker serves them from D1: `npm run seed:gen`
@@ -211,10 +213,18 @@ zero. `liveSession.ts` attaches it in `ontrack` for exactly this reason.
    black-on-white in both themes.
 3. **Voice only.** No text-question fallback. The student speaks; the
    interviewee speaks back.
-   The student's words stream as they speak, via `gpt-live-transcribe` and
-   `conversation.item.input_audio_transcription.delta`. **Do not swap that
-   transcription model for `gpt-transcribe`**, which only transcribes after a
-   committed turn — that is the exact Gemini limitation this migration removed.
+   The student's words stream as they speak, via
+   `conversation.item.input_audio_transcription.delta`. The transcription
+   model became an instructor setting on 2026-08-31 (`transcription_model`,
+   default `gpt-live-transcribe`), but the constraint is unchanged and now
+   lives in the curated list: `shared/models.ts` offers only models verified
+   to stream deltas during speech (`gpt-live-transcribe`,
+   `gpt-realtime-whisper` — tested live by driving a realtime session with
+   synthesized speech), and `worker/admin.ts` enforces that list on save.
+   **Never add a committed-turn transcriber** (`gpt-transcribe`,
+   `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `whisper-1` — all tested,
+   all transcribe only after the turn): that is the exact Gemini limitation
+   this migration removed.
 4. **A narrow backend, built per `BACKEND-PLAN.md`, not a backend-free app
    anymore.** Cohort scale (400 students, most without their own OpenAI
    account or a card to pay for one) forced this, plus two things a browser

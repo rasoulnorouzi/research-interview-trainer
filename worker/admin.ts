@@ -19,6 +19,7 @@
 import { sha256Hex } from "./auth";
 import { getSettings, json, readJsonBody, type Env } from "./db";
 import { synthesizeVoicePreview, validateApiKey } from "./openai";
+import { TRANSCRIPTION_MODEL_IDS } from "../shared/models";
 import { parseRecipients, serializeRecipients } from "../shared/recipients";
 import { REALTIME_VOICES } from "../shared/voices";
 
@@ -43,6 +44,7 @@ const SETTING_KEYS = [
   "sessions_total",
   "interview_model",
   "scoring_model",
+  "transcription_model",
   "share_report_with_student",
   "generate_feedback",
   "instructor_recipients",
@@ -318,13 +320,27 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
       continue;
     }
 
+    // The transcription model IS checked against a list, unlike the two
+    // models below, because it shares the voices' failure mode: the mint call
+    // rejects an id it does not know (400, verified live 2026-08-31), which
+    // fails at session start in front of a student. The list also encodes
+    // hard constraint 3: every id on it streams the transcript while the
+    // student speaks; a committed-turn transcriber must never be storable.
+    if (key === "transcription_model") {
+      if (!TRANSCRIPTION_MODEL_IDS.includes(value)) {
+        return json(400, { error: "transcription_model must be one of the offered models." });
+      }
+      updates.push([key, value]);
+      continue;
+    }
+
     // interview_model and scoring_model are checked for being non-empty and
     // nothing more, on purpose. Model ids change faster than deploys do, and a
     // server-side allow-list would mean a code change on the day OpenAI ships
     // a replacement. The dashboard's dropdown (shared/models.ts) is the
     // guardrail; the API stays open so a new id can be set from the database
-    // if it ever has to be. Persona voices are the opposite case: see
-    // readPersonaFields.
+    // if it ever has to be. Persona voices and the transcription model above
+    // are the opposite case: see readPersonaFields.
     if (value.length === 0) return json(400, { error: `${key} cannot be empty.` });
     updates.push([key, value]);
   }

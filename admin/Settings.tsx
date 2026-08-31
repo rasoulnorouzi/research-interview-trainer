@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { Toggle } from "./Toggle";
 import { api } from "./api";
-import { INTERVIEW_MODEL_OPTIONS, SCORING_MODEL_OPTIONS } from "../shared/models";
+import {
+  INTERVIEW_MODEL_OPTIONS,
+  SCORING_MODEL_OPTIONS,
+  TRANSCRIPTION_MODEL_OPTIONS,
+} from "../shared/models";
 import { parseRecipients, serializeRecipients, type Recipient } from "../shared/recipients";
 import type { ModelChoice } from "../shared/types";
 
@@ -14,7 +18,12 @@ interface SettingEntry {
 type SettingsView = Record<string, SettingEntry>;
 
 const NUMERIC_KEYS = ["interview_limit_minutes", "interview_warn_minutes", "sessions_total"] as const;
-const TEXT_KEYS = ["interview_model", "scoring_model", "instructor_recipients"] as const;
+const TEXT_KEYS = [
+  "interview_model",
+  "scoring_model",
+  "transcription_model",
+  "instructor_recipients",
+] as const;
 // Switches. Held in the form as the stored "1" or "0" and sent as a boolean.
 const BOOLEAN_KEYS = ["share_report_with_student", "generate_feedback"] as const;
 
@@ -24,6 +33,7 @@ interface FormState {
   sessions_total: string;
   interview_model: string;
   scoring_model: string;
+  transcription_model: string;
   share_report_with_student: string;
   generate_feedback: string;
   instructor_recipients: string;
@@ -35,6 +45,7 @@ const EMPTY_FORM: FormState = {
   sessions_total: "",
   interview_model: "",
   scoring_model: "",
+  transcription_model: "",
   share_report_with_student: "1",
   generate_feedback: "1",
   instructor_recipients: "",
@@ -130,6 +141,7 @@ export function Settings({ onApiError }: Props) {
           sessions_total: settings.sessions_total?.value ?? "",
           interview_model: settings.interview_model?.value ?? "",
           scoring_model: settings.scoring_model?.value ?? "",
+          transcription_model: settings.transcription_model?.value ?? "",
           // A missing row means the built-in default, which is to share.
           share_report_with_student: settings.share_report_with_student?.value ?? "1",
           generate_feedback: settings.generate_feedback?.value ?? "1",
@@ -271,6 +283,7 @@ export function Settings({ onApiError }: Props) {
           sessions_total: settings.sessions_total?.value ?? "",
           interview_model: settings.interview_model?.value ?? "",
           scoring_model: settings.scoring_model?.value ?? "",
+          transcription_model: settings.transcription_model?.value ?? "",
           // A missing row means the built-in default, which is to share.
           share_report_with_student: settings.share_report_with_student?.value ?? "1",
           generate_feedback: settings.generate_feedback?.value ?? "1",
@@ -373,6 +386,14 @@ export function Settings({ onApiError }: Props) {
           onChange={(value) => setField("scoring_model", value)}
         />
 
+        <ModelSelect
+          id="transcription_model"
+          label="Transcription model (student's live transcript)"
+          options={TRANSCRIPTION_MODEL_OPTIONS}
+          value={form.transcription_model}
+          onChange={(value) => setField("transcription_model", value)}
+        />
+
         <div className="field">
           <Toggle
             id="share_report_with_student"
@@ -386,6 +407,12 @@ export function Settings({ onApiError }: Props) {
             report still goes to the assessment recipients below, and it stays in
             Submissions.
           </p>
+          {form.share_report_with_student === "1" && form.generate_feedback === "0" && (
+            <p className="admin-help">
+              <strong>Right now students receive scores only:</strong> AI feedback is
+              switched off below, so there is no feedback to send anyone.
+            </p>
+          )}
         </div>
 
         <div className="field">

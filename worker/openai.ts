@@ -41,10 +41,13 @@ const ERR_MODEL = "OpenAI model not found.";
 const ERR_RATE = "OpenAI rate limit hit.";
 const ERR_GENERIC = "OpenAI request failed.";
 
-// Streams the student's transcript while they are still speaking. The other
-// option, "gpt-transcribe", only transcribes after a committed turn — which is
-// the exact Gemini limitation this migration exists to remove. Do not swap it.
-const INPUT_TRANSCRIPTION_MODEL = "gpt-live-transcribe";
+// The input-transcription model is a caller argument since 2026-08-31: an
+// instructor setting, chosen from shared/models.ts TRANSCRIPTION_MODEL_OPTIONS
+// and enforced against that list by worker/admin.ts. Every model on that list
+// streams the student's transcript while they are still speaking; models that
+// only transcribe after a committed turn (gpt-transcribe, gpt-4o-transcribe,
+// gpt-4o-mini-transcribe, whisper-1 — all tested 2026-08-31) are the exact
+// Gemini limitation this migration exists to remove, and must never be added.
 
 /**
  * Semantic turn detection: a model decides when the student has finished a
@@ -92,7 +95,13 @@ export interface MintedToken {
  */
 export async function mintRealtimeToken(
   apiKey: string,
-  args: { model: string; voice: string; instructions: string; tokenTtlSeconds: number },
+  args: {
+    model: string;
+    voice: string;
+    instructions: string;
+    transcriptionModel: string;
+    tokenTtlSeconds: number;
+  },
 ): Promise<MintedToken> {
   let res: Response;
   try {
@@ -107,7 +116,7 @@ export async function mintRealtimeToken(
           instructions: args.instructions,
           audio: {
             input: {
-              transcription: { model: INPUT_TRANSCRIPTION_MODEL },
+              transcription: { model: args.transcriptionModel },
               turn_detection: TURN_DETECTION,
             },
             output: { voice: args.voice },

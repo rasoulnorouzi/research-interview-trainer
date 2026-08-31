@@ -480,6 +480,19 @@ clear the stored key. Every subsequent `POST /api/session` and
 one setting that supports removal; every other setting key must always
 carry a value.
 
+### The transcription model list
+
+`transcription_model` (added 2026-08-31, default `gpt-live-transcribe`) is
+validated against the curated list in `shared/models.ts`, unlike
+`interview_model` and `scoring_model`, which accept any non-empty string.
+Two reasons: the realtime mint call answers `400` for a transcription
+model it does not know, which would stop every interview from starting;
+and every offered model must stream the student's words while they are
+spoken (hard design constraint 3). The list holds `gpt-live-transcribe`
+and `gpt-realtime-whisper`, the two models a live test on 2026-08-31
+showed to emit transcription deltas during speech; committed-turn models
+such as `gpt-transcribe` are refused with `400`.
+
 ### The two report switches
 
 Two settings keys are switches: `share_report_with_student` and

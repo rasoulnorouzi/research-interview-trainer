@@ -43,6 +43,7 @@ const DEFAULT_WARN_MINUTES = 10;
 const DEFAULT_SESSIONS_TOTAL = 10;
 const DEFAULT_INTERVIEW_MODEL = "gpt-realtime-2.1-mini";
 const DEFAULT_SCORING_MODEL = "gpt-5.6-terra";
+const DEFAULT_TRANSCRIPTION_MODEL = "gpt-live-transcribe";
 
 // A token is valid for the interview limit plus two minutes. OPENAI-MIGRATION.md
 // §7(b) found no max_session_duration, so this is the only server-side bound
@@ -78,6 +79,7 @@ export async function handleSession(request: Request, env: Env): Promise<Respons
     "interview_limit_minutes",
     "interview_warn_minutes",
     "interview_model",
+    "transcription_model",
     "openai_api_key",
   ]);
   const apiKey = settings.openai_api_key ?? "";
@@ -123,6 +125,10 @@ export async function handleSession(request: Request, env: Env): Promise<Respons
   try {
     minted = await mintRealtimeToken(apiKey, {
       model: settings.interview_model || DEFAULT_INTERVIEW_MODEL,
+      // Instructor setting since 2026-08-31, enforced against the curated
+      // streaming-only list on save (worker/admin.ts); trusted here, like a
+      // persona's voice.
+      transcriptionModel: settings.transcription_model || DEFAULT_TRANSCRIPTION_MODEL,
       voice: persona.voice_name,
       // The shared disclosure mechanics are re-appended here for EVERY persona,
       // exactly as buildCustomPersona() does on the client, so no stored persona
