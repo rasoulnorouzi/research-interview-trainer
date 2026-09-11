@@ -104,8 +104,15 @@ Exchanges an address and a code for a session.
 `200`, body is `MeResponse`:
 
 ```json
-{ "studentId": "2026001", "fullName": "Jane Doe" }
+{ "studentId": "2026001", "fullName": "Jane Doe", "panel": null }
 ```
+
+`panel` is the instructor's welcome panel for the setup screen (added
+2026-09-11; settings row `student_panel`, written from the dashboard). It
+is `null` while no panel is saved, and the client then shows its built-in
+default text. An empty string means the instructor chose to show no
+panel. The panel rides on this response and on `GET /api/me`, so it needs
+no student route of its own.
 
 Also sets the `riv_session` cookie described in section 2.
 
@@ -138,7 +145,8 @@ immediately.
 
 ### GET /api/me
 
-Returns the logged-in student's identity.
+Returns the logged-in student's identity and the instructor's welcome
+panel (`panel`, see `POST /api/auth/verify` above).
 
 **Authentication.** Session cookie required. Additionally joins to the
 roster with `active = 1`, so a deactivated student's still-valid cookie
@@ -546,6 +554,24 @@ before this format existed has no `!` and behaves as all-on.
 `PUT /api/admin/settings` validates every address, switched off or not,
 and rejects an empty list; a list where every address is switched off is
 accepted, and no instructor copy is sent while it stays that way.
+
+### The student welcome panel
+
+`student_panel` (added 2026-09-11) is the welcome panel at the top of the
+student's setup screen, written on the dashboard's Settings screen.
+`PUT /api/admin/settings` accepts any string of at most 4000 characters
+and stores it as typed, line breaks included. A non-string answers `400`,
+and so does a longer string. An empty string is legal: it means "show no
+panel". While no `student_panel` row exists, `GET /api/me` answers
+`panel: null` and the student app shows its built-in default text
+(`DEFAULT_PANEL_TEXT` in `src/panel.tsx`).
+
+The text uses a small format. A line that starts with `# ` is a heading,
+and `## ` is a smaller heading. An empty line starts a new paragraph.
+Lines that start with `- ` form a bulleted list. `**text**` is bold. The
+student app and the dashboard preview render it with the same component
+(`src/panel.tsx`), as React text and never as HTML, so markup or script
+typed into the panel shows as plain text.
 
 ### Criteria validation rules
 

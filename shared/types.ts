@@ -150,8 +150,15 @@ export interface ReportResponse {
   shared: boolean;
 }
 
-/** Response of GET /api/me. */
+/** Response of GET /api/me, and of POST /api/auth/verify on success. */
 export interface MeResponse {
   studentId: string;
   fullName: string;
+  /**
+   * The instructor's welcome panel for the setup screen (settings row
+   * `student_panel`). Null while none is saved, and the client then shows its
+   * built-in default (src/panel.tsx). An empty string means the instructor
+   * chose to show no panel.
+   */
+  panel: string | null;
 }

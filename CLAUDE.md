@@ -61,6 +61,18 @@ deployment. The roster currently holds three test entries. `legacy-client`
 exists as a local git branch for rollback (`DEPLOYMENT.md` §6); pushing it
 to GitHub is still pending.
 
+**The student welcome panel is an instructor setting (2026-09-11).** The
+card at the top of the setup screen used to be fixed text in
+`SetupScreen.tsx`. It is now the `student_panel` settings row, written on
+the dashboard's Settings screen with a live preview. It reaches the student
+on `MeResponse.panel`, from `GET /api/me` and `POST /api/auth/verify`, so it
+needs no student route of its own. `null` means no row is saved, and the
+client shows `DEFAULT_PANEL_TEXT` (the old fixed text) from `src/panel.tsx`.
+An empty string means no panel. `src/panel.tsx` renders a small format
+(headings, paragraphs, bullets, bold) as React text, never as HTML, so
+nothing typed into the panel can inject markup. The server caps the text at
+4000 characters. See `API.md`.
+
 The results screen no longer scores automatically: a student clicks
 "Submit interview for scoring" on `ResultsScreen.tsx`, and only that click
 triggers `POST /api/report`. Login failures are explicit rather than a
@@ -116,6 +128,7 @@ src/
   main.tsx                    React root — NO StrictMode (see gotchas)
   App.tsx                     Phase machine: "login" | "setup" | "interview" | "results"
   api.ts                      Same-origin fetch wrapper, ApiError
+  panel.tsx                   Student welcome panel: default text + safe renderer (setup screen, admin preview)
   personas.ts                 3 layered personas + SHARED_DISCLOSURE_MECHANICS (seed origin, see below)
   criteria.ts                 8 seeded rubric criteria (seed origin, see below)
   index.css                   The entire stylesheet, plain CSS

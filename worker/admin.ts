@@ -48,7 +48,12 @@ const SETTING_KEYS = [
   "share_report_with_student",
   "generate_feedback",
   "instructor_recipients",
+  "student_panel",
 ] as const;
+
+// The welcome panel's length cap. Keep in step with PANEL_MAX_LENGTH in
+// src/panel.tsx, which the dashboard checks before it sends.
+const STUDENT_PANEL_MAX = 4000;
 
 const NUMERIC_SETTING_KEYS = ["interview_limit_minutes", "interview_warn_minutes", "sessions_total"];
 
@@ -275,6 +280,18 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
     // Only the key supports removal; the other settings always need a value.
     if (key === "openai_api_key" && raw === null) {
       updates.push([key, ""]);
+      continue;
+    }
+
+    // The student welcome panel (2026-09-11): free text in the small format
+    // src/panel.tsx renders. Stored as typed, not trimmed, so the instructor's
+    // line breaks survive. An empty string is legal and means "show no panel".
+    if (key === "student_panel") {
+      if (typeof raw !== "string") return json(400, { error: "student_panel must be text." });
+      if (raw.length > STUDENT_PANEL_MAX) {
+        return json(400, { error: `student_panel can be at most ${STUDENT_PANEL_MAX} characters.` });
+      }
+      updates.push([key, raw]);
       continue;
     }
 

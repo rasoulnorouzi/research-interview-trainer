@@ -8,6 +8,7 @@ import {
 } from "../shared/models";
 import { parseRecipients, serializeRecipients, type Recipient } from "../shared/recipients";
 import type { ModelChoice } from "../shared/types";
+import { DEFAULT_PANEL_TEXT, PANEL_MAX_LENGTH, PanelText } from "../src/panel";
 
 interface SettingEntry {
   value: string;
@@ -37,6 +38,7 @@ interface FormState {
   share_report_with_student: string;
   generate_feedback: string;
   instructor_recipients: string;
+  student_panel: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -49,6 +51,7 @@ const EMPTY_FORM: FormState = {
   share_report_with_student: "1",
   generate_feedback: "1",
   instructor_recipients: "",
+  student_panel: "",
 };
 
 interface Props {
@@ -146,6 +149,9 @@ export function Settings({ onApiError }: Props) {
           share_report_with_student: settings.share_report_with_student?.value ?? "1",
           generate_feedback: settings.generate_feedback?.value ?? "1",
           instructor_recipients: settings.instructor_recipients?.value ?? "",
+          // A missing row means students see the built-in default panel, so
+          // the editor starts from that text.
+          student_panel: settings.student_panel?.value ?? DEFAULT_PANEL_TEXT,
         });
       })
       .catch((err) => {
@@ -238,6 +244,10 @@ export function Settings({ onApiError }: Props) {
       setError("The warning threshold must be less than the interview time limit.");
       return;
     }
+    if (form.student_panel.length > PANEL_MAX_LENGTH) {
+      setError(`The welcome panel can be at most ${PANEL_MAX_LENGTH} characters.`);
+      return;
+    }
 
     // The server rejects an empty recipient list, so an empty one is not sent
     // at all. The rest of the form still saves, the stored list stays as it
@@ -264,6 +274,11 @@ export function Settings({ onApiError }: Props) {
       const current = settings?.[key]?.value ?? "";
       if (form[key] !== current) payload[key] = form[key];
     }
+    // Compared with what the editor showed on load (the stored text, or the
+    // default while none is stored), so an untouched editor is not a change.
+    // An emptied editor is sent as "" and means: show no panel.
+    const panelCurrent = settings?.student_panel?.value ?? DEFAULT_PANEL_TEXT;
+    if (form.student_panel !== panelCurrent) payload.student_panel = form.student_panel;
     if (apiKeyInput.trim().length > 0) payload.openai_api_key = apiKeyInput.trim();
 
     if (Object.keys(payload).length === 0) {
@@ -288,6 +303,7 @@ export function Settings({ onApiError }: Props) {
           share_report_with_student: settings.share_report_with_student?.value ?? "1",
           generate_feedback: settings.generate_feedback?.value ?? "1",
           instructor_recipients: settings.instructor_recipients?.value ?? "",
+          student_panel: settings.student_panel?.value ?? DEFAULT_PANEL_TEXT,
         });
         setApiKeyInput("");
         setSaved(true);
@@ -561,6 +577,43 @@ export function Settings({ onApiError }: Props) {
             >
               Remove key
             </button>
+          )}
+        </div>
+
+        <div className="field">
+          <label htmlFor="student_panel">Welcome panel for students</label>
+          <textarea
+            id="student_panel"
+            className="admin-large"
+            value={form.student_panel}
+            maxLength={PANEL_MAX_LENGTH}
+            onChange={(e) => setField("student_panel", e.target.value)}
+          />
+          <p className="admin-help">
+            Shown at the top of the student's screen, above the list of interviewees.
+            Start a line with "# " for a heading or "## " for a smaller heading. Leave
+            an empty line between paragraphs. Start lines with "- " for a bulleted list.
+            Put two stars around words to make them bold, like **this**. Leave the box
+            empty to show no panel. {form.student_panel.length} of {PANEL_MAX_LENGTH}{" "}
+            characters used.
+          </p>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={form.student_panel === DEFAULT_PANEL_TEXT}
+            onClick={() => setField("student_panel", DEFAULT_PANEL_TEXT)}
+          >
+            Restore the default text
+          </button>
+          <p className="admin-help">Preview, as students will see it after you save:</p>
+          {form.student_panel.trim().length > 0 ? (
+            <div className="card">
+              <PanelText text={form.student_panel} />
+            </div>
+          ) : (
+            <p className="admin-help">
+              The box is empty, so students see no panel, only the list of interviewees.
+            </p>
           )}
         </div>
 

@@ -185,7 +185,7 @@ export default function App() {
 
       {phase === "login" && <LoginScreen onLoggedIn={handleLoggedIn} />}
       {phase === "setup" && (
-        <SetupScreen onStart={handleStart} initialError={setupError} />
+        <SetupScreen onStart={handleStart} initialError={setupError} panel={me?.panel ?? null} />
       )}
       {phase === "interview" && config && (
         <InterviewScreen

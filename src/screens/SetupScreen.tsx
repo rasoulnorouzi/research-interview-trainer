@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { PersonaSummary } from "../types";
 import { api } from "../api";
 import { StartConfig } from "../App";
+import { DEFAULT_PANEL_TEXT, PanelText } from "../panel";
 
 const LS_PERSONA = "riv.lastPersona";
 // Left behind by the pre-backend build, when the student supplied their own
@@ -12,6 +13,8 @@ const DEAD_KEYS = ["riv.apiKey", "riv.rememberKey", "riv.interviewModel", "riv.s
 interface Props {
   onStart: (config: StartConfig) => void;
   initialError: string | null;
+  /** The instructor's welcome panel from /api/me: null for the default, "" for none. */
+  panel: string | null;
 }
 
 type PersonaState =
@@ -19,7 +22,7 @@ type PersonaState =
   | { status: "done"; personas: PersonaSummary[] }
   | { status: "error"; message: string };
 
-export function SetupScreen({ onStart, initialError }: Props) {
+export function SetupScreen({ onStart, initialError, panel }: Props) {
   const [state, setState] = useState<PersonaState>({ status: "loading" });
   const [selectedId, setSelectedId] = useState(localStorage.getItem(LS_PERSONA) ?? "");
 
@@ -53,24 +56,13 @@ export function SetupScreen({ onStart, initialError }: Props) {
     <div>
       {initialError && <div className="banner-error">{initialError}</div>}
 
-      <div className="card">
-        <h1>Research Interview Trainer</h1>
-        <p className="lede">
-          Practice qualitative research interviewing by speaking with a simulated
-          interviewee. Each interviewee gives a rehearsed account of their reasons
-          at first and will only disclose what actually happened to an interviewer
-          who earns it by following up, noticing what is left unsaid, and not
-          judging. When you end the interview you receive a report: speaking
-          metrics, and a rubric assessment that includes how far beneath the
-          surface account you managed to get.
-        </p>
-        <p className="small">
-          The interview is voice-only: your browser will ask for microphone
-          access. Speak your questions out loud; the interviewee answers with
-          voice. Interviews are time-limited, and the remaining time appears as
-          you approach the end.
-        </p>
-      </div>
+      {/* The instructor writes this panel in the dashboard. Null means none is
+          saved yet, so the built-in text shows; an emptied panel shows nothing. */}
+      {(panel ?? DEFAULT_PANEL_TEXT).trim().length > 0 && (
+        <div className="card">
+          <PanelText text={panel ?? DEFAULT_PANEL_TEXT} />
+        </div>
+      )}
 
       <div className="card">
         <h2>Choose your interviewee</h2>

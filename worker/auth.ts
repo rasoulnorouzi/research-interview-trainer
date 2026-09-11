@@ -207,7 +207,11 @@ export async function handleAuthVerify(request: Request, env: Env): Promise<Resp
     .first<RosterIdentity>();
   if (!student) return fail();
 
-  const body: MeResponse = { studentId: student.student_id, fullName: student.full_name };
+  const body: MeResponse = {
+    studentId: student.student_id,
+    fullName: student.full_name,
+    panel: await studentPanel(env),
+  };
   const response = json(200, body);
   response.headers.append("set-cookie", await makeSessionCookie(env, student.student_id, remember));
   return response;
@@ -220,6 +224,20 @@ export function handleAuthLogout(): Response {
   return response;
 }
 
+/**
+ * The instructor's welcome panel for the setup screen (settings row
+ * `student_panel`, written from the dashboard). Null while no row exists, and
+ * the client then shows its built-in default; an empty string means no panel.
+ * It rides on the two responses that already hand the app the student's
+ * identity, so it needs no student route of its own (API.md).
+ */
+async function studentPanel(env: Env): Promise<string | null> {
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'student_panel'").first<{
+    value: string;
+  }>();
+  return row ? row.value : null;
+}
+
 /** GET /api/me. The roster join is what makes a deactivated student's cookie useless. */
 export async function handleMe(request: Request, env: Env): Promise<Response> {
   const session = await identify(request, env);
@@ -228,7 +246,11 @@ export async function handleMe(request: Request, env: Env): Promise<Response> {
     .bind(session.studentId)
     .first<{ full_name: string }>();
   if (!student) return json(401, { error: "Not logged in." });
-  const body: MeResponse = { studentId: session.studentId, fullName: student.full_name };
+  const body: MeResponse = {
+    studentId: session.studentId,
+    fullName: student.full_name,
+    panel: await studentPanel(env),
+  };
   return json(200, body);
 }
 
