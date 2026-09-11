@@ -344,6 +344,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
               <span className={`speaker ${e.speaker}`}>
                 {e.speaker === "student" ? "You" : persona.name}
                 <span className="t">
+                  {e.interrupted ? "(interrupted) · " : ""}
                   {fmtMs(e.tStart)} · spoke {fmtMs(e.speechMs)}
                 </span>
               </span>
@@ -461,7 +462,7 @@ function buildMarkdownReport(
   lines.push(``);
   for (const e of result.transcript) {
     lines.push(
-      `**[${fmtMs(e.tStart)}, spoke ${fmtMs(e.speechMs)}] ${e.speaker === "student" ? "You" : persona.name}:** ${e.text}`
+      `**[${fmtMs(e.tStart)}, spoke ${fmtMs(e.speechMs)}] ${e.speaker === "student" ? "You" : persona.name}${e.interrupted ? " (interrupted)" : ""}:** ${e.text}`
     );
     lines.push(``);
   }

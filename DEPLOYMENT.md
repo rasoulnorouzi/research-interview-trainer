@@ -328,6 +328,25 @@ alters a table, run the matching `wrangler d1 execute` command from section
 2, step 3, against the remote database, before or after the deploy as the
 change requires.
 
+### Deploying persona cohorts to an existing database
+
+The persona cohorts feature (2026-09-11) adds one table,
+`persona_cohorts`. The new Worker code reads it on every persona list and
+every interview start, so the table must exist **before** you run
+`wrangler deploy`. The old code does not read it, so adding it first is
+safe.
+
+```bash
+npx wrangler d1 execute riv-trainer --remote --file=schema.sql
+npm run build && npx wrangler deploy
+```
+
+`schema.sql` uses `CREATE TABLE IF NOT EXISTS`, so the first command adds
+`persona_cohorts` and does not touch the personas, the roster or any other
+table. The table starts empty, and an empty table means every persona stays
+open to every student, as before. Do not run `seed-personas.sql` for this
+deploy: it replaces the persona rows with the built-in text.
+
 ### Deploying the editable rubric to an existing database
 
 The rubric feature (2026-08-21) adds two tables, `criteria` and

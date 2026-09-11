@@ -11,6 +11,13 @@ export interface TranscriptEntry {
    * both speakers, because WebRTC never hands the app raw samples to sum.
    */
   speechMs: number;
+  /**
+   * True when the student cut this interviewee turn off, by speaking or by
+   * ending the interview. The text then holds only what was heard, estimated
+   * from the server's truncation point and the voice's pace, and ends in an
+   * ellipsis. Absent otherwise, and in reports stored before 2026-09-11.
+   */
+  interrupted?: boolean;
 }
 
 export interface SessionResult {
@@ -150,8 +157,15 @@ export interface ReportResponse {
   shared: boolean;
 }
 
-/** Response of GET /api/me. */
+/** Response of GET /api/me, and of POST /api/auth/verify on success. */
 export interface MeResponse {
   studentId: string;
   fullName: string;
+  /**
+   * The instructor's welcome panel for the setup screen (settings row
+   * `student_panel`). Null while none is saved, and the client then shows its
+   * built-in default (src/panel.tsx). An empty string means the instructor
+   * chose to show no panel.
+   */
+  panel: string | null;
 }

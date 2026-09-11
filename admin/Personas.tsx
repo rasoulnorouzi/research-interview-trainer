@@ -8,8 +8,16 @@ interface PersonaListItem {
   name: string;
   title: string;
   active: boolean;
+  /** The cohorts this persona is limited to. Empty means every student sees it. */
+  cohorts: string[];
   updatedAt: number;
   updatedBy: string | null;
+}
+
+/** A cohort on the roster, with its number of active students. */
+interface RosterCohort {
+  name: string;
+  students: number;
 }
 
 interface PersonaFull {
@@ -22,6 +30,7 @@ interface PersonaFull {
   systemInstruction: string;
   hiddenCore: string | null;
   active: boolean;
+  cohorts: string[];
   updatedAt: number;
   updatedBy: string | null;
 }
@@ -39,6 +48,8 @@ interface PersonaVersion {
     systemInstruction: string;
     hiddenCore: string | null;
     active: boolean;
+    /** Null for versions saved before personas could be limited to cohorts. */
+    cohorts: string[] | null;
   } | null;
 }
 
@@ -52,6 +63,9 @@ interface EditorForm {
   systemInstruction: string;
   hiddenCore: string;
   active: boolean;
+  /** False: every student sees the persona. True: only the ticked cohorts. */
+  limited: boolean;
+  cohorts: string[];
 }
 
 // alloy is the first realtime voice and the one the old custom personas used.
@@ -67,7 +81,21 @@ const EMPTY_FORM: EditorForm = {
   systemInstruction: "",
   hiddenCore: "",
   active: true,
+  limited: false,
+  cohorts: [],
 };
+
+/** "All students", or the cohort names, for the list and history tables. */
+function audienceLabel(cohorts: string[]): string {
+  return cohorts.length === 0 ? "All students" : cohorts.join(", ");
+}
+
+/** The count shown next to a cohort's checkbox. Null: no student has it now. */
+function cohortCount(students: number | null): string {
+  if (students === null) return "no student has this cohort now";
+  if (students === 0) return "no active students";
+  return students === 1 ? "1 student" : `${students} students`;
+}
 
 type View =
   | { mode: "list" }
@@ -80,6 +108,7 @@ interface Props {
 
 export function Personas({ onApiError }: Props) {
   const [list, setList] = useState<PersonaListItem[] | null>(null);
+  const [rosterCohorts, setRosterCohorts] = useState<RosterCohort[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [view, setView] = useState<View>({ mode: "list" });
   const [form, setForm] = useState<EditorForm>(EMPTY_FORM);
@@ -123,8 +152,11 @@ export function Personas({ onApiError }: Props) {
 
   const loadList = () => {
     setListError(null);
-    api<{ personas: PersonaListItem[] }>("/personas")
-      .then(({ personas }) => setList(personas))
+    api<{ personas: PersonaListItem[]; rosterCohorts: RosterCohort[] }>("/personas")
+      .then(({ personas, rosterCohorts }) => {
+        setList(personas);
+        setRosterCohorts(rosterCohorts);
+      })
       .catch((err) => {
         setListError(err instanceof Error ? err.message : "Could not load personas.");
         onApiError(err);
@@ -153,6 +185,8 @@ export function Personas({ onApiError }: Props) {
           systemInstruction: p.systemInstruction,
           hiddenCore: p.hiddenCore ?? "",
           active: p.active,
+          limited: p.cohorts.length > 0,
+          cohorts: p.cohorts,
         });
         setView({ mode: "editor", isNew: false });
       })
@@ -174,22 +208,44 @@ export function Personas({ onApiError }: Props) {
       });
   };
 
-  const restoreVersion = (v: PersonaVersion, personaId: string) => {
+  const restoreVersion = async (v: PersonaVersion, personaId: string) => {
     if (!v.snapshot) return;
+    const snapshot = v.snapshot;
+    // A version saved before cohorts existed does not record any. Restoring
+    // it keeps the persona's current cohorts, rather than silently opening the
+    // persona to every student.
+    let cohorts = snapshot.cohorts;
+    if (cohorts === null) {
+      try {
+        cohorts = (await api<PersonaFull>(`/personas/${encodeURIComponent(personaId)}`)).cohorts;
+      } catch (err) {
+        setVersionsError(err instanceof Error ? err.message : "Could not load the persona.");
+        onApiError(err);
+        return;
+      }
+    }
     setForm({
       id: personaId,
-      name: v.snapshot.name,
-      title: v.snapshot.title,
-      researchTopic: v.snapshot.researchTopic,
-      shortBio: v.snapshot.shortBio,
-      voiceName: v.snapshot.voiceName,
-      systemInstruction: v.snapshot.systemInstruction,
-      hiddenCore: v.snapshot.hiddenCore ?? "",
-      active: v.snapshot.active,
+      name: snapshot.name,
+      title: snapshot.title,
+      researchTopic: snapshot.researchTopic,
+      shortBio: snapshot.shortBio,
+      voiceName: snapshot.voiceName,
+      systemInstruction: snapshot.systemInstruction,
+      hiddenCore: snapshot.hiddenCore ?? "",
+      active: snapshot.active,
+      limited: cohorts.length > 0,
+      cohorts,
     });
     setEditorError(null);
     setView({ mode: "editor", isNew: false });
   };
+
+  const toggleCohort = (name: string, on: boolean) =>
+    setForm((f) => ({
+      ...f,
+      cohorts: on ? [...f.cohorts, name].sort() : f.cohorts.filter((c) => c !== name),
+    }));
 
   const remove = () => {
     if (
@@ -217,6 +273,12 @@ export function Personas({ onApiError }: Props) {
 
   const save = (e: React.FormEvent) => {
     e.preventDefault();
+    // The server reads an empty list as "every student", so "only these
+    // cohorts" with none ticked would open the persona to everyone.
+    if (form.limited && form.cohorts.length === 0) {
+      setEditorError("Tick at least one cohort, or choose All students.");
+      return;
+    }
     setEditorError(null);
     setSaving(true);
 
@@ -229,6 +291,7 @@ export function Personas({ onApiError }: Props) {
       systemInstruction: form.systemInstruction,
       hiddenCore: form.hiddenCore.trim().length > 0 ? form.hiddenCore : null,
       active: form.active,
+      cohorts: form.limited ? form.cohorts : [],
     };
 
     const isNew = view.mode === "editor" && view.isNew;
@@ -269,6 +332,7 @@ export function Personas({ onApiError }: Props) {
                   <th>Saved</th>
                   <th>Saved by</th>
                   <th>Name</th>
+                  <th>Shown to</th>
                   <th>Active</th>
                   <th></th>
                 </tr>
@@ -279,6 +343,7 @@ export function Personas({ onApiError }: Props) {
                     <td className="num">{new Date(v.savedAt * 1000).toLocaleString()}</td>
                     <td>{v.savedBy ?? ""}</td>
                     <td>{v.snapshot?.name ?? ""}</td>
+                    <td>{v.snapshot?.cohorts ? audienceLabel(v.snapshot.cohorts) : "Not recorded"}</td>
                     <td>{v.snapshot ? (v.snapshot.active ? "Yes" : "No") : ""}</td>
                     <td>
                       <button
@@ -301,6 +366,16 @@ export function Personas({ onApiError }: Props) {
   }
 
   if (view.mode === "editor") {
+    // The roster's cohorts, plus any this persona is still limited to that no
+    // student carries now (a renamed or finished cohort), so it stays visible
+    // and can be unticked.
+    const cohortChoices: { name: string; students: number | null }[] = [
+      ...rosterCohorts,
+      ...form.cohorts
+        .filter((c) => !rosterCohorts.some((r) => r.name === c))
+        .map((name) => ({ name, students: null })),
+    ];
+
     return (
       <div>
         <h2>{view.isNew ? "New persona" : `Edit persona: ${form.id}`}</h2>
@@ -440,6 +515,57 @@ export function Personas({ onApiError }: Props) {
               onChange={(active) => setForm((f) => ({ ...f, active }))}
             />
           </div>
+          <div className="field" role="radiogroup" aria-labelledby="persona-audience">
+            <label id="persona-audience">Who sees this persona</label>
+            <label className="checkbox-row">
+              <input
+                type="radio"
+                name="persona-audience"
+                checked={!form.limited}
+                onChange={() => setForm((f) => ({ ...f, limited: false }))}
+              />
+              All students
+            </label>
+            <label className="checkbox-row">
+              <input
+                type="radio"
+                name="persona-audience"
+                checked={form.limited}
+                onChange={() => setForm((f) => ({ ...f, limited: true }))}
+              />
+              Only students in these cohorts
+            </label>
+            {form.limited && (
+              <div style={{ marginLeft: "1.6rem" }}>
+                {cohortChoices.map((c) => (
+                  <label key={c.name} className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={form.cohorts.includes(c.name)}
+                      onChange={(e) => toggleCohort(c.name, e.target.checked)}
+                    />
+                    <span>
+                      {c.name} <span className="small">({cohortCount(c.students)})</span>
+                    </span>
+                  </label>
+                ))}
+                {cohortChoices.length === 0 && (
+                  <p className="admin-warn">
+                    No student has a cohort yet. Give students a cohort on the Students screen,
+                    or in the cohort column of the CSV import, and then come back here.
+                  </p>
+                )}
+                {cohortChoices.length > 0 && form.cohorts.length === 0 && (
+                  <p className="admin-warn">Tick at least one cohort, or choose All students.</p>
+                )}
+              </div>
+            )}
+            <p className="admin-help">
+              Cohorts come from the Cohort column on the Students screen. A student without a
+              cohort sees only the personas for all students. A change applies the next time a
+              student opens the page.
+            </p>
+          </div>
 
           <div className="btn-row">
             <button className="btn" type="submit" disabled={saving}>
@@ -491,6 +617,7 @@ export function Personas({ onApiError }: Props) {
               <tr>
                 <th>Name</th>
                 <th>Title</th>
+                <th>Shown to</th>
                 <th>Active</th>
                 <th>Updated</th>
                 <th></th>
@@ -501,6 +628,7 @@ export function Personas({ onApiError }: Props) {
                 <tr key={p.id} className="admin-clickable-row" onClick={() => openEdit(p.id)}>
                   <td>{p.name}</td>
                   <td>{p.title}</td>
+                  <td>{audienceLabel(p.cohorts)}</td>
                   <td>{p.active ? "Yes" : "No"}</td>
                   <td className="num">{new Date(p.updatedAt * 1000).toLocaleString()}</td>
                   <td>
@@ -519,7 +647,7 @@ export function Personas({ onApiError }: Props) {
               ))}
               {list.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="small">
+                  <td colSpan={6} className="small">
                     No personas yet.
                   </td>
                 </tr>

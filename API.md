@@ -104,8 +104,15 @@ Exchanges an address and a code for a session.
 `200`, body is `MeResponse`:
 
 ```json
-{ "studentId": "2026001", "fullName": "Jane Doe" }
+{ "studentId": "2026001", "fullName": "Jane Doe", "panel": null }
 ```
+
+`panel` is the instructor's welcome panel for the setup screen (added
+2026-09-11; settings row `student_panel`, written from the dashboard). It
+is `null` while no panel is saved, and the client then shows its built-in
+default text. An empty string means the instructor chose to show no
+panel. The panel rides on this response and on `GET /api/me`, so it needs
+no student route of its own.
 
 Also sets the `riv_session` cookie described in section 2.
 
@@ -138,7 +145,8 @@ immediately.
 
 ### GET /api/me
 
-Returns the logged-in student's identity.
+Returns the logged-in student's identity and the instructor's welcome
+panel (`panel`, see `POST /api/auth/verify` above).
 
 **Authentication.** Session cookie required. Additionally joins to the
 roster with `active = 1`, so a deactivated student's still-valid cookie
@@ -154,7 +162,12 @@ is rejected here even though the cookie itself has not expired.
 
 ### GET /api/personas
 
-Lists the personas a student may choose for an interview.
+Lists the personas a student may choose for an interview: every active
+persona that is open to all students, plus every active persona limited to
+the student's cohort. The cohort comes from the student's roster row, read
+fresh on each request. A student without a cohort gets only the personas
+open to all students. The dashboard sets the cohorts per persona (section 6,
+`cohorts`).
 
 **Authentication.** Session cookie required.
 
@@ -225,7 +238,7 @@ reaches the response body or the browser.
 | `400` | `{"error": "A persona is required."}` | Missing or non-string `personaId` |
 | `503` | `{"error": "The service is not configured yet. Tell your instructor."}` | No OpenAI key set in `settings` |
 | `429` | `{"error": "You have used all your interview sessions. Ask your instructor if you need another one."}` | `sessions_total` used up for this student. An instructor can clear it with the reset-sessions endpoint below. |
-| `404` | `{"error": "That persona is not available."}` | No active persona with that id |
+| `404` | `{"error": "That persona is not available."}` | No active persona with that id, or the persona is limited to cohorts and the student's cohort is not one of them. Both causes give the same answer, so the response says nothing about personas the student cannot see. |
 | `502` | `{"error": "Could not start the interview. Try again in a moment."}` | The OpenAI mint call failed |
 
 The 429 case still consumes a grant; a rejected mint attempt is not
@@ -256,6 +269,13 @@ field on every entry is validated or defaulted; a missing or
 non-finite timing value becomes `0` rather than rejecting the whole
 report, since losing a real interview's report is worse than losing one
 timestamp.
+
+An interviewee entry may carry `"interrupted": true` (2026-09-11). The
+client sets it when the student cut the interviewee off, by speaking or
+by ending the interview, and has already shortened `text` to what was
+heard, ending in an ellipsis. The server keeps the flag only when it is
+exactly `true`. The report, both emails, the dashboard and the scoring
+transcript then show "(interrupted)" after the interviewee's name.
 
 **Response, success**
 
@@ -452,11 +472,11 @@ Worker.
 | DELETE | `/api/admin/roster/:id?hard=1` | none | `200 {studentId, deleted: true, reportsDeleted}`. Permanently removes the student **and every stored report of that student** (2026-08-27 instructor decision; before that date a student with reports answered `409`). Also clears their login codes and session grants. `reportsDeleted` counts the reports that went with them. |
 | POST | `/api/admin/roster/:id/reset-sessions` | none | `200 {studentId, cleared}`. Deletes the student's session grants, so the `sessions_total` quota opens again. Reports are not touched. `404` for an unknown student. |
 | POST | `/api/admin/roster/bulk-remove` | `{ids: [...]}` (max 500) | `200 {deleted, reportsDeleted}`. Removes the listed students permanently, exactly like the single hard delete: their stored reports go with them. Unknown ids are ignored; the counts cover the students and reports really removed. |
-| GET | `/api/admin/personas` | none | `{"personas": [{id, name, title, active, updatedAt, updatedBy}]}`. No spoiler fields, even here; the list view does not need them. |
-| POST | `/api/admin/personas` | full persona fields, including `systemInstruction`, `hiddenCore` | `201` full persona, or `400`/`409` |
-| GET | `/api/admin/personas/:id` | none | `200` full persona including `systemInstruction` and `hiddenCore`, or `404` |
-| PUT | `/api/admin/personas/:id` | full persona fields | `200` full persona; writes one `persona_versions` snapshot in the same batch as the row update |
-| DELETE | `/api/admin/personas/:id` | none | `200 {id, deleted: true}`. Permanently removes the persona, only when no reports reference it (`409` otherwise, naming the count). `persona_versions` is kept either way; there is no route that deletes a version. |
+| GET | `/api/admin/personas` | none | `{"personas": [{id, name, title, active, cohorts, updatedAt, updatedBy}], "rosterCohorts": [{name, students}]}`. No spoiler fields, even here; the list view does not need them. `rosterCohorts` lists every distinct non-empty `roster.cohort`, with its count of active students, for the editor's cohort checkboxes. |
+| POST | `/api/admin/personas` | full persona fields, including `systemInstruction`, `hiddenCore`, and optional `cohorts` | `201` full persona, or `400`/`409` |
+| GET | `/api/admin/personas/:id` | none | `200` full persona including `systemInstruction`, `hiddenCore` and `cohorts`, or `404` |
+| PUT | `/api/admin/personas/:id` | full persona fields, optional `cohorts` | `200` full persona; writes one `persona_versions` snapshot in the same batch as the row update and the cohort links |
+| DELETE | `/api/admin/personas/:id` | none | `200 {id, deleted: true}`. Permanently removes the persona and its cohort links, only when no reports reference it (`409` otherwise, naming the count). `persona_versions` is kept either way; there is no route that deletes a version. |
 | GET | `/api/admin/personas/:id/versions` | none | `{"personaId", "versions": [{id, savedAt, savedBy, snapshot}]}` |
 | GET | `/api/admin/criteria` | none | `{"criteria": [{id, name, scaleMax, needsGroundTruth, sortOrder, active, updatedAt, updatedBy}]}` |
 | POST | `/api/admin/criteria` | full criterion fields, including `anchorLow`, `anchorMid`, `anchorHigh` | `201` full criterion, or `400`/`409` |
@@ -546,6 +566,24 @@ before this format existed has no `!` and behaves as all-on.
 `PUT /api/admin/settings` validates every address, switched off or not,
 and rejects an empty list; a list where every address is switched off is
 accepted, and no instructor copy is sent while it stays that way.
+
+### The student welcome panel
+
+`student_panel` (added 2026-09-11) is the welcome panel at the top of the
+student's setup screen, written on the dashboard's Settings screen.
+`PUT /api/admin/settings` accepts any string of at most 4000 characters
+and stores it as typed, line breaks included. A non-string answers `400`,
+and so does a longer string. An empty string is legal: it means "show no
+panel". While no `student_panel` row exists, `GET /api/me` answers
+`panel: null` and the student app shows its built-in default text
+(`DEFAULT_PANEL_TEXT` in `src/panel.tsx`).
+
+The text uses a small format. A line that starts with `# ` is a heading,
+and `## ` is a smaller heading. An empty line starts a new paragraph.
+Lines that start with `- ` form a bulleted list. `**text**` is bold. The
+student app and the dashboard preview render it with the same component
+(`src/panel.tsx`), as React text and never as HTML, so markup or script
+typed into the panel shows as plain text.
 
 ### Criteria validation rules
 

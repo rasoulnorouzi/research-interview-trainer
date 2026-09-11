@@ -407,14 +407,20 @@ export function assessmentAttachment(d: ReportEmailData, forAssessor = false): E
 /** The transcript body, shared by the full report and the transcript-only copy. */
 function transcriptTextLines(d: ReportEmailData): string[] {
   return d.transcript.map((e) => {
-    const speaker = e.speaker === "student" ? "Student" : d.personaName;
+    const speaker = speakerLabel(e, d.personaName);
     return `[${fmtMs(e.tStart)}, spoke ${fmtMs(e.speechMs)}] ${speaker}: ${e.text}`;
   });
 }
 
+/** "Student", or the persona's name, with "(interrupted)" on a turn the student cut off. */
+function speakerLabel(e: { speaker: string; interrupted?: boolean }, personaName: string): string {
+  if (e.speaker === "student") return "Student";
+  return e.interrupted ? `${personaName} (interrupted)` : personaName;
+}
+
 function transcriptHtmlParts(d: ReportEmailData): string[] {
   return d.transcript.map((e) => {
-    const speaker = e.speaker === "student" ? "Student" : d.personaName;
+    const speaker = speakerLabel(e, d.personaName);
     return (
       `<p style="${P_STYLE}"><strong>${escapeHtml(speaker)}</strong> ` +
       `<span style="color:#666666;">[${escapeHtml(fmtMs(e.tStart))}, spoke ${escapeHtml(fmtMs(e.speechMs))}]</span><br>` +

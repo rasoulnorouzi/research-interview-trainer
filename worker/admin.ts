@@ -48,7 +48,12 @@ const SETTING_KEYS = [
   "share_report_with_student",
   "generate_feedback",
   "instructor_recipients",
+  "student_panel",
 ] as const;
+
+// The welcome panel's length cap. Keep in step with PANEL_MAX_LENGTH in
+// src/panel.tsx, which the dashboard checks before it sends.
+const STUDENT_PANEL_MAX = 4000;
 
 const NUMERIC_SETTING_KEYS = ["interview_limit_minutes", "interview_warn_minutes", "sessions_total"];
 
@@ -275,6 +280,18 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
     // Only the key supports removal; the other settings always need a value.
     if (key === "openai_api_key" && raw === null) {
       updates.push([key, ""]);
+      continue;
+    }
+
+    // The student welcome panel (2026-09-11): free text in the small format
+    // src/panel.tsx renders. Stored as typed, not trimmed, so the instructor's
+    // line breaks survive. An empty string is legal and means "show no panel".
+    if (key === "student_panel") {
+      if (typeof raw !== "string") return json(400, { error: "student_panel must be text." });
+      if (raw.length > STUDENT_PANEL_MAX) {
+        return json(400, { error: `student_panel can be at most ${STUDENT_PANEL_MAX} characters.` });
+      }
+      updates.push([key, raw]);
       continue;
     }
 
@@ -879,19 +896,49 @@ interface PersonaRow {
   updated_by: string | null;
 }
 
+// A persona limited to cohorts is shown only to students whose roster.cohort
+// is one of them (persona_cohorts; no rows means every student). Names match
+// roster.cohort exactly, so they are trimmed and nothing else.
+const MAX_PERSONA_COHORTS = 100;
+const MAX_COHORT_LENGTH = 200;
+
 async function listPersonas(env: Env): Promise<Response> {
-  const rows = await env.DB.prepare(
-    "SELECT id, name, title, active, updated_at, updated_by FROM personas ORDER BY name",
-  ).all<{ id: string; name: string; title: string; active: number; updated_at: number; updated_by: string | null }>();
+  const [rows, links, roster] = await Promise.all([
+    env.DB.prepare("SELECT id, name, title, active, updated_at, updated_by FROM personas ORDER BY name").all<{
+      id: string;
+      name: string;
+      title: string;
+      active: number;
+      updated_at: number;
+      updated_by: string | null;
+    }>(),
+    env.DB.prepare("SELECT persona_id, cohort FROM persona_cohorts ORDER BY cohort").all<{
+      persona_id: string;
+      cohort: string;
+    }>(),
+    // Every cohort on the roster, for the editor's checkboxes, with its count
+    // of active students: the ones a persona limited to it actually reaches.
+    env.DB.prepare(
+      "SELECT cohort, SUM(active) AS students FROM roster WHERE cohort IS NOT NULL AND cohort <> '' GROUP BY cohort ORDER BY cohort",
+    ).all<{ cohort: string; students: number | null }>(),
+  ]);
+  const cohortsOf = new Map<string, string[]>();
+  for (const link of links.results) {
+    const list = cohortsOf.get(link.persona_id) ?? [];
+    list.push(link.cohort);
+    cohortsOf.set(link.persona_id, list);
+  }
   return json(200, {
     personas: rows.results.map((row) => ({
       id: row.id,
       name: row.name,
       title: row.title,
       active: row.active === 1,
+      cohorts: cohortsOf.get(row.id) ?? [],
       updatedAt: row.updated_at,
       updatedBy: row.updated_by,
     })),
+    rosterCohorts: roster.results.map((row) => ({ name: row.cohort, students: row.students ?? 0 })),
   });
 }
 
@@ -918,6 +965,7 @@ async function getPersona(env: Env, id: string): Promise<Response> {
     systemInstruction: row.system_instruction,
     hiddenCore: row.hidden_core,
     active: row.active === 1,
+    cohorts: await personaCohorts(env, row.id),
     updatedAt: row.updated_at,
     updatedBy: row.updated_by,
   });
@@ -934,6 +982,9 @@ async function createPersona(request: Request, env: Env, instructorEmail: string
   }
   const fields = readPersonaFields(body, null);
   if ("error" in fields) return json(400, { error: fields.error });
+  const cohortInput = readPersonaCohorts(body);
+  if ("error" in cohortInput) return json(400, { error: cohortInput.error });
+  const cohorts = cohortInput.cohorts ?? [];
 
   const clash = await env.DB.prepare("SELECT id FROM personas WHERE id = ?").bind(id).first<{ id: string }>();
   if (clash) return json(409, { error: `A persona with ID ${id} already exists.` });
@@ -961,7 +1012,8 @@ async function createPersona(request: Request, env: Env, instructorEmail: string
       ),
       env.DB.prepare(
         "INSERT INTO persona_versions (persona_id, snapshot, saved_at, saved_by) VALUES (?, ?, ?, ?)",
-      ).bind(id, snapshotJson(id, fields), now, instructorEmail),
+      ).bind(id, snapshotJson(id, fields, cohorts), now, instructorEmail),
+      ...cohortStatements(env, id, cohorts),
     ]);
   } catch (err) {
     if (isUniqueViolation(err)) return json(409, { error: `A persona with ID ${id} already exists.` });
@@ -988,6 +1040,11 @@ async function putPersona(request: Request, env: Env, instructorEmail: string, i
 
   const fields = readPersonaFields(body, existing.active);
   if ("error" in fields) return json(400, { error: fields.error });
+  // A body without `cohorts` keeps the current ones. The snapshot records
+  // them either way, so the history shows who saw each version.
+  const cohortInput = readPersonaCohorts(body);
+  if ("error" in cohortInput) return json(400, { error: cohortInput.error });
+  const cohorts = cohortInput.cohorts ?? (await personaCohorts(env, id));
 
   const now = nowSeconds();
   await env.DB.batch([
@@ -1009,7 +1066,8 @@ async function putPersona(request: Request, env: Env, instructorEmail: string, i
     ),
     env.DB.prepare(
       "INSERT INTO persona_versions (persona_id, snapshot, saved_at, saved_by) VALUES (?, ?, ?, ?)",
-    ).bind(id, snapshotJson(id, fields), now, instructorEmail),
+    ).bind(id, snapshotJson(id, fields, cohorts), now, instructorEmail),
+    ...cohortStatements(env, id, cohorts),
   ]);
 
   return await getPersona(env, id);
@@ -1042,7 +1100,12 @@ async function deletePersona(env: Env, id: string): Promise<Response> {
     });
   }
 
-  await env.DB.prepare("DELETE FROM personas WHERE id = ?").bind(id).run();
+  // The cohort links go with the persona, so an id re-created later starts
+  // open to every student. persona_versions stays, as above.
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM personas WHERE id = ?").bind(id),
+    env.DB.prepare("DELETE FROM persona_cohorts WHERE persona_id = ?").bind(id),
+  ]);
   return json(200, { id, deleted: true });
 }
 
@@ -1113,8 +1176,51 @@ function readPersonaFields(
   return { name, title, researchTopic, shortBio, voiceName, systemInstruction, hiddenCore, active };
 }
 
-/** The full row as saved, in the table's column names (matches genseed.ts). */
-function snapshotJson(id: string, fields: PersonaFields): string {
+/**
+ * `cohorts` from a persona POST or PUT body. Null when absent: a PUT then
+ * keeps the current cohorts. An empty list opens the persona to every
+ * student. Duplicates are dropped and the list is sorted, as it is read back.
+ */
+function readPersonaCohorts(body: Record<string, unknown>): { cohorts: string[] | null } | { error: string } {
+  if (body.cohorts === undefined) return { cohorts: null };
+  if (!Array.isArray(body.cohorts)) return { error: "cohorts must be a list of cohort names." };
+  const cohorts: string[] = [];
+  for (const item of body.cohorts) {
+    if (typeof item !== "string") return { error: "cohorts must be a list of cohort names." };
+    const name = item.trim();
+    if (name.length === 0 || name.length > MAX_COHORT_LENGTH) {
+      return { error: `Each cohort name must be 1 to ${MAX_COHORT_LENGTH} characters.` };
+    }
+    if (!cohorts.includes(name)) cohorts.push(name);
+  }
+  if (cohorts.length > MAX_PERSONA_COHORTS) {
+    return { error: `A persona can be limited to at most ${MAX_PERSONA_COHORTS} cohorts.` };
+  }
+  return { cohorts: cohorts.sort() };
+}
+
+async function personaCohorts(env: Env, id: string): Promise<string[]> {
+  const rows = await env.DB.prepare("SELECT cohort FROM persona_cohorts WHERE persona_id = ? ORDER BY cohort")
+    .bind(id)
+    .all<{ cohort: string }>();
+  return rows.results.map((row) => row.cohort);
+}
+
+/** Replaces a persona's cohort links. Goes in the same batch as the save it belongs to. */
+function cohortStatements(env: Env, id: string, cohorts: string[]): D1PreparedStatement[] {
+  return [
+    env.DB.prepare("DELETE FROM persona_cohorts WHERE persona_id = ?").bind(id),
+    ...cohorts.map((cohort) =>
+      env.DB.prepare("INSERT INTO persona_cohorts (persona_id, cohort) VALUES (?, ?)").bind(id, cohort),
+    ),
+  ];
+}
+
+/**
+ * The full row as saved, in the table's column names (matches genseed.ts),
+ * plus the cohorts the persona was limited to at that save.
+ */
+function snapshotJson(id: string, fields: PersonaFields, cohorts: string[]): string {
   return JSON.stringify({
     id,
     name: fields.name,
@@ -1125,6 +1231,7 @@ function snapshotJson(id: string, fields: PersonaFields): string {
     system_instruction: fields.systemInstruction,
     hidden_core: fields.hiddenCore,
     active: fields.active,
+    cohorts,
   });
 }
 
@@ -1146,6 +1253,9 @@ function parseSnapshot(raw: string): Record<string, unknown> | null {
     systemInstruction: row.system_instruction ?? "",
     hiddenCore: row.hidden_core ?? null,
     active: row.active !== 0,
+    // Absent from seed snapshots and from saves before 2026-09-11. Null tells
+    // the editor to keep the persona's current cohorts on restore.
+    cohorts: Array.isArray(row.cohorts) ? row.cohorts.filter((c): c is string => typeof c === "string") : null,
   };
 }
 

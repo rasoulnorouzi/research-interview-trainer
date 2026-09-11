@@ -50,7 +50,7 @@ export function formatTranscript(transcript: TranscriptEntry[], personaName: str
   return transcript
     .map(
       (e) =>
-        `[${fmtMs(e.tStart)}] ${e.speaker === "student" ? "STUDENT" : `INTERVIEWEE (${personaName})`}: ${e.text}`
+        `[${fmtMs(e.tStart)}] ${e.speaker === "student" ? "STUDENT" : `INTERVIEWEE (${personaName})`}${e.interrupted ? " (interrupted)" : ""}: ${e.text}`
     )
     .join("\n");
 }

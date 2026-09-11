@@ -691,6 +691,7 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
             <span className={`speaker ${e.speaker}`}>
               {e.speaker === "student" ? "Student" : "Interviewee"}
               <span className="t">
+                {e.interrupted ? "(interrupted) · " : ""}
                 {fmtMs(e.tStart)} · spoke {fmtMs(e.speechMs)}
               </span>
             </span>
@@ -796,7 +797,7 @@ function buildSubmissionMarkdown(detail: SubmissionDetail, includeFeedback: bool
   lines.push(``);
   for (const e of detail.transcript) {
     const speaker = e.speaker === "student" ? "Student" : "Interviewee";
-    lines.push(`**${speaker}** (${fmtMs(e.tStart)}, spoke ${fmtMs(e.speechMs)})`);
+    lines.push(`**${speaker}**${e.interrupted ? " (interrupted)" : ""} (${fmtMs(e.tStart)}, spoke ${fmtMs(e.speechMs)})`);
     lines.push(``);
     lines.push(e.text);
     lines.push(``);

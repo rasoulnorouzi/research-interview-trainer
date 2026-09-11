@@ -61,6 +61,46 @@ deployment. The roster currently holds three test entries. `legacy-client`
 exists as a local git branch for rollback (`DEPLOYMENT.md` §6); pushing it
 to GitHub is still pending.
 
+**The student welcome panel is an instructor setting (2026-09-11).** The
+card at the top of the setup screen used to be fixed text in
+`SetupScreen.tsx`. It is now the `student_panel` settings row, written on
+the dashboard's Settings screen with a live preview. It reaches the student
+on `MeResponse.panel`, from `GET /api/me` and `POST /api/auth/verify`, so it
+needs no student route of its own. `null` means no row is saved, and the
+client shows `DEFAULT_PANEL_TEXT` (the old fixed text) from `src/panel.tsx`.
+An empty string means no panel. `src/panel.tsx` renders a small format
+(headings, paragraphs, bullets, bold) as React text, never as HTML, so
+nothing typed into the panel can inject markup. The server caps the text at
+4000 characters. See `API.md`.
+
+**Personas can be limited to roster cohorts (instructor request,
+2026-09-11, branch `persona-cohorts`).** The `persona_cohorts` table links
+a persona to zero or more `roster.cohort` strings. No rows means the
+persona is open to every student, so existing personas and the seed files
+are unaffected. With rows, only students whose cohort matches exactly see
+the persona. The rule is one SQL condition, `PERSONA_OPEN_TO_COHORT` in
+`worker/db.ts`, used by both `GET /api/personas` and `POST /api/session`.
+The mint therefore refuses (`404`, the same answer as an unknown id) a
+persona id from another cohort. `POST /api/report` deliberately does not
+check the cohort: a cohort change during an interview must not lose the
+report. The dashboard's persona editor sets the cohorts, with checkboxes
+from the roster's distinct cohorts (`rosterCohorts` on the admin persona
+list). Cohort links are part of the persona snapshot. Restoring a version
+from before this feature keeps the current cohorts. A deploy must apply
+`schema.sql` remotely **before** the code (`DEPLOYMENT.md`).
+
+**The transcript appears only after the interview (instructor request,
+2026-09-11).** `InterviewScreen.tsx` shows the timer, the status line and
+the buttons, but no transcript; the student reads it on the results screen
+and in the report. The same round fixed an interviewee turn that the
+student cuts off: the realtime model writes its text seconds ahead of the
+audio, so the transcript used to keep words the student never heard. See
+the Metrics section for how the text is now cut. The server cuts the
+model's own memory on an interruption, but it also deletes the cut
+answer's text, and the model then restarted its answer. So the app now
+tells the model, in a `system` note, what the student heard
+(`PROMPTING.md`, "After an interruption").
+
 The results screen no longer scores automatically: a student clicks
 "Submit interview for scoring" on `ResultsScreen.tsx`, and only that click
 triggers `POST /api/report`. Login failures are explicit rather than a
@@ -116,6 +156,7 @@ src/
   main.tsx                    React root — NO StrictMode (see gotchas)
   App.tsx                     Phase machine: "login" | "setup" | "interview" | "results"
   api.ts                      Same-origin fetch wrapper, ApiError
+  panel.tsx                   Student welcome panel: default text + safe renderer (setup screen, admin preview)
   personas.ts                 3 layered personas + SHARED_DISCLOSURE_MECHANICS (seed origin, see below)
   criteria.ts                 8 seeded rubric criteria (seed origin, see below)
   index.css                   The entire stylesheet, plain CSS
@@ -217,7 +258,10 @@ zero. `liveSession.ts` attaches it in `ontrack` for exactly this reason.
 3. **Voice only.** No text-question fallback. The student speaks; the
    interviewee speaks back.
    The student's words stream as they speak, via
-   `conversation.item.input_audio_transcription.delta`. The transcription
+   `conversation.item.input_audio_transcription.delta`. Since 2026-09-11
+   the interview screen no longer shows the transcript at all (instructor
+   decision); it is recorded as before and appears on the results screen
+   and in the report. The streaming transcriber stays anyway. The transcription
    model became an instructor setting on 2026-08-31 (`transcription_model`,
    default `gpt-live-transcribe`), but the constraint is unchanged and now
    lives in the curated list: `shared/models.ts` offers only models verified
@@ -464,8 +508,24 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   measurement path: `shared/types.ts:20` (on `intervieweeAudioMs`) and
   `src/lib/metrics.ts:32`. Worth correcting in the code and deleting these
   two sentences.
-- Per-turn `speechMs` is the meter's advance since that turn opened, so it
-  survives text and audio arriving out of step.
+- Per-turn `speechMs`, for the student, is the mic meter's advance since that
+  turn opened. For the interviewee it is set when the answer's audio stops
+  (`output_audio_buffer.stopped` or `.cleared`): the remote meter's advance
+  over the whole answer, shared between its items by text length. It cannot
+  be read while the text arrives, because the interviewee's text is finished
+  seconds before its audio (verified 2026-09-11: 85 words of text in 2.6 s).
+- **An interrupted interviewee turn keeps only what was heard (2026-09-11).**
+  Over WebRTC the server itself cuts the model's memory of an answer when the
+  student speaks over it, and sends `conversation.item.truncated` with
+  `audio_end_ms`. `liveSession.ts` cuts the transcript text at the same point:
+  `audio_end_ms` times the voice's pace in characters per second, timed from
+  this session's fully played answers (14 until the first one), carried on to
+  the end of the word being spoken. It adds an ellipsis and sets
+  `interrupted`. Later items of the same answer never played and are dropped.
+  Ending the interview, or losing the connection, mid-answer cuts the same
+  way by elapsed playback time. The replay of a recorded barge-in matched
+  speech-to-text of the received audio word for word. The instructor chose
+  this over transcribing the interviewee's audio a second time.
 - **Turns are keyed by the server's `item_id`**, so the old `TURN_GAP_MS`
   time-gap guessing is gone. A `.completed` / `.done` event replaces the
   accumulated deltas with the corrected final transcript.

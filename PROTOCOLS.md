@@ -7,6 +7,109 @@ one instruction per action.
 
 ---
 
+## 2026-09-11 — Welcome panel, persona cohorts, transcript after the interview
+
+Branch `next-release`, three commits (one per feature), merged into
+`main` with a merge commit. One additive schema change: the table
+`persona_cohorts`. The release is tagged `release-2026-09-11`. The state
+before it (Worker version `99cc3856`) is tagged `release-2026-08-31`.
+
+### What changed
+
+1. **Student welcome panel.** The card at the top of the student setup
+   screen is no longer fixed text. Instructors write it on the Settings
+   screen, with a live preview. It is the settings row `student_panel`
+   (at most 4000 characters) and reaches the student on
+   `MeResponse.panel`. No row means the old text; an empty text means no
+   panel. `src/panel.tsx` renders headings, paragraphs, bullets and bold
+   as text, never as HTML.
+2. **Persona cohorts.** Each persona is shown to all students, or only
+   to the roster cohorts the instructor ticks. The table
+   `persona_cohorts` holds the links; no rows means all students. One
+   SQL condition (`PERSONA_OPEN_TO_COHORT`) filters `GET /api/personas`
+   and guards `POST /api/session`, which answers `404` for a persona of
+   another cohort.
+3. **Transcript after the interview.** The interview screen shows no
+   transcript. The student reads it on the results screen and in the
+   report. An interviewee turn that the student cuts off keeps only the
+   words the student heard, ends in "…", and carries the label
+   "(interrupted)" in the results, the emails, the dashboard and the
+   scoring transcript (`TranscriptEntry.interrupted`). After a cut, the
+   app also tells the model in a `system` note what the student heard.
+   Per-turn speaking time of the interviewee now follows the audio.
+
+### Decisions
+
+- The panel travels on `/api/me` and `/api/auth/verify`, so the student
+  API gets no new route.
+- A persona with no cohorts stays open to all students. The existing
+  personas, five of them made by teachers, need no change.
+  `POST /api/report` does not check the cohort, so a cohort change
+  during an interview does not lose the report.
+- The instructor chose to hide the transcript during the interview.
+- The realtime model writes its text seconds before it speaks it. For an
+  interrupted turn, the instructor chose to cut the text by timing (the
+  server's `audio_end_ms` times the voice's pace) over a second
+  speech-to-text of the interviewee audio, and chose "…" plus the label.
+- The server cuts the model's memory itself, but it also deletes the
+  text of the cut answer, and the model then started its answer again.
+  The heard-text note stopped that (3 of 4 runs without it, 0 of 8
+  with it). A persona rule was tried instead and failed in 2 of 6 runs,
+  so the persona prompt did not change. See PROMPTING.md.
+- Open: a student who keeps saying "just a test" pulls the interviewee
+  into helper talk. No tested rule fixed it.
+
+### Tests done
+
+- Panel: API round trips; 4001 characters and a non-text value give
+  `400`; typed `<script>` shows as text; the dashboard preview matches
+  the student page.
+- Cohorts: raw API log. Students of two cohorts and one without a
+  cohort each saw exactly their personas. Four cross-cohort session
+  starts gave `404`. Validation gave `400`. Deleting a persona removed
+  its links. Browser check of the editor and the student list.
+- Transcript: live interruptions through the university testing gateway,
+  driven in a headless browser with recorded speech. The received audio
+  was transcribed as ground truth: the cut text was exact in one run and
+  two words short in the other. Scoring accepted the label, and two
+  evaluators named the interruption. The stored submission and the email
+  carried the label. The instructor tested the interview screen.
+- `npm run lint` and `npm run build` clean.
+
+### Deploy procedure
+
+1. `npm run backup` (writes `backup-2026-09-11.sql`, kept locally, never
+   committed).
+2. Note the D1 Time Travel bookmark before the change:
+   `000000b3-00000000-000050e3-a823bceeae2595b3f828943440bc3876`.
+3. `npx wrangler d1 execute riv-trainer --remote --file=schema.sql`. This
+   adds `persona_cohorts` and changes nothing else. Do it before step 4,
+   because the new Worker reads the table.
+4. `npm run lint && npm run build && npx wrangler deploy`.
+5. Smoke tests: `/` gives `200`; `/admin` and `/api/admin/settings` give
+   a `302` to Access; `/api/personas` gives `401` without a session.
+
+Do not run `seed-personas.sql` or `seed-criteria.sql`: they replace
+rows, and production has personas that teachers made.
+
+### Rollback
+
+- **Worker, immediately:**
+  `npx wrangler rollback 99cc3856-3c6e-474c-b2e0-8dc4fe5fe34c` returns
+  the Worker that ran before this release. The `persona_cohorts` table
+  and a saved `student_panel` row stay in the database; the old Worker
+  ignores both.
+- **Code, in git:** `git revert -m 1 <merge commit>` on `main` undoes the
+  whole release. To undo one feature only, revert its own commit. The
+  tag `release-2026-08-31` marks the old state.
+- **Forward again:** check out the tag `release-2026-09-11`, then build
+  and deploy.
+- **Data:** D1 Time Travel restores the whole database to any minute in
+  the last 30 days, for example to the bookmark in step 2
+  (OPERATIONS.md §11). The backup file restores into an empty database.
+
+---
+
 ## 2026-08-31 — Remember-device on by default
 
 Branch `remember-default`, one commit. One line plus a comment in

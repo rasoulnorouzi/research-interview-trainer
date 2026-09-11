@@ -115,3 +115,13 @@ CREATE TABLE IF NOT EXISTS criteria_versions (
   saved_by     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_criteria_versions ON criteria_versions(criterion_id, saved_at);
+
+-- Which roster cohorts see a persona (2026-09-11). A persona with no rows here
+-- is open to every student. A persona with rows is shown only to students
+-- whose roster.cohort is one of them. Re-applying this file adds the table and
+-- touches nothing else.
+CREATE TABLE IF NOT EXISTS persona_cohorts (
+  persona_id TEXT NOT NULL,
+  cohort     TEXT NOT NULL,                 -- matches roster.cohort exactly
+  PRIMARY KEY (persona_id, cohort)
+);

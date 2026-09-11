@@ -12,7 +12,7 @@
 // messages below are ours, not OpenAI's; see the key-hygiene note in openai.ts.
 
 import { identify } from "./auth";
-import { getSettings, json, readJsonBody, type Env } from "./db";
+import { getSettings, json, PERSONA_OPEN_TO_COHORT, readJsonBody, type Env } from "./db";
 import {
   assessmentAttachment,
   instructorReportEmail,
@@ -62,9 +62,9 @@ const MAX_TRANSCRIPT_BYTES = 200 * 1024;
 export async function handleSession(request: Request, env: Env): Promise<Response> {
   const session = await identify(request, env);
   if (!session) return json(401, { error: NOT_LOGGED_IN });
-  const student = await env.DB.prepare("SELECT student_id FROM roster WHERE student_id = ? AND active = 1")
+  const student = await env.DB.prepare("SELECT student_id, cohort FROM roster WHERE student_id = ? AND active = 1")
     .bind(session.studentId)
-    .first<{ student_id: string }>();
+    .first<{ student_id: string; cohort: string | null }>();
   if (!student) return json(401, { error: NOT_LOGGED_IN });
 
   // Parsed before the grant is consumed, so a malformed request does not cost
@@ -114,10 +114,14 @@ export async function handleSession(request: Request, env: Env): Promise<Respons
     });
   }
 
+  // The same cohort rule as GET /api/personas, so a persona id from another
+  // cohort cannot be started by typing it in. It answers the same 404 as an
+  // unknown id, which says nothing about the personas this student cannot see.
   const persona = await env.DB.prepare(
-    "SELECT id, name, voice_name, system_instruction FROM personas WHERE id = ? AND active = 1",
+    "SELECT p.id, p.name, p.voice_name, p.system_instruction FROM personas p " +
+      `WHERE p.id = ? AND p.active = 1 AND ${PERSONA_OPEN_TO_COHORT}`,
   )
-    .bind(personaId)
+    .bind(personaId, student.cohort)
     .first<{ id: string; name: string; voice_name: string; system_instruction: string }>();
   if (!persona) return json(404, { error: "That persona is not available." });
 
@@ -458,6 +462,9 @@ function validateReport(body: unknown): ValidReport | { status: number; error: s
       tStart: finiteOrZero(e.tStart),
       tEnd: finiteOrZero(e.tEnd),
       speechMs: finiteOrZero(e.speechMs),
+      // The client already shortened the text to what was heard; this only
+      // carries the "(interrupted)" label through to the report and scoring.
+      ...(e.interrupted === true ? { interrupted: true } : {}),
     });
   }
 

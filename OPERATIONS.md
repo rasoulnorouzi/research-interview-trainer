@@ -21,7 +21,7 @@ on the very next request. No redeploy is needed.
 | `sessions_total` | How many interviews one student may start, in total, for the whole course. | 10 | 1 to 30. This is the real backstop on cost: see section 9. Use the Reset sessions button on the Students screen (the roster) to give one student more. |
 | `interview_model` | The OpenAI realtime model used for the spoken interview. | `gpt-realtime-2.1-mini` | Any realtime model id your key can reach. |
 | `scoring_model` | The OpenAI model used for every scoring call: one per active rubric item, plus feedback. | `gpt-5.6-terra` | Any text model id your key can reach. |
-| `transcription_model` | The model that turns the student's speech into the live transcript. | `gpt-live-transcribe` | Only the models in the dropdown. The server rejects any other id, because every offered model must show the student's words while they speak, and a bad id would stop interviews from starting. |
+| `transcription_model` | The model that turns the student's speech into text for the transcript. Students do not see the transcript during the interview; it appears in their report. | `gpt-live-transcribe` | Only the models in the dropdown. The server rejects any other id, because every offered model must transcribe while the student speaks, and a bad id would stop interviews from starting. |
 | `share_report_with_student` | Whether the student's copy of the report includes the scores and the feedback. | `1` (students receive them) | `1` or `0`. The dashboard shows this as a switch. Report mail always attaches the transcript as a text file; the assessment text file goes to the student only with `1`, and to the instructors always. |
 | `generate_feedback` | Whether the AI assessor writes the qualitative feedback at all. | `1` (feedback is written) | `1` or `0`. The dashboard shows this as a switch. With `0`, every copy of the report has scores and the transcript, and no feedback section. |
 | `instructor_recipients` | Email addresses that get a copy of every report. Stored as one comma-joined string; a `!` prefix marks an address that is switched off. | none, must be set | At least one address. The dashboard rejects an empty list. A list where every address is switched off is allowed, and no instructor copy is sent while it stays that way. |
@@ -248,6 +248,44 @@ including the fields that must stay hidden from students.
   you choose by ear, not by name. Each voice is fetched once per visit and
   replayed from memory after that. The sample is spoken by a text-to-speech
   model on the university key; one click costs a fraction of a cent.
+
+### Who sees a persona (cohorts)
+
+Each persona has the setting **Who sees this persona**:
+
+- **All students.** Every student on the roster sees the persona. This is
+  the default, and every persona made before 2026-09-11 has it.
+- **Only students in these cohorts.** Only students whose **Cohort** on the
+  **Students** screen is one of the ticked cohorts see the persona.
+
+To give one group its own personas:
+
+1. Give each student a cohort. Use the Cohort column on the **Students**
+   screen, or the `cohort` column of the CSV import (section 2).
+2. Open the persona on the **Personas** screen.
+3. Choose **Only students in these cohorts**.
+4. Tick the cohorts. The count next to each cohort shows its active
+   students.
+5. Choose **Save**.
+
+The **Shown to** column of the persona list shows the result for each
+persona.
+
+Remember these rules:
+
+- A student without a cohort sees only the personas for all students.
+- The cohort name must match exactly. The checkboxes offer only the
+  cohorts that are on the roster, so this is correct when you tick them.
+- If you rename a cohort on the Students screen, the personas do not follow
+  the new name. The old name stays ticked, marked "no student has this
+  cohort now". Tick the new name and untick the old one.
+- A change applies the next time a student opens or reloads the page. A
+  student who started an interview before the change finishes that
+  interview, and gets the report.
+- The server checks the cohort again when an interview starts. A student
+  cannot start a persona from another cohort.
+- If no persona is open to a student, the student sees "No interviewees
+  are available to you yet".
 
 ### Version history and restore
 
