@@ -5,7 +5,7 @@
 import { handleAdmin } from "./admin";
 import { handleAuthLogout, handleAuthRequest, handleAuthVerify, handleMe, handleRedeem, identify } from "./auth";
 import { identifyInstructor } from "./access";
-import { json, type Env } from "./db";
+import { json, PERSONA_OPEN_TO_COHORT, type Env } from "./db";
 import { handleReport, handleSession } from "./report";
 import type { PersonaSummary } from "../shared/types";
 
@@ -68,13 +68,24 @@ export default {
  * GET /api/personas. The column list is explicit: system_instruction and
  * hidden_core are not selected, so no student-facing response can carry a
  * spoiler even by accident. Never widen this to SELECT * (§4).
+ *
+ * Only the personas open to the student's cohort are listed. The cohort comes
+ * from the roster row, not the cookie, so a cohort change in the dashboard
+ * applies the next time the student loads the page.
  */
 async function handlePersonas(request: Request, env: Env): Promise<Response> {
   const session = await identify(request, env);
   if (!session) return json(401, { error: "Not logged in." });
+  const student = await env.DB.prepare("SELECT cohort FROM roster WHERE student_id = ? AND active = 1")
+    .bind(session.studentId)
+    .first<{ cohort: string | null }>();
+  if (!student) return json(401, { error: "Not logged in." });
   const rows = await env.DB.prepare(
-    "SELECT id, name, title, research_topic, short_bio FROM personas WHERE active = 1 ORDER BY name",
-  ).all<{ id: string; name: string; title: string; research_topic: string; short_bio: string }>();
+    "SELECT p.id, p.name, p.title, p.research_topic, p.short_bio FROM personas p " +
+      `WHERE p.active = 1 AND ${PERSONA_OPEN_TO_COHORT} ORDER BY p.name`,
+  )
+    .bind(student.cohort)
+    .all<{ id: string; name: string; title: string; research_topic: string; short_bio: string }>();
   const personas: PersonaSummary[] = rows.results.map((row) => ({
     id: row.id,
     name: row.name,

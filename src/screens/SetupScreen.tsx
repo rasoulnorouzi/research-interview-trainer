@@ -80,6 +80,11 @@ export function SetupScreen({ onStart, initialError, panel }: Props) {
 
         {state.status === "done" && (
           <>
+            {/* Personas can be limited to cohorts, so the list is empty for a
+                student when no persona is open to their cohort. */}
+            {state.personas.length === 0 && (
+              <p className="small">No interviewees are available to you yet. Ask your instructor.</p>
+            )}
             <div className="persona-list">
               {state.personas.map((p) => (
                 <label

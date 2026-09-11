@@ -73,6 +73,22 @@ An empty string means no panel. `src/panel.tsx` renders a small format
 nothing typed into the panel can inject markup. The server caps the text at
 4000 characters. See `API.md`.
 
+**Personas can be limited to roster cohorts (instructor request,
+2026-09-11, branch `persona-cohorts`).** The `persona_cohorts` table links
+a persona to zero or more `roster.cohort` strings. No rows means the
+persona is open to every student, so existing personas and the seed files
+are unaffected. With rows, only students whose cohort matches exactly see
+the persona. The rule is one SQL condition, `PERSONA_OPEN_TO_COHORT` in
+`worker/db.ts`, used by both `GET /api/personas` and `POST /api/session`.
+The mint therefore refuses (`404`, the same answer as an unknown id) a
+persona id from another cohort. `POST /api/report` deliberately does not
+check the cohort: a cohort change during an interview must not lose the
+report. The dashboard's persona editor sets the cohorts, with checkboxes
+from the roster's distinct cohorts (`rosterCohorts` on the admin persona
+list). Cohort links are part of the persona snapshot. Restoring a version
+from before this feature keeps the current cohorts. A deploy must apply
+`schema.sql` remotely **before** the code (`DEPLOYMENT.md`).
+
 The results screen no longer scores automatically: a student clicks
 "Submit interview for scoring" on `ResultsScreen.tsx`, and only that click
 triggers `POST /api/report`. Login failures are explicit rather than a

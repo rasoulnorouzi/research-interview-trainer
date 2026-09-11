@@ -249,6 +249,44 @@ including the fields that must stay hidden from students.
   replayed from memory after that. The sample is spoken by a text-to-speech
   model on the university key; one click costs a fraction of a cent.
 
+### Who sees a persona (cohorts)
+
+Each persona has the setting **Who sees this persona**:
+
+- **All students.** Every student on the roster sees the persona. This is
+  the default, and every persona made before 2026-09-11 has it.
+- **Only students in these cohorts.** Only students whose **Cohort** on the
+  **Students** screen is one of the ticked cohorts see the persona.
+
+To give one group its own personas:
+
+1. Give each student a cohort. Use the Cohort column on the **Students**
+   screen, or the `cohort` column of the CSV import (section 2).
+2. Open the persona on the **Personas** screen.
+3. Choose **Only students in these cohorts**.
+4. Tick the cohorts. The count next to each cohort shows its active
+   students.
+5. Choose **Save**.
+
+The **Shown to** column of the persona list shows the result for each
+persona.
+
+Remember these rules:
+
+- A student without a cohort sees only the personas for all students.
+- The cohort name must match exactly. The checkboxes offer only the
+  cohorts that are on the roster, so this is correct when you tick them.
+- If you rename a cohort on the Students screen, the personas do not follow
+  the new name. The old name stays ticked, marked "no student has this
+  cohort now". Tick the new name and untick the old one.
+- A change applies the next time a student opens or reloads the page. A
+  student who started an interview before the change finishes that
+  interview, and gets the report.
+- The server checks the cohort again when an interview starts. A student
+  cannot start a persona from another cohort.
+- If no persona is open to a student, the student sees "No interviewees
+  are available to you yet".
+
 ### Version history and restore
 
 Every save, whether creating a persona or editing one, writes a full

@@ -30,6 +30,18 @@ export interface RosterIdentity {
 }
 
 /**
+ * SQL condition: the persona aliased `p` is open to a student whose roster
+ * cohort is bound to the one `?`. A persona with no persona_cohorts rows is
+ * open to every student; a persona with rows only to those cohorts. Bind null
+ * for a student without a cohort: `= NULL` is never true, so they get only the
+ * open personas. GET /api/personas and POST /api/session both use this, so
+ * the list a student sees and what they may start cannot drift apart.
+ */
+export const PERSONA_OPEN_TO_COHORT =
+  "(NOT EXISTS (SELECT 1 FROM persona_cohorts pc WHERE pc.persona_id = p.id) " +
+  "OR EXISTS (SELECT 1 FROM persona_cohorts pc WHERE pc.persona_id = p.id AND pc.cohort = ?))";
+
+/**
  * Read settings rows in one query.
  *
  * Deliberately not cached at module scope: a dashboard change (time limit,

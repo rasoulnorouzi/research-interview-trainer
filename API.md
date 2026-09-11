@@ -162,7 +162,12 @@ is rejected here even though the cookie itself has not expired.
 
 ### GET /api/personas
 
-Lists the personas a student may choose for an interview.
+Lists the personas a student may choose for an interview: every active
+persona that is open to all students, plus every active persona limited to
+the student's cohort. The cohort comes from the student's roster row, read
+fresh on each request. A student without a cohort gets only the personas
+open to all students. The dashboard sets the cohorts per persona (section 6,
+`cohorts`).
 
 **Authentication.** Session cookie required.
 
@@ -233,7 +238,7 @@ reaches the response body or the browser.
 | `400` | `{"error": "A persona is required."}` | Missing or non-string `personaId` |
 | `503` | `{"error": "The service is not configured yet. Tell your instructor."}` | No OpenAI key set in `settings` |
 | `429` | `{"error": "You have used all your interview sessions. Ask your instructor if you need another one."}` | `sessions_total` used up for this student. An instructor can clear it with the reset-sessions endpoint below. |
-| `404` | `{"error": "That persona is not available."}` | No active persona with that id |
+| `404` | `{"error": "That persona is not available."}` | No active persona with that id, or the persona is limited to cohorts and the student's cohort is not one of them. Both causes give the same answer, so the response says nothing about personas the student cannot see. |
 | `502` | `{"error": "Could not start the interview. Try again in a moment."}` | The OpenAI mint call failed |
 
 The 429 case still consumes a grant; a rejected mint attempt is not
@@ -460,11 +465,11 @@ Worker.
 | DELETE | `/api/admin/roster/:id?hard=1` | none | `200 {studentId, deleted: true, reportsDeleted}`. Permanently removes the student **and every stored report of that student** (2026-08-27 instructor decision; before that date a student with reports answered `409`). Also clears their login codes and session grants. `reportsDeleted` counts the reports that went with them. |
 | POST | `/api/admin/roster/:id/reset-sessions` | none | `200 {studentId, cleared}`. Deletes the student's session grants, so the `sessions_total` quota opens again. Reports are not touched. `404` for an unknown student. |
 | POST | `/api/admin/roster/bulk-remove` | `{ids: [...]}` (max 500) | `200 {deleted, reportsDeleted}`. Removes the listed students permanently, exactly like the single hard delete: their stored reports go with them. Unknown ids are ignored; the counts cover the students and reports really removed. |
-| GET | `/api/admin/personas` | none | `{"personas": [{id, name, title, active, updatedAt, updatedBy}]}`. No spoiler fields, even here; the list view does not need them. |
-| POST | `/api/admin/personas` | full persona fields, including `systemInstruction`, `hiddenCore` | `201` full persona, or `400`/`409` |
-| GET | `/api/admin/personas/:id` | none | `200` full persona including `systemInstruction` and `hiddenCore`, or `404` |
-| PUT | `/api/admin/personas/:id` | full persona fields | `200` full persona; writes one `persona_versions` snapshot in the same batch as the row update |
-| DELETE | `/api/admin/personas/:id` | none | `200 {id, deleted: true}`. Permanently removes the persona, only when no reports reference it (`409` otherwise, naming the count). `persona_versions` is kept either way; there is no route that deletes a version. |
+| GET | `/api/admin/personas` | none | `{"personas": [{id, name, title, active, cohorts, updatedAt, updatedBy}], "rosterCohorts": [{name, students}]}`. No spoiler fields, even here; the list view does not need them. `rosterCohorts` lists every distinct non-empty `roster.cohort`, with its count of active students, for the editor's cohort checkboxes. |
+| POST | `/api/admin/personas` | full persona fields, including `systemInstruction`, `hiddenCore`, and optional `cohorts` | `201` full persona, or `400`/`409` |
+| GET | `/api/admin/personas/:id` | none | `200` full persona including `systemInstruction`, `hiddenCore` and `cohorts`, or `404` |
+| PUT | `/api/admin/personas/:id` | full persona fields, optional `cohorts` | `200` full persona; writes one `persona_versions` snapshot in the same batch as the row update and the cohort links |
+| DELETE | `/api/admin/personas/:id` | none | `200 {id, deleted: true}`. Permanently removes the persona and its cohort links, only when no reports reference it (`409` otherwise, naming the count). `persona_versions` is kept either way; there is no route that deletes a version. |
 | GET | `/api/admin/personas/:id/versions` | none | `{"personaId", "versions": [{id, savedAt, savedBy, snapshot}]}` |
 | GET | `/api/admin/criteria` | none | `{"criteria": [{id, name, scaleMax, needsGroundTruth, sortOrder, active, updatedAt, updatedBy}]}` |
 | POST | `/api/admin/criteria` | full criterion fields, including `anchorLow`, `anchorMid`, `anchorHigh` | `201` full criterion, or `400`/`409` |
