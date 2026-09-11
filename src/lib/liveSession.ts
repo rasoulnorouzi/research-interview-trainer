@@ -6,6 +6,8 @@ const REALTIME_BASE = "https://api.openai.com/v1/realtime";
 // Streams the student's transcript while they are still speaking. The other
 // option, "gpt-transcribe", only transcribes after a committed turn — which is
 // the exact Gemini limitation this migration exists to remove. Do not swap it.
+// The transcript is no longer shown during the interview (instructor decision,
+// 2026-09-11), only in the report, but the streaming transcriber stays.
 // The Worker sets this at mint time; the copy here is only for the fallback
 // session.update below, and the two must not drift apart.
 const INPUT_TRANSCRIPTION_MODEL = "gpt-live-transcribe";
@@ -33,13 +35,20 @@ const INPUT_TRANSCRIPTION_MODEL = "gpt-live-transcribe";
  */
 const TURN_DETECTION = { type: "semantic_vad", eagerness: "low" } as const;
 
+/**
+ * Characters of interviewee text per second of spoken audio. Used to cut an
+ * interrupted answer to what was heard, until this session has timed a fully
+ * played answer of its own. Measured on Tom, the slowest built-in pacing, at
+ * about 14 (2026-09-11).
+ */
+const DEFAULT_CHARS_PER_SECOND = 14;
+
 export type SessionStatus = "connecting" | "live" | "speaking" | "closed";
 
 export interface InterviewSessionOptions {
   /** Which interviewee to open. The persona text, the voice and the model all
    *  stay server-side; the browser never sees them. */
   personaId: string;
-  onTranscript: (entries: TranscriptEntry[]) => void;
   onStatus: (status: SessionStatus) => void;
   onStudentSpeaking: (speaking: boolean) => void;
   onFatalError: (message: string) => void;
@@ -51,9 +60,18 @@ export interface InterviewSessionOptions {
 interface RealtimeEvent {
   type: string;
   item_id?: string;
+  response_id?: string;
+  output_index?: number;
+  audio_end_ms?: number;
   delta?: string;
   transcript?: string;
   error?: { message?: string };
+}
+
+/** One interviewee answer's audio, from output_audio_buffer.started on. */
+interface Playback {
+  startedAt: number; // performance.now()
+  meterBase: number; // the remote meter's reading at that moment
 }
 
 export class InterviewSession {
@@ -79,6 +97,16 @@ export class InterviewSession {
   private entries: TranscriptEntry[] = [];
   private byItem = new Map<string, TranscriptEntry>();
   private meterBase = new Map<string, number>();
+
+  // The interviewee's text arrives within a few seconds, far ahead of the
+  // audio that speaks it (verified 2026-09-11: 85 words of text in 2.6 s,
+  // then 6 more seconds of speech before the student cut in). These follow
+  // each answer's audio so the transcript keeps only what was heard.
+  private itemInfo = new Map<string, { responseId: string; index: number }>();
+  private playing = new Map<string, Playback>();
+  private voiced = new Map<string, number>();
+  private timedChars = 0;
+  private timedMs = 0;
 
   constructor(opts: InterviewSessionOptions) {
     this.opts = opts;
@@ -229,6 +257,8 @@ export class InterviewSession {
 
   stop(): SessionResult {
     const wasStopped = this.stopped;
+    // Ending the interview mid-answer cuts that answer off too.
+    if (!wasStopped) this.cutOpenPlayback();
     const studentSpeechMs = Math.round(this.micMeter?.speechMs ?? 0);
     const intervieweeAudioMs = Math.round(this.remoteMeter?.speechMs ?? 0);
     this.stopped = true;
@@ -245,7 +275,7 @@ export class InterviewSession {
   }
 
   get transcript(): TranscriptEntry[] {
-    return [...this.entries];
+    return this.entries.filter((e) => e.text.trim().length > 0);
   }
 
   private handleEvent(event: RealtimeEvent) {
@@ -259,12 +289,42 @@ export class InterviewSession {
         this.finalize("student", event.item_id, event.transcript ?? "");
         break;
 
-      // The interviewee, streaming alongside their audio.
+      // The interviewee's text. It runs ahead of the audio, see cutToHeard.
       case "response.output_audio_transcript.delta":
+        this.noteItem(event);
         this.appendDelta("interviewee", event.item_id, event.delta ?? "");
         break;
       case "response.output_audio_transcript.done":
+        this.noteItem(event);
         this.finalize("interviewee", event.item_id, event.transcript ?? "");
+        break;
+
+      // The interviewee's audio. Over WebRTC the server sends it in real time,
+      // so these mark when an answer really started and stopped playing:
+      // stopped when it played to the end, cleared when it was cut off.
+      case "output_audio_buffer.started":
+        if (event.response_id) {
+          this.playing.set(event.response_id, {
+            startedAt: performance.now(),
+            meterBase: this.remoteMeter?.speechMs ?? 0,
+          });
+        }
+        break;
+      case "output_audio_buffer.stopped":
+        if (event.response_id) this.endPlayback(event.response_id, true);
+        break;
+      case "output_audio_buffer.cleared":
+        if (event.response_id) this.endPlayback(event.response_id, false);
+        break;
+
+      // Sent by the server when the student cuts in. The server has already
+      // cut its own memory of the answer to the audio that played, so the
+      // model does not remember saying the rest. audio_end_ms is how much of
+      // this item was heard.
+      case "conversation.item.truncated":
+        if (event.item_id && typeof event.audio_end_ms === "number") {
+          this.cutToHeard(event.item_id, event.audio_end_ms);
+        }
         break;
 
       case "error":
@@ -272,6 +332,134 @@ export class InterviewSession {
         // turn should not throw away a good transcript.
         console.error("Realtime error:", event.error?.message ?? event);
         break;
+    }
+  }
+
+  private noteItem(event: RealtimeEvent) {
+    if (!event.item_id || !event.response_id || this.itemInfo.has(event.item_id)) return;
+    this.itemInfo.set(event.item_id, { responseId: event.response_id, index: event.output_index ?? 0 });
+  }
+
+  /** The interviewee entries of one answer, in the order they are spoken. */
+  private itemsOf(responseId: string): TranscriptEntry[] {
+    return [...this.itemInfo.entries()]
+      .filter(([, info]) => info.responseId === responseId)
+      .sort((a, b) => a[1].index - b[1].index)
+      .map(([id]) => this.byItem.get(id))
+      .filter((e): e is TranscriptEntry => e !== undefined);
+  }
+
+  private charsPerMs(): number {
+    return this.timedMs > 0 ? this.timedChars / this.timedMs : DEFAULT_CHARS_PER_SECOND / 1000;
+  }
+
+  private endPlayback(responseId: string, playedToEnd: boolean) {
+    const playback = this.playing.get(responseId);
+    if (!playback) return;
+    this.playing.delete(responseId);
+    const now = performance.now();
+    const items = this.itemsOf(responseId);
+    // An answer that played to the end times this voice's pace.
+    if (playedToEnd) {
+      const chars = items.reduce((n, e) => n + e.text.length, 0);
+      const ms = now - playback.startedAt;
+      if (chars > 0 && ms > 1000) {
+        this.timedChars += chars;
+        this.timedMs += ms;
+      }
+    }
+    this.voiced.set(responseId, Math.max(0, (this.remoteMeter?.speechMs ?? 0) - playback.meterBase));
+    const last = items[items.length - 1];
+    if (last) last.tEnd = now - this.t0;
+    this.shareVoicedTime(responseId);
+  }
+
+  /**
+   * Per-turn speaking time for the interviewee: the answer's voiced audio,
+   * shared between its items by their length. It cannot be read while the
+   * text arrives, because the text is finished long before the audio is.
+   */
+  private shareVoicedTime(responseId: string) {
+    const voiced = this.voiced.get(responseId);
+    if (voiced === undefined) return;
+    const items = this.itemsOf(responseId);
+    const chars = items.reduce((n, e) => n + e.text.length, 0);
+    for (const e of items) e.speechMs = chars > 0 ? Math.round((voiced * e.text.length) / chars) : 0;
+  }
+
+  /**
+   * The student cut in: keep what was heard of this item, estimated from
+   * audio_end_ms and the voice's pace, and drop any later item of the same
+   * answer, which never played.
+   */
+  private cutToHeard(itemId: string, heardMs: number) {
+    const entry = this.byItem.get(itemId);
+    const info = this.itemInfo.get(itemId);
+    if (!entry || !info || entry.speaker !== "interviewee") return;
+    const cut = cutText(entry.text, heardMs * this.charsPerMs());
+    if (cut !== null) {
+      entry.text = cut;
+      entry.interrupted = true;
+    }
+    for (const other of this.itemsOf(info.responseId)) {
+      if (this.indexOf(other) > info.index) other.text = "";
+    }
+    // The server keeps only the heard audio of the cut item and deletes its
+    // text, so the model loses track of what it already said and tends to
+    // start its answer again, introduction included (3 of 4 test runs,
+    // 2026-09-11). Telling it in text what the student heard stopped that
+    // (0 of 8 runs); a persona rule alone did not (2 of 6). See PROMPTING.md.
+    const heard = entry.text.trim();
+    this.send({
+      type: "conversation.item.create",
+      previous_item_id: itemId,
+      item: {
+        type: "message",
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text: heard
+              ? `The interviewer cut in while you were speaking. They heard only this part of your answer: "${heard}". Do not repeat any of it. Respond only to what they say next.`
+              : "The interviewer cut in before you had said anything. Respond only to what they say next.",
+          },
+        ],
+      },
+    });
+    // The cut also ends the answer's playback, whether or not the cleared
+    // event has arrived yet.
+    this.endPlayback(info.responseId, false);
+    this.shareVoicedTime(info.responseId);
+  }
+
+  private indexOf(entry: TranscriptEntry): number {
+    for (const [id, info] of this.itemInfo) if (this.byItem.get(id) === entry) return info.index;
+    return -1;
+  }
+
+  /**
+   * Ending the interview, or losing the connection, cuts off an answer that is
+   * still playing. Walk its items with the voice's pace to find where the
+   * audio had got to, and cut there.
+   */
+  private cutOpenPlayback() {
+    const now = performance.now();
+    const rate = this.charsPerMs();
+    for (const [responseId, playback] of [...this.playing]) {
+      let heardChars = (now - playback.startedAt) * rate;
+      for (const e of this.itemsOf(responseId)) {
+        if (heardChars >= e.text.length) {
+          heardChars -= e.text.length;
+          continue;
+        }
+        const cut = cutText(e.text, heardChars);
+        if (cut !== null) {
+          e.text = cut;
+          e.interrupted = cut.length > 0;
+        }
+        heardChars = 0;
+      }
+      this.endPlayback(responseId, false);
     }
   }
 
@@ -287,29 +475,26 @@ export class InterviewSession {
       speechMs: 0,
     };
     this.byItem.set(key, entry);
-    this.meterBase.set(key, this.meterFor(speaker)?.speechMs ?? 0);
+    this.meterBase.set(key, this.micMeter?.speechMs ?? 0);
     this.entries.push(entry);
     return entry;
   }
 
-  private meterFor(speaker: Speaker): SpeechMeter | null {
-    return speaker === "student" ? this.micMeter : this.remoteMeter;
-  }
-
-  /** Voiced time for a turn is the meter's advance since that turn opened. */
-  private updateSpeechMs(speaker: Speaker, itemId: string | undefined, entry: TranscriptEntry) {
-    const key = itemId ?? `${speaker}-pending`;
+  /** The student's voiced time for a turn is the mic meter's advance since that turn opened. */
+  private updateStudentSpeechMs(itemId: string | undefined, entry: TranscriptEntry) {
+    const key = itemId ?? "student-pending";
     const base = this.meterBase.get(key) ?? 0;
-    entry.speechMs = Math.max(0, (this.meterFor(speaker)?.speechMs ?? 0) - base);
+    entry.speechMs = Math.max(0, (this.micMeter?.speechMs ?? 0) - base);
   }
 
   private appendDelta(speaker: Speaker, itemId: string | undefined, delta: string) {
     if (!delta) return;
     const entry = this.entryFor(speaker, itemId);
     entry.text = (entry.text + delta).trimStart();
-    entry.tEnd = performance.now() - this.t0;
-    this.updateSpeechMs(speaker, itemId, entry);
-    this.opts.onTranscript([...this.entries]);
+    if (speaker === "student") {
+      entry.tEnd = performance.now() - this.t0;
+      this.updateStudentSpeechMs(itemId, entry);
+    }
   }
 
   private finalize(speaker: Speaker, itemId: string | undefined, transcript: string) {
@@ -317,13 +502,15 @@ export class InterviewSession {
     // The final transcript supersedes the accumulated deltas — it is the
     // corrected version, not an additional fragment.
     if (transcript.trim()) entry.text = transcript.trim();
-    entry.tEnd = performance.now() - this.t0;
-    this.updateSpeechMs(speaker, itemId, entry);
-    this.opts.onTranscript([...this.entries]);
+    if (speaker === "student") {
+      entry.tEnd = performance.now() - this.t0;
+      this.updateStudentSpeechMs(itemId, entry);
+    }
   }
 
   private handleDrop() {
     if (this.stopped) return;
+    this.cutOpenPlayback();
     this.stopped = true;
     this.cleanup();
     this.opts.onStatus("closed");
@@ -357,6 +544,21 @@ export class InterviewSession {
     for (const track of this.micStream?.getTracks() ?? []) track.stop();
     this.micStream = null;
   }
+}
+
+/**
+ * The part of an answer that was heard: `keep` characters, carried on to the
+ * end of the word being spoken, then an ellipsis. Null when the estimate
+ * covers the whole text, because the student cut in at the very end. An empty
+ * string when nothing of it was heard.
+ */
+function cutText(text: string, keep: number): string | null {
+  if (keep <= 0) return "";
+  if (keep >= text.length) return null;
+  const wordEnd = text.slice(Math.floor(keep)).search(/\s/);
+  if (wordEnd === -1) return null;
+  const heard = text.slice(0, Math.floor(keep) + wordEnd).replace(/[\s,;:.!?-]+$/, "");
+  return heard.length > 0 ? `${heard}…` : "";
 }
 
 /**

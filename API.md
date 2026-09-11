@@ -270,6 +270,13 @@ non-finite timing value becomes `0` rather than rejecting the whole
 report, since losing a real interview's report is worse than losing one
 timestamp.
 
+An interviewee entry may carry `"interrupted": true` (2026-09-11). The
+client sets it when the student cut the interviewee off, by speaking or
+by ending the interview, and has already shortened `text` to what was
+heard, ending in an ellipsis. The server keeps the flag only when it is
+exactly `true`. The report, both emails, the dashboard and the scoring
+transcript then show "(interrupted)" after the interviewee's name.
+
 **Response, success**
 
 `200`, body is `ReportResponse`:

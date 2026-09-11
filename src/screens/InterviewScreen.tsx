@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { PersonaSummary, SessionResult, TranscriptEntry } from "../types";
+import { PersonaSummary, SessionResult } from "../types";
 import { InterviewSession, SessionStatus } from "../lib/liveSession";
 import { fmtMs } from "../lib/metrics";
 
@@ -25,17 +25,20 @@ const STATUS_TEXT: Record<SessionStatus, string> = {
   closed: "Session closed",
 };
 
+/**
+ * The live interview. The transcript is recorded but not shown here
+ * (instructor decision, 2026-09-11): the student listens and speaks, and reads
+ * the transcript in the report once the interview ends. The status line is
+ * the only feedback that the microphone and the interviewee are working.
+ */
 export function InterviewScreen({ persona, onEnd, onAbort, endSignal }: Props) {
   const sessionRef = useRef<InterviewSession | null>(null);
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [status, setStatus] = useState<SessionStatus>("connecting");
   const [muted, setMuted] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [limits, setLimits] = useState<Limits | null>(null);
   const [studentSpeaking, setStudentSpeaking] = useState(false);
-  const [awaitingStudentText, setAwaitingStudentText] = useState(false);
   const [connectionLost, setConnectionLost] = useState<string | null>(null);
-  const transcriptBoxRef = useRef<HTMLDivElement | null>(null);
 
   // Refs so the mount effect's callbacks always see current handlers.
   const onAbortRef = useRef(onAbort);
@@ -45,14 +48,8 @@ export function InterviewScreen({ persona, onEnd, onAbort, endSignal }: Props) {
     const session = new InterviewSession({
       personaId: persona.id,
       onLimits: setLimits,
-      onTranscript: setTranscript,
       onStatus: setStatus,
-      onStudentSpeaking: (speaking) => {
-        setStudentSpeaking(speaking);
-        // Text now streams while the student talks, but the first delta still
-        // takes a moment; this covers only that gap.
-        if (speaking) setAwaitingStudentText(true);
-      },
+      onStudentSpeaking: setStudentSpeaking,
       onFatalError: (message) => {
         if (session.transcript.length > 0) {
           setConnectionLost(message);
@@ -76,18 +73,6 @@ export function InterviewScreen({ persona, onEnd, onAbort, endSignal }: Props) {
     const t = setInterval(() => setElapsedMs(Date.now() - started), 1000);
     return () => clearInterval(t);
   }, []);
-
-  // The placeholder is resolved by the student's text arriving, which shows up
-  // as a new student entry.
-  const studentEntryCount = transcript.filter((e) => e.speaker === "student").length;
-  useEffect(() => {
-    setAwaitingStudentText(false);
-  }, [studentEntryCount]);
-
-  useEffect(() => {
-    const box = transcriptBoxRef.current;
-    if (box) box.scrollTop = box.scrollHeight;
-  }, [transcript, studentSpeaking, awaitingStudentText]);
 
   const toggleMute = () => {
     const next = !muted;
@@ -162,45 +147,27 @@ export function InterviewScreen({ persona, onEnd, onAbort, endSignal }: Props) {
             preserved, so you can still view your results.
           </div>
         ) : (
-          <div className="status-line">
-            <span className={`rec-dot ${status === "connecting" || muted ? "idle" : ""}`} />
-            <span>
-              {muted
-                ? "Microphone muted"
-                : studentSpeaking
-                  ? "Hearing you…"
-                  : STATUS_TEXT[status]}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <h2>Transcript</h2>
-        <div className="transcript" ref={transcriptBoxRef}>
-          {transcript.length === 0 && !awaitingStudentText ? (
-            <p className="placeholder">
-              The transcript will appear here as you speak. Begin by introducing
-              yourself and your research, as you would in a real interview.
-            </p>
-          ) : (
-            transcript.map((e, i) => (
-              <div className="entry" key={i}>
-                <span className={`speaker ${e.speaker}`}>
-                  {e.speaker === "student" ? "You" : persona.name}
-                  <span className="t">{fmtMs(e.tStart)}</span>
-                </span>
-                <div>{e.text}</div>
-              </div>
-            ))
-          )}
-          {awaitingStudentText && (
-            <div className="entry">
-              <span className="speaker student">You</span>
-              <div className="pending">listening…</div>
+          <>
+            <div className="status-line">
+              <span className={`rec-dot ${status === "connecting" || muted ? "idle" : ""}`} />
+              <span>
+                {muted
+                  ? "Microphone muted"
+                  : studentSpeaking
+                    ? "Hearing you…"
+                    : STATUS_TEXT[status]}
+              </span>
             </div>
-          )}
-        </div>
+            <p>
+              Speak as you would in a real interview. Begin by introducing
+              yourself and your research.
+            </p>
+            <p className="small">
+              The transcript is not shown while you talk. You can read it in
+              your report when the interview ends.
+            </p>
+          </>
+        )}
 
         <div className="btn-row">
           {!connectionLost && (

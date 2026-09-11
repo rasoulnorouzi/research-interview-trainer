@@ -462,6 +462,9 @@ function validateReport(body: unknown): ValidReport | { status: number; error: s
       tStart: finiteOrZero(e.tStart),
       tEnd: finiteOrZero(e.tEnd),
       speechMs: finiteOrZero(e.speechMs),
+      // The client already shortened the text to what was heard; this only
+      // carries the "(interrupted)" label through to the report and scoring.
+      ...(e.interrupted === true ? { interrupted: true } : {}),
     });
   }
 

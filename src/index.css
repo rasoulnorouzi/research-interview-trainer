@@ -876,15 +876,6 @@ td.num {
   letter-spacing: 0;
 }
 
-.transcript .placeholder {
-  color: var(--text-muted);
-}
-
-/* Covers the brief gap before the first streamed transcript delta arrives. */
-.transcript .pending {
-  color: var(--text-muted);
-}
-
 /* Results ---------------------------------------------------------------- */
 
 .overall-score {
