@@ -15,12 +15,12 @@ on the very next request. No redeploy is needed.
 
 | Key | Meaning | Default | Safe range |
 |---|---|---|---|
-| `openai_api_key` | The university's OpenAI key. Write-only; the dashboard never shows the full value. | none, must be set | Any key valid for your account. The dashboard tests it before saving and rejects a broken key. |
+| `openai_api_key` | The key for the university AI gateway, Tilburg.AI (an OpenAI key before 2026-09-13; the row kept its name). Write-only; the dashboard never shows the full value. | none, must be set | The production gateway key from Tilburg.AI. The dashboard tests it against the gateway before saving and rejects a broken key. A key for the testing gateway does not work on production. |
 | `interview_limit_minutes` | Interview length before the app ends the session for the student. | 12 | 5 to 20. Shorter than 5 rarely reaches the deeper persona layer. Longer than 20 raises cost with little teaching benefit. |
 | `interview_warn_minutes` | When the on-screen countdown becomes visible. | 10 | Must be less than `interview_limit_minutes`. The dashboard rejects a save that violates this. |
 | `sessions_total` | How many interviews one student may start, in total, for the whole course. | 10 | 1 to 30. This is the real backstop on cost: see section 9. Use the Reset sessions button on the Students screen (the roster) to give one student more. |
-| `interview_model` | The OpenAI realtime model used for the spoken interview. | `gpt-realtime-2.1-mini` | Any realtime model id your key can reach. |
-| `scoring_model` | The OpenAI model used for every scoring call: one per active rubric item, plus feedback. | `gpt-5.6-terra` | Any text model id your key can reach. |
+| `interview_model` | The realtime model used for the spoken interview. | `gpt-realtime-2.1-mini` | Only a model the university gateway offers. Today that is `gpt-realtime-2.1-mini`. |
+| `scoring_model` | The model used for every scoring call: one per active rubric item, plus feedback. | `gpt-5.6-terra` | Only a model the university gateway offers. Today that is `gpt-5.6-terra`. |
 | `transcription_model` | The model that turns the student's speech into text for the transcript. Students do not see the transcript during the interview; it appears in their report. | `gpt-live-transcribe` | Only the models in the dropdown. The server rejects any other id, because every offered model must transcribe while the student speaks, and a bad id would stop interviews from starting. |
 | `share_report_with_student` | Whether the student's copy of the report includes the scores and the feedback. | `1` (students receive them) | `1` or `0`. The dashboard shows this as a switch. Report mail always attaches the transcript as a text file; the assessment text file goes to the student only with `1`, and to the instructors always. |
 | `generate_feedback` | Whether the AI assessor writes the qualitative feedback at all. | `1` (feedback is written) | `1` or `0`. The dashboard shows this as a switch. With `0`, every copy of the report has scores and the transcript, and no feedback section. |
@@ -29,9 +29,14 @@ on the very next request. No redeploy is needed.
 The Settings screen presents `interview_model` and `scoring_model` as
 dropdowns over a curated list of ids, and `instructor_recipients` as a
 list with per-address controls, not a text box. Picking a model this
-way is the normal path. The API itself still accepts any non-empty model
-id, so a value set straight in the database also works and shows in the
-dropdown as the current choice.
+way is the normal path. The dropdowns offer only the models the
+university gateway offers. The other models stay in the list, greyed out,
+with "(not offered by the university yet)". A saved model that the
+gateway does not offer gets a red warning, because every call with it
+fails. The API itself still accepts any non-empty interview or scoring
+model id, so a value set straight in the database also works and shows in
+the dropdown as the current choice. When the gateway adds a model, a
+developer flips its `university` flag in `shared/models.ts`.
 
 **Sending scores to students.** The switch "Send scores and feedback to
 students" controls the student copy of the report, and nothing else. With
@@ -73,8 +78,8 @@ changes take effect when you click Save, and apply to reports submitted
 after that. If every address is switched off, the screen warns you, and
 no assessment copy is emailed until one is switched on again.
 
-**Caution.** The dashboard validates `openai_api_key` live against OpenAI
-before saving it. It does not validate `interview_model` or
+**Caution.** The dashboard validates `openai_api_key` live against the
+gateway before saving it. It does not validate `interview_model` or
 `scoring_model` the same way. A typo in either model id is not caught at
 save time. It surfaces later, as a failed interview or a failed report,
 when a student hits it. Check a model id change with a real interview
@@ -148,15 +153,16 @@ them by hand; do not rely on a re-import to do it.
 
 ## 3. Key rotation
 
-Rotate the OpenAI key from the dashboard, not from the command line, after
-the first bootstrap in [`DEPLOYMENT.md`](DEPLOYMENT.md) section 2.
+Rotate the gateway key from the dashboard, not from the command line,
+after the first bootstrap in [`DEPLOYMENT.md`](DEPLOYMENT.md) section 2.
+New keys come from Tilburg.AI (Robert Smolders).
 
 1. Open **Settings**.
-2. Enter the new key in the OpenAI key field.
+2. Enter the new key in the key field.
 3. Save.
 
-The dashboard makes a live, cheap call to OpenAI to confirm the key
-works, before it writes anything. If the key does not work, nothing is
+The dashboard makes a live, cheap call to the gateway (`GET /v1/models`)
+to confirm the key works, before it writes anything. If the key does not work, nothing is
 saved and you see an error. The previous key stays in effect until a
 working replacement is saved.
 
@@ -246,8 +252,10 @@ including the fields that must stay hidden from students.
 - **Preview a voice before you cast it.** The "Preview voice" button next
   to the dropdown plays a short sample sentence in the selected voice, so
   you choose by ear, not by name. Each voice is fetched once per visit and
-  replayed from memory after that. The sample is spoken by a text-to-speech
-  model on the university key; one click costs a fraction of a cent.
+  replayed from memory after that. The sample needs a text-to-speech
+  model on the gateway. The university gateway offers none yet
+  (2026-09-13), so the button shows an error message that says so. Until
+  the gateway adds one, cast a voice by a short test interview.
 
 ### Who sees a persona (cohorts)
 
@@ -643,7 +651,7 @@ has a problem":
    receiving side filtered it - for university addresses, the Microsoft
    quarantine (section 4).
 3. **Worker logs**: search the time window or the student's email for
-   error lines. Scoring failures name the reason category; the OpenAI
+   error lines. Scoring failures name the reason category; the gateway
    key never appears in a log line.
 4. **Submissions screen**: did the interview complete and store?
 5. If only login is broken: **Break-glass** unblocks the student now;
@@ -651,7 +659,43 @@ has a problem":
 
 Common log lines and their meaning: "login code send failed" = Resend
 refused the send (check the Resend dashboard and the API key);
-"scoring failed: OpenAI rate limit hit" = the OpenAI organization is
-over its rate or spend limit (check platform.openai.com limits);
+"scoring failed: The AI gateway rate limit was hit." = the gateway key
+is over its rate or budget limit (ask Tilburg.AI);
 "scoring aborted: the rubric has no active criteria" = the rubric was
 emptied (activate an item).
+
+## 13. The AI gateway (Tilburg.AI)
+
+Since 2026-09-13 the voice and the scoring run on the university's AI
+gateway, Tilburg.AI, not on OpenAI directly. The gateway is LiteLLM in
+front of Azure OpenAI (Sweden Central). Tilburg.AI (Robert Smolders)
+issues the keys and runs the gateway. There are two gateways, each with
+its own key:
+
+| Gateway | Address | Use |
+|---|---|---|
+| Production | `https://api.tilburg.ai/v1` | The live app |
+| Testing | `https://api.testing.tilburg.ai/v1` | Local tests only |
+
+A testing key does not work on production, and the reverse.
+
+**When every interview fails to start** ("Could not start the interview"):
+
+1. Check that the key is saved: the Settings screen shows a masked key.
+2. Check the name lookup from outside the university:
+   `dig @1.1.1.1 api.tilburg.ai A` must answer `status: NOERROR` with an
+   address. `SERVFAIL` means a DNS or DNSSEC fault at the university
+   (this happened on 2026-09-11). Campus networks can still work while
+   everyone else fails, so test from a home network or with the command.
+3. Check the Worker logs (section 12) for "mint failed" lines.
+4. Tell Tilburg.AI the time of the failure and the error. They find the
+   request in the gateway logs by time.
+
+**When scoring fails for everyone**, check the Worker logs for "scoring
+failed". "The AI gateway rate limit was hit." means the key is over its
+limit; ask Tilburg.AI to raise it.
+
+**Go back to OpenAI for a while.** If the gateway is down for a long time,
+the previous release still runs on OpenAI. `PROTOCOLS.md` (2026-09-13,
+Rollback) has the two steps: roll the Worker back, then paste the OpenAI
+key on the Settings screen.

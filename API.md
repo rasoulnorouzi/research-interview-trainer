@@ -41,7 +41,7 @@ The student session is a signed cookie, not a server-side session store.
 
 The cookie is stateless: reading it needs no database call. Because of
 this, it does not reflect a student deactivation that happened after the
-cookie was issued. Every handler that spends the OpenAI key re-checks
+cookie was issued. Every handler that spends the gateway key re-checks
 `roster.active = 1` from the database itself; it does not trust the
 cookie alone for that check. A reimplementation must preserve this
 re-check, not treat the signed cookie as sufficient proof of a still-active
@@ -359,7 +359,7 @@ and one sentence, and no metrics table, rubric or feedback.
 | `400` | `{"error": "Malformed report."}` or a more specific message | Body fails validation |
 | `413` | `{"error": "The transcript is too large."}` | Over 200 KB serialized |
 | `404` | `{"error": "That persona is not available."}` | No active persona with that id |
-| `503` | `{"error": "The service is not configured yet. Tell your instructor."}` | No OpenAI key set, or the rubric has no active criteria |
+| `503` | `{"error": "The service is not configured yet. Tell your instructor."}` | No gateway key set, or the rubric has no active criteria |
 | `502` | `{"error": "Scoring failed. Use Retry."}` | One or more evaluator calls (one per active criterion, plus the feedback call) failed after its retry |
 
 Scoring is all-or-nothing. On the `502` case, nothing is stored and no
@@ -463,7 +463,7 @@ In local development only, setting `DEV_ALLOW_INSECURE_ADMIN=1` in
 `.dev.vars` bypasses this check entirely and identifies the caller as
 `dev@localhost`. This variable must never be set in `wrangler.jsonc` or
 any deployed configuration; doing so would open the roster, the personas,
-and the masked-but-rotatable OpenAI key to anyone who can reach the
+and the masked-but-rotatable gateway key to anyone who can reach the
 Worker.
 
 | Method | Path | Request body | Response |
@@ -501,7 +501,7 @@ Worker.
 
 ### Key masking rule
 
-`GET /api/admin/settings` never returns the OpenAI key in full. If a key
+`GET /api/admin/settings` never returns the gateway key in full. If a key
 is set, its value in the response is `sk-...` followed by its last four
 characters. If no key is set, the `openai_api_key` entry is absent from
 the response entirely, rather than present with an empty value; this is
@@ -686,7 +686,7 @@ of the app depends on.
 
 - **The scoring calls stay independent.** One call per active criterion
   (8 in the seeded rubric, up to 20), plus one qualitative-feedback
-  call, every one a separate call to the OpenAI Responses API with a
+  call, every one a separate `/v1/responses` call to the gateway with a
   fresh context. No evaluator call ever sees another criterion's
   definition, another criterion's score, or the persona's own system
   instruction. Collapsing this into one call reintroduces the anchoring
@@ -706,8 +706,8 @@ of the app depends on.
   `POST /api/session` and `POST /api/report` both query
   `roster ... AND active = 1` themselves. The session cookie is stateless
   and cannot reflect a deactivation that happened after it was issued.
-- **The OpenAI key never appears in a response body, a thrown error
-  message, or a log line.** Every OpenAI-facing call maps its failure to
+- **The gateway key never appears in a response body, a thrown error
+  message, or a log line.** Every gateway-facing call maps its failure to
   one of four fixed strings before it leaves `worker/openai.ts`; no
-  response body or header from OpenAI is ever read into a message that
+  response body or header from the gateway is ever read into a message that
   could reach a client or a log aggregator.

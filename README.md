@@ -1,53 +1,74 @@
 # Research Interview Trainer
 
-Nothing to install — students open the link, log in with their university
-email address and a mailed code, and start. No API key, no account of their
-own to set up. The site is served over HTTPS, which the browser requires
-before it will grant microphone access.
+Students practise qualitative research interviewing. They hold a spoken
+interview with an AI interviewee, then get a scored report on their
+interviewing technique.
 
-A React app, served by a Cloudflare Worker, for teaching students how to
-conduct qualitative research interviews. The student speaks (voice only) with
-an AI-simulated interviewee via the OpenAI Realtime API. Their own words
-appear as they say them. When the interview ends, the app produces a detailed
-report, which is also emailed to the student and the instructor:
+Nothing to install. Students open the link, log in with their university
+email address and a mailed code, and start. They need no API key and no AI
+account of their own. The site is served over HTTPS, which the browser
+requires before it grants microphone access.
 
-- **Speaking metrics** (computed locally from the audio itself): duration,
-  per-side speaking time and turn averages, silence, talk ratio, questions
-  asked, words spoken, turn counts, longest turn.
-- **Rubric assessment** (AI-scored): eight interviewing-skills criteria —
-  open vs. closed questions, follow-up probing, noticing and pursuing cues,
-  depth of discovery, avoiding leading questions, rapport, neutrality, and
-  structure. Each is scored 1–5 by an **independent** evaluator call that sees
-  only that one criterion — avoiding anchoring bias between scores — plus a
-  ninth call for qualitative strengths, improvements, notable quoted moments,
-  and a summary.
+## How it works
+
+A React app, served by a Cloudflare Worker with a D1 database. The student
+and the interviewee speak; there is no typing. The voice runs over WebRTC,
+straight from the browser to the university's AI gateway, Tilburg.AI
+(LiteLLM in front of Azure OpenAI, Sweden Central). The Worker never
+carries audio. It logs students in, mints a short-lived voice token, scores
+the interview and emails the report.
+
+The transcript is not shown during the interview. The student reads it in
+the report. An interviewee answer that the student cut off keeps only the
+words the student heard, ends in "…", and carries the label
+"(interrupted)".
+
+The student clicks "Submit interview for scoring" at the end. The report is
+shown on screen and emailed to the student and the instructor:
+
+- **Speaking metrics**, measured from the audio: duration, speaking time
+  per side, turn averages, silence, talk ratio, questions asked, words
+  spoken, turn counts, longest turn.
+- **Rubric assessment**, scored by AI: by default eight interviewing
+  criteria (open vs. closed questions, follow-up probing, noticing and
+  pursuing cues, depth of discovery, avoiding leading questions, rapport,
+  neutrality, structure). The instructor edits the rubric, and each
+  criterion has its own scale. Each criterion is scored by an
+  **independent** evaluator call that sees only that one criterion, to
+  avoid anchoring bias between scores.
+- **Feedback**: a separate call writes strengths, improvements, quoted
+  moments and a summary. The instructor can switch it off, and can keep
+  the scores from the students.
 
 ## Interviewees
 
-Three built-in personas with detailed backstories (a nurse who left
-healthcare, a teacher who left education, a first-generation student who
-left university), managed from the instructor dashboard. There is no
-student-facing option to define a custom persona; picking a persona for a
-cohort is now an instructor task.
+Three built-in personas (a nurse who left healthcare, a teacher who left
+education, a first-generation student who left university), plus any the
+instructor makes on the dashboard. Each persona tells its story in layers:
+a careful interviewer reaches the real reason, a careless one does not.
+The instructor shows a persona to all students or only to chosen roster
+cohorts.
 
 ## Using it as a student
 
 1. Open the link your instructor gave you.
-2. Log in with your university email address. You'll get a 6-digit code by
-   email; enter it to continue. Tick "Remember this device" to skip this next
-   time.
+2. Log in with your university email address. You get a 6-digit code by
+   email. Enter it to continue. "Remember this device" is ticked by
+   default; untick it on a shared computer.
 3. Choose an interviewee, allow microphone access, and start.
+4. When you finish, click "Submit interview for scoring".
 
-No API key and no OpenAI account of your own is needed. The university's key
-is used server-side. When the interview ends, your report is shown on screen
-and emailed to you and your instructor.
+## For the instructor
+
+The dashboard is at `/admin`, behind Cloudflare Access. It manages the
+roster and its cohorts, the personas, the rubric, the settings (the
+gateway key, the models, the time limit, the session quota, report
+sharing, the welcome panel) and the submissions.
+[OPERATIONS.md](OPERATIONS.md) explains each screen and the safe values.
 
 ## Running it locally
 
-This is a two-part app now: a static client and a Cloudflare Worker that
-serves the API. For most UI work, the client alone is enough.
-
-**Client only** (no login, no API, for UI changes upstream of the login
+**Client only** (no login, no API; for UI changes before the login
 screen):
 
 ```bash
@@ -55,50 +76,61 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:5173** — not the LAN address Vite also prints. Only
-`localhost` counts as a secure context, so the microphone is silently blocked
-on `http://192.168.x.x:5173`.
+Open **http://localhost:5173**, not the LAN address Vite also prints. Only
+`localhost` counts as a secure context, so the microphone is silently
+blocked on `http://192.168.x.x:5173`.
 
-**Client and Worker together**, which behaves like the deployed app,
-including login, persona data, and scoring:
+**Client and Worker together**, which behaves like the deployed app:
 
 ```bash
 npm run build
 npm run dev:worker
 ```
 
-This needs a local D1 database, migrated the same way as production; see
-[DEPLOYMENT.md](DEPLOYMENT.md) for the full setup, including secrets and the
-one-time key bootstrap.
+This needs a local D1 database and a `.dev.vars` file; see
+[DEPLOYMENT.md](DEPLOYMENT.md). Set `AI_BASE_URL` in `.dev.vars` to the
+testing gateway (`https://api.testing.tilburg.ai/v1`), open
+`http://localhost:8787/admin`, and paste the testing key on the Settings
+screen.
 
 ## Scripts
 
-- `npm run dev` — client-only development server
-- `npm run dev:worker` — client and API together, via `wrangler dev`
-- `npm run build` — production build (static files in `dist/`, served by the Worker)
-- `npm run preview` — serve the production build (client only)
-- `npm run lint` — TypeScript check, client and Worker
-- `npm run seed:gen` — regenerate `seed-personas.sql` from `src/personas.ts`
+- `npm run dev`: client-only development server
+- `npm run dev:worker`: client and API together, through `wrangler dev`
+- `npm run build`: production build (static files in `dist/`, served by
+  the Worker)
+- `npm run preview`: serve the production build (client only)
+- `npm run lint`: TypeScript check, client and Worker
+- `npm run seed:gen`: regenerate `seed-personas.sql` from
+  `src/personas.ts`
+- `npm run seed:gen:criteria`: regenerate `seed-criteria.sql` from
+  `src/criteria.ts`
+- `npm run backup`: export the production database to
+  `backup-<date>.sql` (gitignored; it holds the API key)
+- `npm run backup:local`: the same for the local database
 
-The client still has only two dependencies, `react` and `react-dom`, and no
-OpenAI SDK anywhere. The Worker talks to OpenAI over plain `fetch`; the
-browser still talks to OpenAI directly over WebRTC for the interview audio
-itself, only the token that authorizes it is minted server-side now.
+The client has two dependencies, `react` and `react-dom`. There is no AI
+SDK anywhere: the Worker and the browser use plain `fetch` and WebRTC.
 
-Prompt design and the anti-injection rules are documented in
-[PROMPTING.md](PROMPTING.md); the migration from Gemini in
-[OPENAI-MIGRATION.md](OPENAI-MIGRATION.md); the backend design in
-[BACKEND-PLAN.md](BACKEND-PLAN.md).
+## Documentation
+
+| File | What it covers |
+|---|---|
+| [CLAUDE.md](CLAUDE.md) | Architecture, design constraints, the gateway, gotchas. Read it before you change code. |
+| [API.md](API.md) | The HTTP contract of the Worker, student and admin routes |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | First deploy, update deploys, rollback |
+| [OPERATIONS.md](OPERATIONS.md) | Running a cohort day to day |
+| [PROTOCOLS.md](PROTOCOLS.md) | Each release: what changed, decisions, tests, deploy, rollback |
+| [PROMPTING.md](PROMPTING.md) | Persona and evaluator prompts, the prompt-injection guard |
+| [BACKEND-PLAN.md](BACKEND-PLAN.md) | The original backend design (history) |
+| [OPENAI-MIGRATION.md](OPENAI-MIGRATION.md) | The move from Gemini to OpenAI (history) |
 
 ## Deployment
 
-The app deploys as a Cloudflare Worker. See [DEPLOYMENT.md](DEPLOYMENT.md)
-for the full first-deploy and update procedure, and
-[OPERATIONS.md](OPERATIONS.md) for running a cohort day to day. `API.md`
-documents the backend contract for anyone reimplementing it elsewhere.
+The app deploys as a Cloudflare Worker: `npm run build && npx wrangler
+deploy`. See [DEPLOYMENT.md](DEPLOYMENT.md) first, and the newest section
+of [PROTOCOLS.md](PROTOCOLS.md) for the last release.
 
-The `legacy-client` branch keeps the earlier pure client-side build, the one
-where a student pasted their own OpenAI API key and the app deployed to
-GitHub Pages on every push to `main`. `main` no longer deploys there;
-`legacy-client` is kept only as a fallback if the Worker ever needs to be
-rolled back for a semester.
+The `legacy-client` branch keeps the earlier pure client-side build, where
+a student pasted their own OpenAI API key and the app deployed to GitHub
+Pages. It is kept only as a fallback.

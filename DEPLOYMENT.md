@@ -74,7 +74,7 @@ npx wrangler d1 execute riv-trainer --remote --file=seed-settings.sql
 ```
 
 This sets the interview time limit, the total session quota, and the default
-models. It does not set the OpenAI key or the instructor email list. Step 6
+models. It does not set the gateway key or the instructor email list. Step 7
 sets the key. [OPERATIONS.md](OPERATIONS.md) covers the instructor email list.
 
 **5. Generate and load the built-in personas and rubric.**
@@ -110,12 +110,12 @@ npx wrangler secret put RESEND_API_KEY
 Wrangler prompts for each value on stdin. `SESSION_SECRET` signs the
 student login cookie. `RESEND_API_KEY` is your Resend API key.
 
-**Caution.** The OpenAI API key is not a Worker secret. It is not set with
+**Caution.** The gateway key is not a Worker secret. It is not set with
 `wrangler secret put`. Step 7 sets it a different way.
 
 **7. Bootstrap the AI gateway key.**
 
-The key for the university AI gateway (Tilburg.AI; before 2026-09-11 an
+The key for the university AI gateway (Tilburg.AI; before 2026-09-13 an
 OpenAI key) lives in the `settings` table, row `openai_api_key`, not in a
 Worker secret. This lets the instructor rotate it later from the dashboard,
 without a new deploy. The gateway address is the `AI_BASE_URL` var in
@@ -144,7 +144,7 @@ rm set-key.sql
 
 After this first bootstrap, rotate the key from the dashboard Settings
 screen instead. [OPERATIONS.md](OPERATIONS.md) covers rotation. The
-dashboard validates a new key against OpenAI before it saves it.
+dashboard validates a new key against the gateway before it saves it.
 
 **8. Deploy the Worker.**
 
@@ -330,6 +330,40 @@ Run this after any code change to `worker/`, `shared/`, or `src/`.
 alters a table, run the matching `wrangler d1 execute` command from section
 2, step 3, against the remote database, before or after the deploy as the
 change requires.
+
+### Switching an existing deployment to the gateway (2026-09-13)
+
+A Worker from before 2026-09-13 calls OpenAI with an OpenAI key. The new
+Worker calls the university gateway and needs the gateway key in the same
+settings row. The old Worker checks keys against OpenAI, so the gateway
+key cannot be saved before the deploy. Interviews fail from the deploy
+until the key is saved. Do this at a quiet moment.
+
+1. Make sure wrangler's login can reach D1. If a `--remote` command
+   answers code `7403` ("not authorized"), run `npx wrangler login` again.
+2. `npm run backup`. The backup file holds the OpenAI key in plain text.
+   Keep it private and never commit it. It is the way back.
+3. Check the model rows:
+
+   ```bash
+   npx wrangler d1 execute riv-trainer --remote --command "SELECT key, value FROM settings WHERE key IN ('interview_model','scoring_model','transcription_model')"
+   ```
+
+   Each value must be a model the gateway offers (`university: true` in
+   `shared/models.ts`). Correct a wrong row on the Settings screen right
+   after the deploy.
+4. Check that `AI_BASE_URL` in `wrangler.jsonc` is
+   `https://api.tilburg.ai/v1`.
+5. `npm run lint && npm run build && npx wrangler deploy`. Write down the
+   new version id and the previous one.
+6. At once: open the dashboard, **Settings**, paste the production gateway
+   key, and save. The dashboard checks the key against the gateway.
+7. Run one interview and submit it for scoring.
+
+To go back: `npx wrangler rollback <previous version id>`, then paste the
+OpenAI key on the Settings screen again. The old Worker cannot use the
+gateway key. The `openai_api_key` row of the backup file from step 2 holds
+the OpenAI key.
 
 ### Deploying persona cohorts to an existing database
 

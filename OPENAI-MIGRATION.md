@@ -2,6 +2,13 @@
 
 **Status: done.** Gemini was removed entirely and the app now runs on OpenAI.
 This file is the record of *why*, and of what was measured rather than assumed.
+
+**Update 2026-09-13.** The same OpenAI-shaped calls no longer go to
+`api.openai.com`. They go to the university's AI gateway, Tilburg.AI
+(LiteLLM in front of Azure OpenAI). The event names and behaviours below
+still hold. The differences (the mint body shape, `callsUrl`, the models
+on offer) are in `CLAUDE.md` and in the 2026-09-13 section of
+`PROTOCOLS.md`.
 Prompt-safety design lives in [`PROMPTING.md`](PROMPTING.md).
 
 Researched and implemented 2026-08-10.

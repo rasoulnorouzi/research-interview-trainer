@@ -18,25 +18,28 @@ character" properly. `buildCustomPersona()` and its guardrails still exist in
 `src/personas.ts` but are unused dead code — nothing calls them. The GitHub
 repo is `research-interview-trainer`; the local folder name may differ.
 
-## Azure migration (branch `azure-migration`, in progress)
+## AI gateway (Tilburg.AI)
 
-The university asked the project to move off the direct OpenAI key onto its
-own AI gateway, Tilburg.AI. This branch holds that work. **The code is done
-and tested locally (2026-09-11).** The Worker reads the gateway address from
-the `AI_BASE_URL` var, mints with the gateway's body shape (below), returns
-the WebRTC call address to the browser as `callsUrl` in the
-`POST /api/session` response, and retries once on the gateway's stray `404`.
-A full interview through the real app passed against the testing gateway:
-login, WebRTC voice, the live transcript, scoring with ten `/v1/responses`
-calls, and the report email. **Do not deploy this branch** until Robert rolls
-the patch to production. Until then, production interviews would fail. UvT
-fixed the DNSSEC fault below on 2026-09-13.
+Since the 2026-09-13 release, every AI call goes to the university's own AI
+gateway, Tilburg.AI, not to `api.openai.com`. The university asked for this.
+The Worker reads the gateway address from the `AI_BASE_URL` var
+(`https://api.tilburg.ai/v1` in `wrangler.jsonc`). It mints the voice token
+there with the gateway's body shape (below) and returns the WebRTC call
+address to the browser as `callsUrl` in the `POST /api/session` response.
+The browser sends its SDP offer to `callsUrl`, so the audio still goes
+straight from the browser to the gateway (constraint 5). The Worker and the
+browser each retry once on the gateway's stray `404`. The settings row
+`openai_api_key` kept its name and holds the gateway key; `worker/openai.ts`
+kept its name too. The work was done on branch `azure-migration` and merged
+onto the 2026-09-11 release on branch `azure-release`. `PROTOCOLS.md`
+(2026-09-13) has the changes, the tests, the deploy and the rollback.
 
 To run it locally, set `AI_BASE_URL=https://api.testing.tilburg.ai/v1` in
-`.dev.vars`. Normal DNS works since 2026-09-13, so no `/etc/hosts` entry and
-no relay are needed. Put the testing key in the local D1 `openai_api_key`
-row. The production D1
-row still holds the OpenAI key until the deploy.
+`.dev.vars`, start `npm run dev:worker`, and paste the testing key on the
+local dashboard's Settings screen (`http://localhost:8787/admin`). For the
+production gateway, use `https://api.tilburg.ai/v1` and the production key.
+The key check runs against whichever gateway `AI_BASE_URL` names, so a
+testing key is refused while the var points at production, and the reverse.
 
 **The gateway.** LiteLLM behind nginx, in front of Azure OpenAI in Sweden
 Central. It is OpenAI-compatible: `Authorization: Bearer <key>` and `/v1/...`
@@ -63,7 +66,8 @@ paths.
   session. The model speaks, and `gpt-live-transcribe` streams
   `conversation.item.input_audio_transcription.delta` events during speech.
 
-**The WebRTC token mint (blocked until 2026-09-11, works on testing now).**
+**The WebRTC token mint (blocked until 2026-09-11, fixed by a gateway
+patch).**
 The app is browser-direct WebRTC (constraint 5). The Worker mints an
 ephemeral token at `POST /v1/realtime/client_secrets`, and the browser sends
 its SDP offer to `POST /v1/realtime/calls` with that token. On the gateway
@@ -83,8 +87,8 @@ cooldown_list=[...]"`.
 - 2026-09-11: Robert patched the testing gateway (`api.testing.tilburg.ai`).
   The patch works. **The mint body must carry a top-level `"model"` and an
   empty `session.model`:** `{"model": "gpt-realtime-2.1-mini", "session":
-  {"type": "realtime", "model": "", ...}}`. The body that `worker/openai.ts`
-  sends today (no top-level model, `session.model` set) fails at Azure.
+  {"type": "realtime", "model": "", ...}}`. The OpenAI-style
+  body (no top-level model, `session.model` set) fails at Azure.
   LiteLLM then cools the deployment for 5 s and answers `429 "No deployments
   available"`, which hides the real Azure error. That `429` is what every
   test before 17:06 UTC hit; it was never a cooldown from somewhere else.
@@ -149,38 +153,19 @@ api.testing.tilburg.ai 51.105.176.118"`; that pin is no longer needed.
 `gpt-realtime-2.1` answers `403 team not allowed` for our key. Robert must
 grant it, or the voice cannot stay in the EU.
 
-**Status and resume checklist (waiting since 2026-09-11).** Production runs
-the 2026-09-11 release on OpenAI (`main` at `22ff373`, Worker `79a99a60`).
-It shows every model and checks keys against OpenAI. Both change only when
-this branch ships. Resume when both blockers are gone:
+**Status (2026-09-13).** Both blockers of 2026-09-11 are gone on the
+testing side: DNS works, and the merged code passed a full interview
+through the patched testing gateway (see `PROTOCOLS.md`). The production
+gateway test and the deploy are recorded in the same section.
 
-1. DNS is fixed: `dig @1.1.1.1 api.tilburg.ai A` answers `NOERROR` with an
-   address. **Done 2026-09-13.**
-2. The production gateway mints. Put the production gateway key in the
-   local D1 `openai_api_key` row, set `AI_BASE_URL=https://api.tilburg.ai/v1`
-   in `.dev.vars` (no relay is needed once DNS works), and run one interview
-   with `npm run dev:worker`. A token `200` and an SDP answer `201` mean
-   Robert's patch is on production. If not, ask Robert to roll it out.
-3. Commit this branch, then bring it onto `main`. `main` moved on 2026-09-11
-   (welcome panel, persona cohorts, transcript after the interview,
-   heard-text note). Expect conflicts in `src/lib/liveSession.ts`: keep
-   `main`'s `cutToHeard()` and heard-text note, and this branch's
-   `callsUrl`, `postOffer()` retry and neutral error texts. Also expect
-   conflicts in `shared/types.ts`, `worker/report.ts`, `admin/Settings.tsx`
-   and the docs. A merged copy was built and tested on 2026-09-11; its only
-   code conflict was one comment block.
-4. Test: `npm run lint`, `npm run build`, one full interview with an
-   interruption through the production gateway, and one scored report.
-5. Deploy as the 2026-09-11 protocol in `PROTOCOLS.md` does: `npm run
-   backup`, tag the release, `npx wrangler deploy`. Then save the
-   production gateway key on the dashboard's Settings screen at once. The
-   new Worker checks keys against the gateway, so the key cannot be saved
-   before the deploy, and interviews fail between the deploy and the save.
-   Deploy at a quiet moment.
-6. Rollback: `npx wrangler rollback <previous version id>`, then paste the
-   OpenAI key on the Settings screen again. The old Worker cannot use the
-   gateway key.
-7. EU data residency (above) is still open.
+**Switching production, and back.** The new Worker checks keys against the
+gateway, so the gateway key cannot be saved before the deploy, and
+interviews fail between the deploy and the save. Deploy at a quiet moment
+and save the production gateway key on the Settings screen at once
+(`DEPLOYMENT.md` §5). To go back: `npx wrangler rollback <previous version
+id>`, then paste the OpenAI key on the Settings screen again. The old
+Worker cannot use the gateway key. The `openai_api_key` row of the
+pre-deploy backup file holds the OpenAI key.
 
 Fallback if the mint never works on production: relay the audio over
 WebSocket through the Worker. That works today, but it breaks constraint 5
@@ -311,11 +296,12 @@ plain .md, more than one saves a ZIP of Markdown files written by
 ## Architecture
 
 **One Cloudflare Worker serves both the static app and `/api/*`, from the
-same origin.** There is no CORS anywhere in the system for that reason. The
-browser still talks to OpenAI directly over WebRTC for audio — only token
-minting and scoring moved server-side; see the audio section below and
-constraint 5. **Two client dependencies total: `react`, `react-dom`** — there
-is no OpenAI SDK, on either side. D1 (SQLite) is the only datastore: no KV,
+same origin.** There is no CORS between the app and its own API for that
+reason. The browser talks to the AI gateway directly over WebRTC for audio
+(the gateway's `/v1/realtime/calls` answers CORS) — only token minting and
+scoring run server-side; see the audio section below and constraint 5.
+**Two client dependencies total: `react`, `react-dom`** — there is no AI
+SDK, on either side. D1 (SQLite) is the only datastore: no KV,
 no Durable Objects, so the schema lifts to plain SQLite or Postgres on a
 university VM unchanged if that migration ever happens (`BACKEND-PLAN.md` §9).
 
@@ -469,7 +455,7 @@ zero. `liveSession.ts` attaches it in `ontrack` for exactly this reason.
    the signal to stop and rethink, not to keep adding routes. TypeScript on
    Cloudflare Workers was the implementation choice over FastAPI + Python:
    Workers is where the client already had to be redeployed, D1 needed no
-   separate hosting decision, and the OpenAI- and email-facing modules
+   separate hosting decision, and the AI- and email-facing modules
    (`worker/openai.ts`, `worker/email.ts`) are kept free of Cloudflare
    imports specifically so they lift to Python almost mechanically if the
    project ever does move to the university's own infrastructure
@@ -576,7 +562,7 @@ that touches one. Therefore:
   stays readable after the instructor changes a criterion's scale later; rows
   stored before this change have no `max` and every renderer defaults it to
   `5`. An empty, all-inactive rubric makes `POST /api/report` answer `503`,
-  the same response a missing OpenAI key produces.
+  the same response a missing gateway key produces.
 - **Failure is all-or-nothing now, which is the one real behaviour change
   from the client version.** The browser used to render eight rows and offer
   a retry on just the ninth; the server cannot do that without reconciling a
@@ -598,10 +584,10 @@ criteria render as `n/a` and are excluded from the points-based `overall`
 score rather than counted as zero. Keep this distinction — collapsing it back
 into a low score silently punishes students for a short session.
 
-Errors from OpenAI are deliberately **not** surfaced to students in detail
+Errors from the gateway are deliberately **not** surfaced to students in detail
 anymore. `describeScoringError()` and its `/v1/models` hint are gone: they
 were client-only, and a student is no longer the one who can fix a bad key or
-an unreachable model. `worker/openai.ts` maps every OpenAI failure to one of
+an unreachable model. `worker/openai.ts` maps every gateway failure to one of
 four fixed strings before it can reach a response body or a log line — see
 the key-hygiene note at the top of that file — and `worker/report.ts` turns
 those into the generic `502` a student sees. An instructor diagnosing a
@@ -763,7 +749,7 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
 - **`DEV_ALLOW_INSECURE_ADMIN` belongs only in `.dev.vars`, never in
   `wrangler.jsonc`.** It bypasses the Cloudflare Access check on
   `/api/admin/*` for local testing. A copy of it in `wrangler.jsonc` would
-  deploy live and open the roster, the personas and the OpenAI key to
+  deploy live and open the roster, the personas and the gateway key to
   anyone. `worker/access.ts` fails closed (rejects, does not wave through)
   whenever `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` is unset, which is the
   correct state for this file to be absent in.
@@ -775,7 +761,10 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   Cloudflare DNS) and mail reaches every address, students included. Keep
   this note in mind only if you ever set up Resend again for a different
   deployment. See `DEPLOYMENT.md` §4.
-- **The OpenAI key is a `settings` row, not a Worker secret.** `wrangler
+- **The gateway key is a `settings` row, not a Worker secret.** The row is
+  still named `openai_api_key` (it held the OpenAI key until 2026-09-13).
+  The gateway address is not a secret either: it is the `AI_BASE_URL` var
+  in `wrangler.jsonc`, overridden in `.dev.vars` for local tests. `wrangler
   secret put` is for `SESSION_SECRET` and `RESEND_API_KEY` only. The key is
   bootstrapped once by hand into D1 (`DEPLOYMENT.md` §2 step 7) and rotated
   afterward from the dashboard, which validates it live before saving and
@@ -795,6 +784,8 @@ npm run lint       # tsc --noEmit against the client, then again against the Wor
 npm run build      # static output in dist/, which the Worker serves
 npm run preview    # serve the production build (client only, still no /api)
 npm run seed:gen   # regenerate seed-personas.sql from src/personas.ts
+npm run seed:gen:criteria # regenerate seed-criteria.sql from src/criteria.ts
+npm run backup     # export the production D1 to backup-<date>.sql (holds the key; gitignored)
 ```
 
 `npm run dev` alone has no backend behind it, so the login screen and
@@ -843,7 +834,7 @@ branch:
 
 The student no longer pastes an API key. They log in with a university email
 and a mailed 6-digit code (`LoginScreen.tsx`, `worker/auth.ts`); the
-university's OpenAI key lives server-side in the `settings` table, never in
+university's gateway key lives server-side in the `settings` table, never in
 the browser. `localStorage` now holds only `riv.lastPersona`. `riv.apiKey`,
 `riv.rememberKey`, `riv.interviewModel` and `riv.scoringModel` are gone along
 with the setup-screen fields that wrote them: the key is server-side and the
@@ -870,6 +861,12 @@ before building; full detail is in `OPENAI-MIGRATION.md` §7.
   `session_grants` quota as the real backstop (a per-student total,
   `sessions_total`, since 2026-08-26; the dashboard Students screen (the roster) can reset
   one student's grants).
+
+**Verified through the Tilburg.AI testing gateway with the merged code
+(2026-09-13).** Mint `200` for every persona and all ten voices; a full
+browser WebRTC interview with interruptions, the heard-text note and a
+scored, emailed report. Details and the raw log path are in `PROTOCOLS.md`
+(2026-09-13). The event names below held unchanged through the gateway.
 
 **Verified against the live OpenAI API with a real key, from the earlier
 browser-direct design (2026-08-10).** The CORS finding below described why a

@@ -7,6 +7,101 @@ one instruction per action.
 
 ---
 
+## 2026-09-13 — AI calls through the university gateway (Tilburg.AI)
+
+Branch `azure-migration`, one commit (`5614894`), merged onto the
+2026-09-11 release on branch `azure-release` (merge `4f7fa9e`), then into
+`main`. No schema change. One new Worker var: `AI_BASE_URL`. The release
+is tagged `release-2026-09-13`. The state before it (Worker version
+`79a99a60`) is tagged `release-2026-09-11`.
+
+### What changed
+
+1. **Every AI call goes to the gateway.** The university asked the project
+   to stop calling OpenAI with its own key. The Worker reads the gateway
+   address from `AI_BASE_URL` (`https://api.tilburg.ai/v1`). The voice
+   token mint, every scoring call and the key check on the Settings screen
+   go there. The gateway is LiteLLM in front of Azure OpenAI in Sweden
+   Central, and it speaks the OpenAI API. The settings row
+   `openai_api_key` kept its name and now holds the gateway key.
+2. **The mint body has the gateway's shape:** a top-level `"model"` and an
+   empty `session.model`. The OpenAI shape fails at Azure, and LiteLLM
+   hides that error behind `429 "No deployments available"`.
+3. **The browser sends its SDP offer to `callsUrl`,** a new field of the
+   `POST /api/session` response. The browser retries once on a `404` or a
+   network error. The Worker retries its own gateway calls once on a
+   `404`. One gateway upstream answers a bare nginx `404` now and then.
+4. **Only the university's models can be selected.** The model dropdowns
+   offer `gpt-realtime-2.1-mini`, `gpt-5.6-terra` and
+   `gpt-live-transcribe`. Other models show greyed out, and a saved model
+   outside the list gets a red warning.
+5. **Neutral texts.** Student and dashboard texts no longer name OpenAI.
+6. **Voice preview** answers `502` with a message, because the gateway has
+   no text-to-speech model yet.
+
+### Decisions
+
+- The audio stays browser-direct over WebRTC (constraint 5). A WebSocket
+  relay through the Worker worked in tests and stays the fallback.
+- The instructor chose that only university models can be selected
+  (2026-09-11).
+- The gateway key uses the existing settings row, so masking, rotation and
+  removal work unchanged.
+- Open: EU data residency. The instructor chose strict EU, but
+  `gpt-realtime-2.1-mini` and `gpt-live-transcribe` are global
+  deployments. The EU voice model `gpt-realtime-2.1` answers `403` for our
+  key. Tilburg.AI must grant it.
+
+### Blockers cleared before the release
+
+- **LiteLLM bug #24659.** The gateway built the Azure mint address in the
+  old preview shape, so every mint failed. Robert Smolders (Tilburg.AI)
+  applied our patch, `litellm-azure-webrtc-fix.patch`, to the testing
+  gateway on 2026-09-11.
+- **DNSSEC.** On 2026-09-11 `tilburg.ai` failed DNSSEC validation: the
+  `.ai` registry held a DS record for key 107, and the zone was signed
+  with key 54271. Every validating resolver, Cloudflare's included,
+  answered `SERVFAIL`. UvT IT corrected the DS record by 2026-09-13.
+
+### Tests done
+
+- 2026-09-11, testing gateway (IP pinned during the DNS fault): an A/B
+  test of the mint body; a full browser WebRTC call; a full interview in
+  the app with scoring and the report email.
+- 2026-09-13, testing gateway, normal DNS, merged code:
+  - `npm run lint` and `npm run build` clean.
+  - Mint `200` for the three personas and for all ten voices. An unknown
+    persona gives `404`. A fake key is refused (`400`), and the stored key
+    stays.
+  - A full interview in headless Chrome with a recorded voice as the
+    microphone: SDP answer `201`, three interruptions, the heard-text note
+    sent each time, no restart of the answer, no transcript on screen
+    during the interview, the report scored in 14.6 s with the
+    "(interrupted)" labels. Raw log:
+    `~/Desktop/tilburg-app-e2e-raw-20260913T153701Z.log`.
+- Production gateway: pending.
+
+### Deploy procedure
+
+`DEPLOYMENT.md` §5, "Switching an existing deployment to the gateway", has
+the steps: backup, check the model rows, deploy, then save the production
+gateway key on the Settings screen at once. Interviews fail between the
+deploy and the save.
+
+### Rollback
+
+- **Worker, immediately:**
+  `npx wrangler rollback 79a99a60-61f3-4db0-87ce-abc2cbfe0457`. Then paste
+  the OpenAI key on the Settings screen again: the old Worker checks keys
+  against OpenAI and cannot use the gateway key. The `openai_api_key` row
+  of the pre-deploy backup file holds the OpenAI key.
+- **Code, in git:** `git revert -m 1 <merge commit>` on `main`. The tag
+  `release-2026-09-11` marks the old state.
+- **Forward again:** check out the tag `release-2026-09-13`, build, deploy,
+  and paste the gateway key.
+
+---
+
 ## 2026-09-11 — Welcome panel, persona cohorts, transcript after the interview
 
 Branch `next-release`, three commits (one per feature), merged into
