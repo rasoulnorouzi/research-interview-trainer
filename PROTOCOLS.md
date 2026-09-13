@@ -79,7 +79,19 @@ is tagged `release-2026-09-13`. The state before it (Worker version
     during the interview, the report scored in 14.6 s with the
     "(interrupted)" labels. Raw log:
     `~/Desktop/tilburg-app-e2e-raw-20260913T153701Z.log`.
-- Production gateway: pending.
+- Production gateway, 2026-09-13 16:07 to 16:08 UTC, local Worker with the
+  production key: the key check passes (`GET /v1/models` `200`, three
+  models), but every mint fails with `429` from the gateway (app `502`),
+  with a 25-minute and with a 12-minute limit. The same code and body
+  give `200` on testing. This is the failure the testing gateway had
+  before the patch, so the patch is most likely not on production yet.
+  **Not deployed.** Robert Smolders was asked to patch production. Raw
+  log: `~/Desktop/tilburg-prod-mint-raw-*.log`.
+- Production settings to change at the deploy: `interview_model` is
+  `gpt-realtime-2.1` (the gateway answers `403` for our key) and
+  `transcription_model` is `gpt-realtime-whisper` (not on the gateway).
+  Set them to `gpt-realtime-2.1-mini` and `gpt-live-transcribe`. Both
+  values also work on OpenAI, so they can change before the deploy.
 
 ### Deploy procedure
 

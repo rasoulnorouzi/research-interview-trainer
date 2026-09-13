@@ -155,8 +155,13 @@ grant it, or the voice cannot stay in the EU.
 
 **Status (2026-09-13).** Both blockers of 2026-09-11 are gone on the
 testing side: DNS works, and the merged code passed a full interview
-through the patched testing gateway (see `PROTOCOLS.md`). The production
-gateway test and the deploy are recorded in the same section.
+through the patched testing gateway (see `PROTOCOLS.md`). **The production
+gateway does not mint yet:** the production key works (`GET /v1/models`
+`200`), but `client_secrets` answers `429`, as testing did before the
+patch. Production stays on OpenAI until Robert patches production. Before
+the deploy, set the production `interview_model` to `gpt-realtime-2.1-mini`
+and `transcription_model` to `gpt-live-transcribe`; the current values are
+not on the gateway.
 
 **Switching production, and back.** The new Worker checks keys against the
 gateway, so the gateway key cannot be saved before the deploy, and
