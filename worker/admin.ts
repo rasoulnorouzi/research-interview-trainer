@@ -326,9 +326,13 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
     // fails at session start in front of a student. The list also encodes
     // hard constraint 3: every id on it streams the transcript while the
     // student speaks; a committed-turn transcriber must never be storable.
+    // Since 2026-09-11 it holds only the models the university AI gateway
+    // offers (the `university` flag in shared/models.ts).
     if (key === "transcription_model") {
       if (!TRANSCRIPTION_MODEL_IDS.includes(value)) {
-        return json(400, { error: "transcription_model must be one of the offered models." });
+        return json(400, {
+          error: "transcription_model must be one of the models the university AI gateway offers.",
+        });
       }
       updates.push([key, value]);
       continue;
@@ -363,7 +367,7 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
   if (apiKey !== undefined && apiKey !== "") {
     let works = false;
     try {
-      works = await validateApiKey(apiKey);
+      works = await validateApiKey({ baseUrl: env.AI_BASE_URL, apiKey });
     } catch {
       works = false;
     }
@@ -406,16 +410,21 @@ async function voicePreview(request: Request, env: Env): Promise<Response> {
 
   const settings = await getSettings(env, ["openai_api_key"]);
   const apiKey = settings.openai_api_key ?? "";
-  if (!apiKey) return json(503, { error: "No OpenAI API key is set. Save one under Settings first." });
+  if (!apiKey) return json(503, { error: "No API key is set. Save one under Settings first." });
 
   let audio: ArrayBuffer;
   try {
-    audio = await synthesizeVoicePreview(apiKey, voice, VOICE_PREVIEW_TEXT);
+    audio = await synthesizeVoicePreview({ baseUrl: env.AI_BASE_URL, apiKey }, voice, VOICE_PREVIEW_TEXT);
   } catch (err) {
-    // openai.ts throws only its four fixed strings; nothing from OpenAI's
+    // openai.ts throws only its four fixed strings; nothing from the gateway's
     // response can end up in this log line or the body below.
     console.error("voice preview failed:", err instanceof Error ? err.message : "unknown");
-    return json(502, { error: "Could not fetch the voice sample. Try again." });
+    // The university gateway offers no text-to-speech model yet (2026-09-11),
+    // so this is the expected answer until one is added as gpt-4o-mini-tts.
+    return json(502, {
+      error:
+        "Could not fetch the voice sample. The university AI gateway may not offer the text-to-speech model yet.",
+    });
   }
 
   return new Response(audio, {

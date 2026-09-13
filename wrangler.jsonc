@@ -3,7 +3,7 @@
 // Secrets are NOT here. Set with `wrangler secret put <NAME>`:
 //   SESSION_SECRET   HMAC key for the signed session cookie (§6)
 //   RESEND_API_KEY   email dispatch
-// The university OpenAI key is NOT a secret either: it lives in the
+// The university AI gateway key is NOT a secret either: it lives in the
 // `settings` table (row `openai_api_key`), write-only from /api/admin, so it
 // can be rotated from the dashboard without a deploy. See BACKEND-PLAN.md §7.
 {
@@ -22,7 +22,11 @@
   "vars": {
     "ACCESS_TEAM_DOMAIN": "rasouldns.cloudflareaccess.com",
     "ACCESS_AUD": "f9bb9a4af8edd275dc920609a2c79290dcb1a79a41842fb324e25a0e2c6ad8f5",
-    "EMAIL_FROM": "Research Interview Trainer <trainer@rslnorouzi.site>"
+    "EMAIL_FROM": "Research Interview Trainer <trainer@rslnorouzi.site>",
+    // The university AI gateway (Tilburg.AI: LiteLLM in front of Azure OpenAI).
+    // Every AI call goes here, and the browser's WebRTC call address is built
+    // from it. The testing gateway is https://api.testing.tilburg.ai/v1.
+    "AI_BASE_URL": "https://api.tilburg.ai/v1"
   },
   "observability": { "enabled": true }
 }

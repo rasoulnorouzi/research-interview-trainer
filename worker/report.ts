@@ -121,9 +121,12 @@ export async function handleSession(request: Request, env: Env): Promise<Respons
     .first<{ id: string; name: string; voice_name: string; system_instruction: string }>();
   if (!persona) return json(404, { error: "That persona is not available." });
 
+  // The university AI gateway (AI_BASE_URL, wrangler.jsonc) with the key from
+  // settings.
+  const gw = { baseUrl: env.AI_BASE_URL, apiKey };
   let minted;
   try {
-    minted = await mintRealtimeToken(apiKey, {
+    minted = await mintRealtimeToken(gw, {
       model: settings.interview_model || DEFAULT_INTERVIEW_MODEL,
       // Instructor setting since 2026-08-31, enforced against the curated
       // streaming-only list on save (worker/admin.ts); trusted here, like a
@@ -149,6 +152,9 @@ export async function handleSession(request: Request, env: Env): Promise<Respons
     expiresAt: minted.expiresAt,
     limitMinutes,
     warnMinutes,
+    // The browser POSTs its SDP offer here with the token, so the audio goes
+    // straight to the gateway and never relays through this Worker (§5).
+    callsUrl: `${gw.baseUrl}/realtime/calls`,
   };
   // No `instructions` field: §7(a) of OPENAI-MIGRATION.md confirmed the mint
   // accepts them, so the persona text stays server-side.
@@ -231,10 +237,11 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     hiddenCore: personaRow.hidden_core,
   };
 
+  const gw = { baseUrl: env.AI_BASE_URL, apiKey };
   let scored;
   try {
     scored = await scoreAll(
-      apiKey,
+      gw,
       settings.scoring_model || DEFAULT_SCORING_MODEL,
       persona,
       transcript,

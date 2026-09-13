@@ -22,11 +22,13 @@ export interface SessionResult {
   endedByError?: string;
 }
 
-/** A model the student can pick on the setup screen. */
+/** A model the instructor can pick in the dashboard's Settings form (shared/models.ts). */
 export interface ModelChoice {
   id: string;
   label: string;
   note: string;
+  /** Offered by the university AI gateway to this app. False: shown greyed out, not selectable. */
+  university: boolean;
 }
 
 export interface Persona {
@@ -115,6 +117,8 @@ export interface SessionResponse {
   expiresAt: number;
   limitMinutes: number;
   warnMinutes: number;
+  /** Where the browser POSTs its SDP offer with `token`: the AI gateway's /realtime/calls. */
+  callsUrl: string;
   instructions?: string;
 }
 

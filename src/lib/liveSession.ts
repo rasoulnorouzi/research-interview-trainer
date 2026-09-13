@@ -2,7 +2,10 @@ import { SessionResponse, SessionResult, Speaker, TranscriptEntry } from "../typ
 import { api, ApiError } from "../api";
 import { SpeechMeter, createSpeechMeter } from "./audio";
 
-const REALTIME_BASE = "https://api.openai.com/v1/realtime";
+// The WebRTC call address is not hardcoded here: POST /api/session returns it
+// as `callsUrl`, built from the Worker's AI_BASE_URL (the university AI
+// gateway since 2026-09-11), so the address lives in one place.
+//
 // Streams the student's transcript while they are still speaking. The other
 // option, "gpt-transcribe", only transcribes after a committed turn — which is
 // the exact Gemini limitation this migration exists to remove. Do not swap it.
@@ -70,6 +73,8 @@ export class InterviewSession {
   private connected = false;
   /** Set only when the server could not apply the persona at mint time. */
   private fallbackInstructions: string | null = null;
+  /** Where the SDP offer goes, as returned by POST /api/session. */
+  private callsUrl = "";
 
   private t0 = 0;
   private startedAt = 0;
@@ -97,7 +102,7 @@ export class InterviewSession {
     }
 
     // 2. Ask our own backend to mint an ephemeral token with the university
-    //    key. The browser never holds a key, only the short-lived ek_ token.
+    //    key. The browser never holds a key, only the short-lived token.
     const ephemeral = await this.createEphemeralToken();
     if (this.stopped) return;
 
@@ -167,6 +172,11 @@ export class InterviewSession {
       this.cleanup();
       throw new Error("The server did not return a session token.");
     }
+    if (typeof session.callsUrl !== "string" || session.callsUrl.length === 0) {
+      this.cleanup();
+      throw new Error("The server did not return a voice session address.");
+    }
+    this.callsUrl = session.callsUrl;
     // Present only if the persona could not be applied at mint time.
     this.fallbackInstructions = session.instructions ?? null;
     this.opts.onLimits?.({
@@ -180,17 +190,43 @@ export class InterviewSession {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    const res = await fetch(`${REALTIME_BASE}/calls`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${ephemeral}`, "Content-Type": "application/sdp" },
-      body: offer.sdp ?? "",
-    });
+    let res: Response;
+    try {
+      res = await this.postOffer(ephemeral, offer.sdp ?? "");
+    } catch {
+      this.cleanup();
+      throw new Error(
+        "Could not reach the voice service. Check your connection and start the interview again."
+      );
+    }
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       this.cleanup();
       throw new Error(describeConnectError(res.status, detail));
     }
     await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
+  }
+
+  /**
+   * Sends the SDP offer, repeated once. One upstream behind the university
+   * gateway answers a bare nginx 404 without CORS headers (found 2026-09-11),
+   * which a browser reports as a network error rather than a status. That
+   * upstream never reaches the model, so the same offer can safely go again.
+   */
+  private async postOffer(ephemeral: string, sdp: string): Promise<Response> {
+    const post = () =>
+      fetch(this.callsUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${ephemeral}`, "Content-Type": "application/sdp" },
+        body: sdp,
+      });
+    try {
+      const res = await post();
+      if (res.status !== 404) return res;
+    } catch {
+      // A network error here is most likely that upstream; retry below.
+    }
+    return post();
   }
 
   /**
@@ -329,7 +365,7 @@ export class InterviewSession {
     this.opts.onStatus("closed");
     this.opts.onFatalError(
       this.connected
-        ? "The connection to OpenAI was lost."
+        ? "The connection to the voice service was lost."
         : "Could not establish the voice session."
     );
   }
@@ -360,16 +396,16 @@ export class InterviewSession {
 }
 
 /**
- * The OpenAI-side failures that remain now that minting has moved to our
- * server: this covers the direct WebRTC negotiation, which still goes to
- * OpenAI with the ephemeral token so the audio never relays through us.
+ * The provider-side failures that remain now that minting has moved to our
+ * server: this covers the direct WebRTC negotiation, which goes to the AI
+ * gateway with the ephemeral token so the audio never relays through us.
  */
 function describeConnectError(status: number, detail: string): string {
   if (status === 401 || status === 403) {
-    return "The voice session token was rejected by OpenAI. Start the interview again.";
+    return "The voice session token was rejected. Start the interview again.";
   }
   if (status === 429) {
-    return "OpenAI rate-limited the request. Wait a moment and start the interview again.";
+    return "The voice service is busy. Wait a moment and start the interview again.";
   }
   return `Could not open the voice session (HTTP ${status}). ${detail.slice(0, 200)}`;
 }

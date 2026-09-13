@@ -185,7 +185,8 @@ this differs from `BACKEND-PLAN.md`.
 
 ### POST /api/session
 
-Mints a short-lived OpenAI realtime token for one interview, and
+Mints a short-lived realtime token for one interview at the AI gateway
+(`AI_BASE_URL`; the university's Tilburg.AI gateway since 2026-09-11), and
 consumes one unit of the student's total session quota.
 
 **Authentication.** Session cookie required, with the same active-roster
@@ -203,19 +204,24 @@ re-check as `GET /api/me`.
 
 ```json
 {
-  "token": "ek_...",
+  "token": "<ephemeral token>",
   "expiresAt": 1755180000,
   "limitMinutes": 12,
-  "warnMinutes": 10
+  "warnMinutes": 10,
+  "callsUrl": "https://api.tilburg.ai/v1/realtime/calls"
 }
 ```
 
-`expiresAt` is Unix seconds, matching what OpenAI returns. `token` is
+`expiresAt` is Unix seconds, as the gateway returns it. `token` is
 valid to *start* a realtime session for `limitMinutes + 2` minutes from
 mint time; it does not bound how long an already-started session may run.
+`callsUrl` is where the browser sends its WebRTC SDP offer, with `token`
+as the Bearer credential. It is `AI_BASE_URL` plus `/realtime/calls`, so
+the gateway address lives only in the Worker's configuration. The audio
+goes from the browser straight to the gateway, never through the Worker.
 There is no `instructions` field in the current build: the persona's
-system instruction is set on OpenAI's side at mint time, so it never
-reaches the response body or the browser.
+system instruction is set at mint time, so it never reaches the response
+body or the browser.
 
 **Response, failure**
 
@@ -223,10 +229,10 @@ reaches the response body or the browser.
 |---|---|---|
 | `401` | `{"error": "Not logged in."}` | No session, or deactivated student |
 | `400` | `{"error": "A persona is required."}` | Missing or non-string `personaId` |
-| `503` | `{"error": "The service is not configured yet. Tell your instructor."}` | No OpenAI key set in `settings` |
+| `503` | `{"error": "The service is not configured yet. Tell your instructor."}` | No API key set in `settings` (row `openai_api_key`) |
 | `429` | `{"error": "You have used all your interview sessions. Ask your instructor if you need another one."}` | `sessions_total` used up for this student. An instructor can clear it with the reset-sessions endpoint below. |
 | `404` | `{"error": "That persona is not available."}` | No active persona with that id |
-| `502` | `{"error": "Could not start the interview. Try again in a moment."}` | The OpenAI mint call failed |
+| `502` | `{"error": "Could not start the interview. Try again in a moment."}` | The gateway's mint call failed (after one retry on a `404`) |
 
 The 429 case still consumes a grant; a rejected mint attempt is not
 refunded. This is deliberate, and simpler than a compensating write.
@@ -471,7 +477,7 @@ Worker.
 | POST | `/api/admin/submissions/bulk-delete` | `{ids: [...]}` (max 500) | `200 {deleted}`. Deletes the listed submissions in one statement. Unknown ids are ignored; `deleted` counts the rows really removed. |
 | GET | `/api/admin/submissions.csv` | same query params as list | `text/csv`, one row per submission plus one column per rubric criterion |
 | POST | `/api/admin/breakglass` | `{studentId}` | `200 {url, expiresInMinutes, studentId, fullName}`, or `404`/`400` |
-| POST | `/api/admin/voice-preview` | `{voice}` | `200` with `audio/mpeg` bytes: a short fixed sample sentence spoken in that voice, for the persona editor's preview button. The voice must be on the same list persona saves enforce (`400` otherwise). The sample text is fixed server-side; the client cannot send text to speak. `503` when no OpenAI key is set, `502` when OpenAI refuses. |
+| POST | `/api/admin/voice-preview` | `{voice}` | `200` with `audio/mpeg` bytes: a short fixed sample sentence spoken in that voice, for the persona editor's preview button. The voice must be on the same list persona saves enforce (`400` otherwise). The sample text is fixed server-side; the client cannot send text to speak. `503` when no API key is set, `502` when the gateway refuses. The university AI gateway offers no text-to-speech model yet (2026-09-11: `403` on `gpt-4o-mini-tts`), so today this answers `502` with a message saying so; once the gateway offers that model, the preview works again with no code change. |
 
 ### Key masking rule
 

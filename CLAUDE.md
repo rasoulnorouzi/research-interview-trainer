@@ -18,6 +18,191 @@ character" properly. `buildCustomPersona()` and its guardrails still exist in
 `src/personas.ts` but are unused dead code — nothing calls them. The GitHub
 repo is `research-interview-trainer`; the local folder name may differ.
 
+## Azure migration (branch `azure-migration`, in progress)
+
+The university asked the project to move off the direct OpenAI key onto its
+own AI gateway, Tilburg.AI. This branch holds that work. **The code is done
+and tested locally (2026-09-11).** The Worker reads the gateway address from
+the `AI_BASE_URL` var, mints with the gateway's body shape (below), returns
+the WebRTC call address to the browser as `callsUrl` in the
+`POST /api/session` response, and retries once on the gateway's stray `404`.
+A full interview through the real app passed against the testing gateway:
+login, WebRTC voice, the live transcript, scoring with ten `/v1/responses`
+calls, and the report email. **Do not deploy this branch** until Robert rolls
+the patch to production. Until then, production interviews would fail. UvT
+fixed the DNSSEC fault below on 2026-09-13.
+
+To run it locally, set `AI_BASE_URL=https://api.testing.tilburg.ai/v1` in
+`.dev.vars`. Normal DNS works since 2026-09-13, so no `/etc/hosts` entry and
+no relay are needed. Put the testing key in the local D1 `openai_api_key`
+row. The production D1
+row still holds the OpenAI key until the deploy.
+
+**The gateway.** LiteLLM behind nginx, in front of Azure OpenAI in Sweden
+Central. It is OpenAI-compatible: `Authorization: Bearer <key>` and `/v1/...`
+paths.
+
+- Production: `https://api.tilburg.ai/v1`. Testing:
+  `https://api.testing.tilburg.ai/v1`.
+- Each environment has its own virtual key. Production rejects a testing key
+  (`401`). Keys come from Robert Smolders (Tilburg.AI) over Teams. Never put a
+  key in the repository.
+- The keys see three models: `gpt-realtime-2.1-mini`, `gpt-live-transcribe`,
+  `gpt-5.6-terra`. All three are `azure/` deployments with `api_version`
+  `2025-04-01-preview`; the two realtime models carry `realtime_protocol: GA`
+  (`GET /v1/model/info`).
+- `gpt-4o-mini-tts` is not on the list, so the persona editor's "Preview
+  voice" button cannot work through the gateway.
+
+**What works (tested live).**
+
+- Scoring: `gpt-5.6-terra` answers `200` on `/v1/responses` and
+  `/v1/chat/completions`. The scoring port is a base URL change.
+- Realtime over WebSocket:
+  `wss://api.tilburg.ai/v1/realtime?model=gpt-realtime-2.1-mini` runs a full
+  session. The model speaks, and `gpt-live-transcribe` streams
+  `conversation.item.input_audio_transcription.delta` events during speech.
+
+**The WebRTC token mint (blocked until 2026-09-11, works on testing now).**
+The app is browser-direct WebRTC (constraint 5). The Worker mints an
+ephemeral token at `POST /v1/realtime/client_secrets`, and the browser sends
+its SDP offer to `POST /v1/realtime/calls` with that token. On the gateway
+the SDP endpoint was always ready (`401` without a token), but before the
+patch the mint failed with `429 "No deployments available ...
+cooldown_list=[...]"`.
+
+- Root cause: LiteLLM issue BerriAI/litellm#24659, open upstream.
+  `litellm/llms/azure/realtime/http_transformation.py` builds
+  `/openai/realtime/client_secrets?api-version=...`. Azure GA needs
+  `/openai/v1/realtime/client_secrets` with no `api-version`. The Azure call
+  fails, and LiteLLM then puts the deployment in cooldown. The WebSocket
+  handler already uses the GA path, which is why WebSocket works.
+- Fix: `litellm-azure-webrtc-fix.patch` (project root, untracked). It changes
+  the three Azure realtime URLs to `/openai/v1/realtime/...` and sends the
+  ephemeral key on `/calls` as `Authorization: Bearer`.
+- 2026-09-11: Robert patched the testing gateway (`api.testing.tilburg.ai`).
+  The patch works. **The mint body must carry a top-level `"model"` and an
+  empty `session.model`:** `{"model": "gpt-realtime-2.1-mini", "session":
+  {"type": "realtime", "model": "", ...}}`. The body that `worker/openai.ts`
+  sends today (no top-level model, `session.model` set) fails at Azure.
+  LiteLLM then cools the deployment for 5 s and answers `429 "No deployments
+  available"`, which hides the real Azure error. That `429` is what every
+  test before 17:06 UTC hit; it was never a cooldown from somewhere else.
+  With the new shape the gateway keeps the persona instructions, the voice,
+  `gpt-live-transcribe` and `semantic_vad` low (A/B test, 2026-09-11).
+  Leaving the `session.model` key out entirely gives the Azure error
+  `OpperationNotSupported`.
+- A full browser WebRTC call through the testing gateway works end to end
+  (2026-09-11, headless Chrome with a fake microphone): token `200`, SDP
+  answer `201`, ICE connected about 0.5 s after the token, the model spoke
+  three replies, 94 streaming transcription deltas arrived during speech,
+  33 ms round trip, no packet loss.
+- Still open on the gateway side: roll the patch to production. One upstream
+  still answers a bare nginx `404` (no security headers, no CORS, so a
+  browser sees "Failed to fetch"), and the first request after a quiet
+  period tends to hit it.
+
+**DNS: fixed on 2026-09-13.** At 15:28 UTC the `.ai` registry held a DS
+record for key tag 54271, the zone's KSK. `api.tilburg.ai` and
+`api.testing.tilburg.ai` answered `NOERROR` with `51.105.176.118` on
+`1.1.1.1`, `1.0.0.1`, `8.8.8.8`, `9.9.9.9`, OpenDNS and Cloudflare
+DNS-over-HTTPS. Both hosts answered `401` (no key) to `GET /v1/models` over
+HTTPS with normal DNS. Raw log:
+`~/Desktop/tilburg-dns-check-raw-20260913T152835Z.log`. The history of the
+fault follows.
+
+**The fault (found 2026-09-11, still failing at 20:38 UTC that day).**
+Every validating resolver answered `SERVFAIL` for
+`api.tilburg.ai` and `api.testing.tilburg.ai`: Cloudflare (`1.1.1.1`,
+`1.0.0.1`, and its DNS-over-HTTPS, the network the Worker uses), Google,
+Quad9 and OpenDNS. The reason they give is EDE 9, "DNSKEY Missing: no SEP
+matching the DS found for tilburg.ai". This blocks the Cloudflare Worker and
+every student off campus. Campus DNS does not validate, so it works there.
+
+- Cause: the `.ai` registry holds a DS record for key tag **107** (algorithm
+  8, digest type 2). The name servers `ns1.uvt.nl` and `ns2.uvt.nl` sign the
+  zone with KSK **54271** (ZSKs 28620 and 43326). The DS does not match any
+  key. The registry shows the DS as last changed on 2026-08-12.
+- The records themselves are right. Asked directly, both name servers answer
+  `api.tilburg.ai` → CNAME `tilburgai.campus.uvt.nl` → CNAME
+  `pip-tilburgai.westeurope.cloudapp.azure.com` → `51.105.176.118`.
+- Who fixes it: UvT IT. They run `ns1/ns2.uvt.nl` on the UvT network
+  `137.56.0.0/16` (RIPE technical contact: Joost van Baal). The domain is
+  registered by Stichting Katholieke Universiteit Brabant (contact C.A.M.
+  Vromans) through the registrar Key-Systems GmbH. UvT IT must submit a DS
+  record for KSK 54271 at the registrar, or sign with key 107 again.
+- Status: an email to Robert, with the raw check attached
+  (`~/Desktop/tilburg-dns-check-raw-20260911T203840Z.log`), was drafted on
+  2026-09-11 for him to pass on. UvT fixed it by 2026-09-13.
+- Check it again if the gateway becomes unreachable: `dig @1.1.1.1
+  api.tilburg.ai A` must answer `status: NOERROR` with an address.
+  `https://dnsviz.net/d/api.tilburg.ai/dnssec/` shows the chain.
+
+A headless Chrome with `--use-file-for-fake-audio-capture=<wav>` runs the
+real WebRTC flow with a speech clip from `voice-auditions/` as the
+microphone. During the fault it also needed `--host-resolver-rules="MAP
+api.testing.tilburg.ai 51.105.176.118"`; that pin is no longer needed.
+
+**Open decision: EU data residency.** The instructor chose strict EU. Only
+`gpt-5.6-terra` is guaranteed EU. `gpt-realtime-2.1-mini` and
+`gpt-live-transcribe` are global deployments. The EU voice model
+`gpt-realtime-2.1` answers `403 team not allowed` for our key. Robert must
+grant it, or the voice cannot stay in the EU.
+
+**Status and resume checklist (waiting since 2026-09-11).** Production runs
+the 2026-09-11 release on OpenAI (`main` at `22ff373`, Worker `79a99a60`).
+It shows every model and checks keys against OpenAI. Both change only when
+this branch ships. Resume when both blockers are gone:
+
+1. DNS is fixed: `dig @1.1.1.1 api.tilburg.ai A` answers `NOERROR` with an
+   address. **Done 2026-09-13.**
+2. The production gateway mints. Put the production gateway key in the
+   local D1 `openai_api_key` row, set `AI_BASE_URL=https://api.tilburg.ai/v1`
+   in `.dev.vars` (no relay is needed once DNS works), and run one interview
+   with `npm run dev:worker`. A token `200` and an SDP answer `201` mean
+   Robert's patch is on production. If not, ask Robert to roll it out.
+3. Commit this branch, then bring it onto `main`. `main` moved on 2026-09-11
+   (welcome panel, persona cohorts, transcript after the interview,
+   heard-text note). Expect conflicts in `src/lib/liveSession.ts`: keep
+   `main`'s `cutToHeard()` and heard-text note, and this branch's
+   `callsUrl`, `postOffer()` retry and neutral error texts. Also expect
+   conflicts in `shared/types.ts`, `worker/report.ts`, `admin/Settings.tsx`
+   and the docs. A merged copy was built and tested on 2026-09-11; its only
+   code conflict was one comment block.
+4. Test: `npm run lint`, `npm run build`, one full interview with an
+   interruption through the production gateway, and one scored report.
+5. Deploy as the 2026-09-11 protocol in `PROTOCOLS.md` does: `npm run
+   backup`, tag the release, `npx wrangler deploy`. Then save the
+   production gateway key on the dashboard's Settings screen at once. The
+   new Worker checks keys against the gateway, so the key cannot be saved
+   before the deploy, and interviews fail between the deploy and the save.
+   Deploy at a quiet moment.
+6. Rollback: `npx wrangler rollback <previous version id>`, then paste the
+   OpenAI key on the Settings screen again. The old Worker cannot use the
+   gateway key.
+7. EU data residency (above) is still open.
+
+Fallback if the mint never works on production: relay the audio over
+WebSocket through the Worker. That works today, but it breaks constraint 5
+(an extra hop, worse latency, the Worker carries live audio for every
+student) and brings back browser-side audio code.
+
+**Models: only the university's are selectable (instructor decision,
+2026-09-11).** Each option in `shared/models.ts` carries a `university` flag.
+The dashboard's model dropdowns offer only the flagged models
+(`gpt-realtime-2.1-mini`, `gpt-5.6-terra`, `gpt-live-transcribe`). Every other
+option stays in the list, greyed out and disabled, with "(not offered by the
+university yet)". A saved model without the flag gets a red warning, because
+every call with it fails. The server stores only flagged transcription
+models (`TRANSCRIPTION_MODEL_IDS`). Interview and scoring models stay open on
+the server, as before. When the gateway adds a model, flip its flag.
+
+**Untracked files in the project root. Do not commit them:**
+`webrtc-test.html` (browser test harness; it holds an old production key as
+a default field value), `azure-test.sh`, `getting_started.ipynb` (Robert's
+example notebook), `litellm-azure-webrtc-fix.patch`, `sandbox.zip` (Robert's
+Python WebRTC test tool, 33 MB with its virtual environment).
+
 ## Current state
 
 Rewritten from scratch (2026-08-10) out of a Google AI Studio scaffold. The

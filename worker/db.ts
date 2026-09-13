@@ -15,6 +15,12 @@ export interface Env {
   ACCESS_AUD: string;
   EMAIL_FROM: string;
   /**
+   * The university AI gateway (Tilburg.AI, OpenAI-compatible), ending in /v1
+   * with no trailing slash. Set in wrangler.jsonc; .dev.vars may override it
+   * locally. Every AI call, and the browser's WebRTC call address, use it.
+   */
+  AI_BASE_URL: string;
+  /**
    * Local development only: bypasses the Cloudflare Access check on /api/admin/*.
    * Set it in .dev.vars (gitignored) and nowhere else. It must NEVER appear in
    * wrangler.jsonc, because a var there is deployed and would open the whole
