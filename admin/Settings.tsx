@@ -97,6 +97,10 @@ function ModelSelect({
     : value.length === 0
       ? "Not set. Interviews run on the built-in default until you choose one."
       : "Set outside the dashboard. It stays in use until you choose from the list.";
+  // A saved model the university gateway does not offer: left over from before
+  // the move to the gateway (2026-09-11) or edited in by hand. Every call with
+  // it fails, so it gets a warning, not only a grey row.
+  const unsupported = selected !== undefined && !selected.university;
 
   return (
     <div className="field">
@@ -110,12 +114,23 @@ function ModelSelect({
         {value.length === 0 && <option value="">Not set</option>}
         {value.length > 0 && !selected && <option value={value}>{`(current) ${value}`}</option>}
         {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
+          <option key={option.id} value={option.id} disabled={!option.university}>
+            {option.university ? option.label : `${option.label} (not offered by the university yet)`}
           </option>
         ))}
       </select>
-      <p className="admin-help">{note}</p>
+      {unsupported ? (
+        <p className="admin-warn">
+          The university AI gateway does not offer this model yet, so every call with it fails.
+          Choose a model that is not greyed out.
+        </p>
+      ) : (
+        <p className="admin-help">{note}</p>
+      )}
+      <p className="admin-help">
+        Greyed-out models are not offered by the university AI gateway yet, so they cannot be
+        selected.
+      </p>
     </div>
   );
 }
@@ -541,7 +556,7 @@ export function Settings({ onApiError }: Props) {
         </div>
 
         <div className="field">
-          <label htmlFor="openai_api_key">OpenAI API key</label>
+          <label htmlFor="openai_api_key">API key (university AI gateway)</label>
           {keyEntry ? (
             <p className="admin-help">
               A key is set: {keyEntry.value}. Saved by {keyEntry.updatedBy ?? "unknown"} on{" "}
@@ -565,8 +580,8 @@ export function Settings({ onApiError }: Props) {
             autoComplete="off"
           />
           <p className="admin-help">
-            Type a key here and click Save to store it. The key is tested against OpenAI
-            before it is stored. Leave this field empty to keep the current key.
+            Type a key here and click Save to store it. The key is tested against the
+            gateway before it is stored. Leave this field empty to keep the current key.
           </p>
           {keyEntry && (
             <button

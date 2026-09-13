@@ -113,11 +113,13 @@ student login cookie. `RESEND_API_KEY` is your Resend API key.
 **Caution.** The OpenAI API key is not a Worker secret. It is not set with
 `wrangler secret put`. Step 7 sets it a different way.
 
-**7. Bootstrap the OpenAI key.**
+**7. Bootstrap the AI gateway key.**
 
-The OpenAI key lives in the `settings` table, not in a Worker secret. This
-lets the instructor rotate it later from the dashboard, without a new
-deploy. The first time, you set it by hand.
+The key for the university AI gateway (Tilburg.AI; before 2026-09-11 an
+OpenAI key) lives in the `settings` table, row `openai_api_key`, not in a
+Worker secret. This lets the instructor rotate it later from the dashboard,
+without a new deploy. The gateway address is the `AI_BASE_URL` var in
+`wrangler.jsonc` (step 10). The first time, you set the key by hand.
 
 1. Create a file named `set-key.sql` in the repository root. Do not commit
    it; `.gitignore` already excludes it.
@@ -228,7 +230,8 @@ Edit the `vars` block:
 "vars": {
   "ACCESS_TEAM_DOMAIN": "<team-name>.cloudflareaccess.com",
   "ACCESS_AUD": "<the AUD tag you copied>",
-  "EMAIL_FROM": "onboarding@resend.dev"
+  "EMAIL_FROM": "onboarding@resend.dev",
+  "AI_BASE_URL": "https://api.tilburg.ai/v1"
 }
 ```
 

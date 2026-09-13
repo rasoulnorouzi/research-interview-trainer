@@ -21,7 +21,7 @@
 // now, and error text from OpenAI must not leave this service — see openai.ts),
 // and the per-criterion retry handles (§8 makes retry whole-report).
 
-import { callResponses } from "./openai";
+import { callResponses, type Gateway } from "./openai";
 import type {
   CriterionDefinition,
   CriterionScore,
@@ -167,7 +167,7 @@ function criterionSchema(scaleMax: number) {
 }
 
 async function scoreOneCriterion(
-  apiKey: string,
+  gw: Gateway,
   model: string,
   criterion: CriterionDefinition,
   persona: ScoringPersona,
@@ -191,7 +191,7 @@ ${PLAIN_WRITING_RULE}
 
 Give the score and a justification of at most two sentences that references what the student actually said.`;
 
-  const parsed = (await callResponses(apiKey, {
+  const parsed = (await callResponses(gw, {
     model,
     input,
     text: {
@@ -239,7 +239,7 @@ const FEEDBACK_SCHEMA = {
 };
 
 async function getQualitativeFeedback(
-  apiKey: string,
+  gw: Gateway,
   model: string,
   persona: ScoringPersona,
   transcriptText: string
@@ -258,7 +258,7 @@ ${EVIDENCE_RULE}
 
 ${PLAIN_WRITING_RULE}`;
 
-  const parsed = (await callResponses(apiKey, {
+  const parsed = (await callResponses(gw, {
     model,
     input,
     text: { format: { type: "json_schema", name: "feedback", strict: true, schema: FEEDBACK_SCHEMA } },
@@ -304,7 +304,7 @@ export interface ScoringResult {
  * the whole report (§8).
  */
 export async function scoreAll(
-  apiKey: string,
+  gw: Gateway,
   model: string,
   persona: ScoringPersona,
   transcript: TranscriptEntry[],
@@ -321,8 +321,8 @@ export async function scoreAll(
   const transcriptText = formatTranscript(transcript, persona.name);
 
   const runCriterion = (criterion: CriterionDefinition) => () =>
-    scoreOneCriterion(apiKey, model, criterion, persona, transcriptText);
-  const runFeedback = () => getQualitativeFeedback(apiKey, model, persona, transcriptText);
+    scoreOneCriterion(gw, model, criterion, persona, transcriptText);
+  const runFeedback = () => getQualitativeFeedback(gw, model, persona, transcriptText);
 
   // Launch order matters only in that they all launch before any is awaited.
   const criterionCalls = criteria.map(runCriterion);
