@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ApiError } from "./api";
+import { VoicePoweredOrb } from "../src/components/ui/voice-powered-orb";
 import { Settings } from "./Settings";
 import { Roster } from "./Roster";
 import { Personas } from "./Personas";
@@ -17,6 +18,10 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "submissions", label: "Submissions" },
   { id: "breakglass", label: "Break-glass" },
 ];
+
+/** Hue shift for the dashboard's orb. 0 keeps the orb's own violet and cyan,
+ *  the palette both apps share (instructor request, 2026-09-14). */
+const ADMIN_ORB_HUE = 0;
 
 /** The active tab lives in location.hash (#roster), so Back moves between the
  *  tabs the instructor has visited instead of leaving the dashboard. An
@@ -52,13 +57,33 @@ export function AdminApp() {
     if (err instanceof ApiError && err.status === 403) setAccessDenied(true);
   };
 
+  // The segmented tab bar's highlight slides to the active tab: its offset and
+  // width go to CSS as --x and --w. Re-measured when the bar resizes.
+  const navRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const place = () => {
+      const active = nav.querySelector<HTMLButtonElement>("button.active");
+      if (!active) return;
+      nav.style.setProperty("--x", `${active.offsetLeft - 4}px`);
+      nav.style.setProperty("--w", `${active.offsetWidth}px`);
+      // On a phone the bar scrolls sideways; keep the active tab in view.
+      if (nav.scrollWidth > nav.clientWidth) {
+        nav.scrollTo({ left: active.offsetLeft - 24, behavior: "smooth" });
+      }
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, [tab, accessDenied]);
+
   return (
     <div className="admin-root">
       <div className="page admin-page">
         <header className="app-header no-print">
-          <span className="app-name">
-            Research Interview Trainer - Instructor Dashboard
-          </span>
+          <span className="app-name">Research Interview Trainer</span>
           {/* Access owns the session, so logging out is a navigation to an
               edge path rather than anything this app can do:
               /cdn-cgi/access/logout is handled by Cloudflare before the Worker
@@ -77,13 +102,26 @@ export function AdminApp() {
           </span>
         </header>
 
+        <section className="stage-panel admin-hero no-print">
+          <div className="orb-wrap admin-orb">
+            <VoicePoweredOrb className="orb-stage" hue={ADMIN_ORB_HUE} idleSpeed={0.25} />
+          </div>
+          <div>
+            <span className="eyebrow rise" style={{ ["--d" as string]: 0 }}>Instructor</span>
+            <h1 className="rise" style={{ ["--d" as string]: 1 }}>Dashboard</h1>
+            <p className="stage-sub rise" style={{ ["--d" as string]: 2 }}>
+              Students, interviewees, the rubric and every report, in one place.
+            </p>
+          </div>
+        </section>
+
         {accessDenied ? (
           <div className="banner-error">
             Access denied. Your email is not on the dashboard allow-list.
           </div>
         ) : (
           <>
-            <nav className="admin-nav no-print">
+            <nav className="admin-nav no-print" ref={navRef}>
               {TABS.map((t) => (
                 <button
                   key={t.id}
@@ -96,12 +134,15 @@ export function AdminApp() {
               ))}
             </nav>
 
-            {tab === "settings" && <Settings onApiError={onApiError} />}
-            {tab === "roster" && <Roster onApiError={onApiError} />}
-            {tab === "personas" && <Personas onApiError={onApiError} />}
-            {tab === "rubric" && <Rubric onApiError={onApiError} />}
-            {tab === "submissions" && <Submissions onApiError={onApiError} />}
-            {tab === "breakglass" && <Breakglass onApiError={onApiError} />}
+            {/* Keyed by tab, so every tab change replays the entrance motion. */}
+            <main className="screen" key={tab}>
+              {tab === "settings" && <Settings onApiError={onApiError} />}
+              {tab === "roster" && <Roster onApiError={onApiError} />}
+              {tab === "personas" && <Personas onApiError={onApiError} />}
+              {tab === "rubric" && <Rubric onApiError={onApiError} />}
+              {tab === "submissions" && <Submissions onApiError={onApiError} />}
+              {tab === "breakglass" && <Breakglass onApiError={onApiError} />}
+            </main>
           </>
         )}
       </div>

@@ -161,8 +161,8 @@ export default function App() {
 
   if (checking) {
     return (
-      <div className="page">
-        <p className="small">Loading…</p>
+      <div className="page student-app">
+        <p className="small boot">Loading…</p>
       </div>
     );
   }
@@ -170,7 +170,7 @@ export default function App() {
   const showAccount = me !== null && (phase === "setup" || phase === "results");
 
   return (
-    <div className="page">
+    <div className={`page student-app phase-${phase}`}>
       <header className="app-header">
         <span className="app-name">Research Interview Trainer</span>
         {showAccount && (
@@ -183,25 +183,28 @@ export default function App() {
         )}
       </header>
 
-      {phase === "login" && <LoginScreen onLoggedIn={handleLoggedIn} />}
-      {phase === "setup" && (
-        <SetupScreen onStart={handleStart} initialError={setupError} panel={me?.panel ?? null} />
-      )}
-      {phase === "interview" && config && (
-        <InterviewScreen
-          persona={config.persona}
-          onEnd={handleEnd}
-          onAbort={handleAbort}
-          endSignal={endSignal}
-        />
-      )}
-      {phase === "results" && config && result && (
-        <ResultsScreen
-          result={result}
-          persona={config.persona}
-          onNewInterview={handleNewInterview}
-        />
-      )}
+      {/* Keyed by phase, so every screen change replays the entrance motion. */}
+      <main className="screen" key={phase}>
+        {phase === "login" && <LoginScreen onLoggedIn={handleLoggedIn} />}
+        {phase === "setup" && (
+          <SetupScreen onStart={handleStart} initialError={setupError} panel={me?.panel ?? null} />
+        )}
+        {phase === "interview" && config && (
+          <InterviewScreen
+            persona={config.persona}
+            onEnd={handleEnd}
+            onAbort={handleAbort}
+            endSignal={endSignal}
+          />
+        )}
+        {phase === "results" && config && result && (
+          <ResultsScreen
+            result={result}
+            persona={config.persona}
+            onNewInterview={handleNewInterview}
+          />
+        )}
+      </main>
     </div>
   );
 }

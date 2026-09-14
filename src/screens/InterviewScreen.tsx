@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PersonaSummary, SessionResult } from "../types";
 import { InterviewSession, SessionStatus } from "../lib/liveSession";
 import { fmtMs } from "../lib/metrics";
+import { VoicePoweredOrb } from "../components/ui/voice-powered-orb";
 
 interface Props {
   persona: PersonaSummary;
@@ -18,18 +19,35 @@ interface Limits {
   warnMinutes: number;
 }
 
-const STATUS_TEXT: Record<SessionStatus, string> = {
-  connecting: "Connecting…",
-  live: "Listening. Ask your question out loud",
-  speaking: "Interviewee is speaking…",
-  closed: "Session closed",
-};
+function statusText(status: SessionStatus, firstName: string): string {
+  switch (status) {
+    case "connecting":
+      return "Connecting…";
+    case "live":
+      return "Listening";
+    case "speaking":
+      return `${firstName} is speaking`;
+    case "closed":
+      return "Session closed";
+  }
+}
+
+function MicIcon({ muted }: { muted: boolean }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      {muted && <path d="M4 4l16 16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />}
+    </svg>
+  );
+}
 
 /**
  * The live interview. The transcript is recorded but not shown here
  * (instructor decision, 2026-09-11): the student listens and speaks, and reads
- * the transcript in the report once the interview ends. The status line is
- * the only feedback that the microphone and the interviewee are working.
+ * the transcript in the report once the interview ends. The orb and the status
+ * line are the feedback that the microphone and the interviewee are working:
+ * the orb follows the interviewee's voice, and the student's more softly.
  */
 export function InterviewScreen({ persona, onEnd, onAbort, endSignal }: Props) {
   const sessionRef = useRef<InterviewSession | null>(null);
@@ -72,6 +90,14 @@ export function InterviewScreen({ persona, onEnd, onAbort, endSignal }: Props) {
     const started = Date.now();
     const t = setInterval(() => setElapsedMs(Date.now() - started), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  // Read by the orb on every animation frame.
+  const orbLevel = useCallback(() => {
+    const session = sessionRef.current;
+    if (!session) return 0;
+    const { student, interviewee } = session.levels();
+    return Math.max(interviewee, student * 0.55);
   }, []);
 
   const toggleMute = () => {
@@ -121,65 +147,76 @@ export function InterviewScreen({ persona, onEnd, onAbort, endSignal }: Props) {
 
   const remainingMs = limits ? limits.limitMinutes * 60_000 - elapsedMs : 0;
   const counting = limits !== null && elapsedMs >= limits.warnMinutes * 60_000;
+  const firstName = persona.name.split(" ")[0];
+  const line = connectionLost
+    ? "Connection lost"
+    : muted
+      ? "Microphone muted"
+      : studentSpeaking
+        ? "Hearing you"
+        : statusText(status, firstName);
+  const stageState = connectionLost ? "closed" : muted ? "muted" : studentSpeaking ? "student" : status;
 
   return (
-    <div>
-      <div className="card">
-        <div className="interview-header">
+    <div className="interview">
+      <section className={`stage-panel is-${stageState}`}>
+        <div className="stage-top rise" style={{ ["--d" as string]: 0 }}>
           <div>
-            <h1>Interview: {persona.name}</h1>
-            <p className="small">
-              {persona.title}. {persona.researchTopic}
-            </p>
+            <span className="eyebrow">Interview</span>
+            <h1>{persona.name}</h1>
+            <p className="stage-sub">{persona.title}</p>
           </div>
           <span className={`timer ${counting ? "counting-down" : ""}`}>
             {counting ? `${fmtMs(Math.max(0, remainingMs))} left` : fmtMs(elapsedMs)}
           </span>
         </div>
 
-        {counting && !connectionLost && (
-          <p className="small">Real interviews are time-boxed. Plan your closing.</p>
-        )}
-
-        {connectionLost ? (
-          <div className="banner-error">
-            {connectionLost} The interview has ended, but your transcript is
-            preserved, so you can still view your results.
-          </div>
-        ) : (
-          <>
-            <div className="status-line">
-              <span className={`rec-dot ${status === "connecting" || muted ? "idle" : ""}`} />
-              <span>
-                {muted
-                  ? "Microphone muted"
-                  : studentSpeaking
-                    ? "Hearing you…"
-                    : STATUS_TEXT[status]}
-              </span>
-            </div>
-            <p>
-              Speak as you would in a real interview. Begin by introducing
-              yourself and your research.
-            </p>
-            <p className="small">
-              The transcript is not shown while you talk. You can read it in
-              your report when the interview ends.
-            </p>
-          </>
-        )}
-
-        <div className="btn-row">
-          {!connectionLost && (
-            <button className="btn btn-secondary" onClick={toggleMute}>
-              {muted ? "Unmute microphone" : "Mute microphone"}
-            </button>
-          )}
-          <button className="btn" onClick={() => endInterview()}>
-            {connectionLost ? "View results" : "End interview"}
-          </button>
+        <div className="orb-wrap">
+          <VoicePoweredOrb className="orb-stage" hue={ORB_HUE} getLevel={orbLevel} />
         </div>
+
+        <p className="stage-status" key={line} aria-live="polite">
+          {line}
+        </p>
+        <p className="stage-hint rise" style={{ ["--d" as string]: 3 }}>
+          {connectionLost
+            ? "The interview has ended, but your transcript is preserved."
+            : counting
+              ? "Real interviews are time-boxed. Plan your closing."
+              : "Speak as you would in a real interview. Begin by introducing yourself and your research."}
+        </p>
+      </section>
+
+      {connectionLost && (
+        <div className="banner-error rise">
+          {connectionLost} The interview has ended, but your transcript is
+          preserved, so you can still view your results.
+        </div>
+      )}
+
+      <div className="stage-controls rise" style={{ ["--d" as string]: 4 }}>
+        {!connectionLost && (
+          <button
+            className={`pill-btn ${muted ? "is-on" : ""}`}
+            onClick={toggleMute}
+            aria-pressed={muted}
+          >
+            <MicIcon muted={muted} />
+            {muted ? "Unmute" : "Mute"}
+          </button>
+        )}
+        <button className="btn btn-end" onClick={() => endInterview()}>
+          {connectionLost ? "View results" : "End interview"}
+        </button>
       </div>
+
+      <p className="small stage-note rise" style={{ ["--d" as string]: 5 }}>
+        The transcript is not shown while you talk. You can read it in your
+        report when the interview ends.
+      </p>
     </div>
   );
 }
+
+/** Hue shift for the orb's palette, in degrees. 0 is the original violet and cyan. */
+export const ORB_HUE = 0;

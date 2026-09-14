@@ -304,7 +304,8 @@ same origin.** There is no CORS between the app and its own API for that
 reason. The browser talks to the AI gateway directly over WebRTC for audio
 (the gateway's `/v1/realtime/calls` answers CORS) — only token minting and
 scoring run server-side; see the audio section below and constraint 5.
-**Two client dependencies total: `react`, `react-dom`** — there is no AI
+**Three client dependencies total: `react`, `react-dom` and `ogl`** (the
+small WebGL library behind the orb, since 2026-09-15) — there is no AI
 SDK, on either side. D1 (SQLite) is the only datastore: no KV,
 no Durable Objects, so the schema lifts to plain SQLite or Postgres on a
 university VM unchanged if that migration ever happens (`BACKEND-PLAN.md` §9).
@@ -335,14 +336,17 @@ src/
   personas.ts                 3 layered personas + SHARED_DISCLOSURE_MECHANICS (seed origin, see below)
   criteria.ts                 8 seeded rubric criteria (seed origin, see below)
   index.css                   The entire stylesheet, plain CSS
+  components/ui/
+    voice-powered-orb.tsx     WebGL orb (ogl): interview, login, dashboard hero; reads levels, never the mic
   lib/
-    audio.ts                  createSpeechMeter() — voiced-time measurement only
+    audio.ts                  createSpeechMeter() — voiced time, plus a live level for the orb
+    utils.ts                  cn(), the class-name helper
     liveSession.ts            InterviewSession class — WebRTC + transcript/timing
     metrics.ts                computeMetrics() and formatters, pure functions
   screens/
     LoginScreen.tsx           Email + 6-digit code, remember-device
     SetupScreen.tsx           Persona choice (no API key field anymore)
-    InterviewScreen.tsx       Live transcript, countdown, mute, end
+    InterviewScreen.tsx       Orb stage, status line, countdown, mute, end
     ResultsScreen.tsx         Metrics, rubric, feedback, transcript, export
 admin/                        Instructor dashboard, behind Cloudflare Access
   AdminApp.tsx, api.ts, and one file per screen: Roster, Personas, Rubric,
@@ -405,6 +409,15 @@ What remains in `audio.ts` is measurement: `createSpeechMeter(stream)` runs an
 `AnalyserNode` energy gate and is applied to **both** the local mic and the
 remote track, so the two speaking times are directly comparable.
 
+**The orb reads those meters; it never opens the microphone (2026-09-15).**
+Each meter exposes `level`, the latest RMS, and
+`InterviewSession.levels()` scales both to 0 to 1 for
+`src/components/ui/voice-powered-orb.tsx`. The 21st.dev original called
+`getUserMedia` itself with echo cancellation off; a second capture stream
+can change how Chrome processes the call's audio, so the interviewee would
+hear itself. Keep the orb read-only. Without WebGL it falls back to a CSS
+disc (`.orb-fallback`).
+
 One trap: the remote stream must also be attached to an `<audio>` element or
 Chrome delivers no samples to the Web Audio graph and the meter silently reads
 zero. `liveSession.ts` attaches it in `ontrack` for exactly this reason.
@@ -413,23 +426,27 @@ zero. `liveSession.ts` attaches it in `ontrack` for exactly this reason.
 
 1. **Genuinely simple.** Resist adding files, dependencies, abstraction layers,
    or features. If something can be deleted, delete it.
-2. **Calm modern dashboard design. No "AI slop."** (Revised by the instructor
-   2026-08-14, replacing the earlier plain-academic serif rule; the reference
-   is a student-dashboard mock the instructor supplied.) Cool neutral page
-   background (`--bg: #f5f6f8` light), white cards with 12px radius and
-   hairline borders, a dark navy app frame, one sans-serif stack for
-   everything (weight makes headings, not typeface), pill chips and
-   8px-radius buttons, one subtle card shadow. **The app is theme-aware:**
-   every color is a token on `:root`, redefined under
-   `@media (prefers-color-scheme: dark)`, with `color-scheme: light dark`
-   so UA widgets follow; a deliberately warm or cream background was
-   rejected by the instructor as the generic AI look. Student app accent is
-   navy (`--accent`); the admin dashboard uses the same system with a
-   distinct deep-green accent (`.admin-root` token overrides) so the two
-   apps are never confusable in either theme. Still banned: gradients,
-   glassmorphism, purple, animation beyond hover/focus color, icon
-   libraries, emoji decoration, external fonts. Print output stays plain
-   black-on-white in both themes.
+2. **Modern, Apple-like design with the orb palette. No "AI slop."**
+   (Revised by the instructor 2026-09-15, replacing the calm-dashboard rule
+   of 2026-08-14, which had replaced a plain academic serif look.) A white
+   page with a faint violet and cyan glow at the top, white cards with a
+   22px radius and hairline borders, a floating translucent header, one
+   sans-serif stack for everything (weight makes headings, not typeface),
+   pill buttons. The colours come from the orb: an indigo accent
+   (`--accent`), a violet-to-indigo blend on primary buttons, and the orb
+   gradient (violet, blue, cyan) only on highlights (brand mark, score,
+   avatars). A dark stage (`.stage-panel`) holds the orb in both themes.
+   Motion is soft and has a job: entrances that rise in, springy presses,
+   a sliding tab highlight, the orb following the voices; all of it stops
+   under `prefers-reduced-motion`. **The app is theme-aware:** every colour
+   is a token, redefined for `prefers-color-scheme: dark`. Both apps share
+   the palette; the dashboard is told apart by its "Instructor" hero. The
+   design lives at the end of `src/index.css`: a student block scoped with
+   `:root:has(.student-app)`, a dashboard block scoped with
+   `:root:has(.admin-root)`, and the "ORB PALETTE" block, which must stay
+   after both. Still banned: icon libraries (icons are inline SVG), emoji
+   decoration, external fonts. Print output stays plain black-on-white in
+   both themes.
 3. **Voice only.** No text-question fallback. The student speaks; the
    interviewee speaks back.
    The student's words stream as they speak, via

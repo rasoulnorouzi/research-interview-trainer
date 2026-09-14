@@ -17,6 +17,23 @@ interface Props {
   panel: string | null;
 }
 
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+
+/** A stable hue per persona id, for its avatar. Kept to the orb's range,
+ *  indigo to violet (225 to 285), so every avatar belongs to the palette. */
+const hueOf = (id: string) => {
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return 225 + (h % 60);
+};
+
 type PersonaState =
   | { status: "loading" }
   | { status: "done"; personas: PersonaSummary[] }
@@ -59,12 +76,12 @@ export function SetupScreen({ onStart, initialError, panel }: Props) {
       {/* The instructor writes this panel in the dashboard. Null means none is
           saved yet, so the built-in text shows; an emptied panel shows nothing. */}
       {(panel ?? DEFAULT_PANEL_TEXT).trim().length > 0 && (
-        <div className="card">
+        <div className="card welcome rise" style={{ ["--d" as string]: 0 }}>
           <PanelText text={panel ?? DEFAULT_PANEL_TEXT} />
         </div>
       )}
 
-      <div className="card">
+      <div className="card rise" style={{ ["--d" as string]: 1 }}>
         <h2>Choose your interviewee</h2>
 
         {state.status === "loading" && <p className="small">Loading interviewees…</p>}
@@ -86,10 +103,11 @@ export function SetupScreen({ onStart, initialError, panel }: Props) {
               <p className="small">No interviewees are available to you yet. Ask your instructor.</p>
             )}
             <div className="persona-list">
-              {state.personas.map((p) => (
+              {state.personas.map((p, i) => (
                 <label
                   key={p.id}
-                  className={`persona-card ${selectedId === p.id ? "selected" : ""}`}
+                  className={`persona-card rise ${selectedId === p.id ? "selected" : ""}`}
+                  style={{ ["--d" as string]: 2 + i }}
                 >
                   <input
                     type="radio"
@@ -97,19 +115,26 @@ export function SetupScreen({ onStart, initialError, panel }: Props) {
                     checked={selectedId === p.id}
                     onChange={() => setSelectedId(p.id)}
                   />
-                  <span>
-                    <span className="name">{p.name}</span>. {p.title}
-                    <br />
+                  <span
+                    className="persona-avatar"
+                    style={{ ["--h" as string]: hueOf(p.id) }}
+                    aria-hidden="true"
+                  >
+                    {initials(p.name)}
+                  </span>
+                  <span className="persona-body">
+                    <span className="name">{p.name}</span>
+                    <span className="role">{p.title}</span>
                     <span className="topic">Research topic: {p.researchTopic}</span>
-                    <br />
                     <span className="small">{p.shortBio}</span>
                   </span>
+                  <span className="persona-check" aria-hidden="true" />
                 </label>
               ))}
             </div>
 
-            <div className="btn-row">
-              <button className="btn" onClick={handleStart} disabled={!selectedId}>
+            <div className="btn-row setup-start">
+              <button className="btn btn-large" onClick={handleStart} disabled={!selectedId}>
                 Start interview
               </button>
             </div>
