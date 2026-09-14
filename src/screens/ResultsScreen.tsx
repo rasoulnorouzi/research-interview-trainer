@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CriterionScore,
   Metrics,
@@ -85,7 +85,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
 
   return (
     <div>
-      <div className="card">
+      <div className="card rise" style={{ ["--d" as string]: 0 }}>
         <h1>Interview Report</h1>
         <p className="lede">
           {persona.name}. {persona.researchTopic}
@@ -117,9 +117,12 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
               </button>
             </div>
             {state.status === "pending" && (
-              <p className="small">
-                Scoring your interview. This takes 10 to 20 seconds.
-              </p>
+              <>
+                <div className="progress-indeterminate" aria-hidden="true" />
+                <p className="small">
+                  Scoring your interview. This takes 10 to 20 seconds.
+                </p>
+              </>
             )}
           </div>
         )}
@@ -138,7 +141,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
         )}
 
         {report && (
-          <div className="banner-success">
+          <div className="banner-success rise">
             {report.shared !== false
               ? report.emailed
                 ? "Your interview was submitted and scored. The report was emailed to you and your instructor."
@@ -150,7 +153,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
         )}
       </div>
 
-      <div className="card">
+      <div className="card rise" style={{ ["--d" as string]: 1 }}>
         <h2>Speaking metrics</h2>
         <table className="kv-table">
         <tbody>
@@ -237,7 +240,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
       </div>
 
       {withheld ? (
-        <div className="card">
+        <div className="card rise" style={{ ["--d" as string]: 2 }}>
           <h2>Scores and feedback</h2>
           <p>
             Your interview was submitted and scored. Your instructor received the
@@ -245,7 +248,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
           </p>
         </div>
       ) : (
-        <div className="card">
+        <div className="card rise" style={{ ["--d" as string]: 2 }}>
           <h2>Rubric assessment</h2>
           <p className="small">
             Each criterion is scored by an independent evaluator that sees only
@@ -257,22 +260,36 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
 
           {report ? (
             <>
-              {report.overall !== null && overallPoints && (
-                <p className="overall-score">
-                  Overall score: {overallPoints.points} / {overallPoints.possible}{" "}
-                  points (
-                  {report.overall ??
-                    Math.round((100 * overallPoints.points) / overallPoints.possible)}
-                  %)
-                  {notAssessedCount > 0 && (
-                    <span className="small">
-                      {" "}
-                      (over {assessed} of {report.scores.length} criteria;{" "}
-                      {notAssessedCount} not assessable)
-                    </span>
-                  )}
-                </p>
-              )}
+              {report.overall !== null && overallPoints && (() => {
+                const pct =
+                  report.overall ??
+                  Math.round((100 * overallPoints.points) / overallPoints.possible);
+                return (
+                  <div className="overall">
+                    <div className="overall-figure" aria-hidden="true">
+                      <CountUp value={pct} />
+                      <span className="overall-unit">%</span>
+                    </div>
+                    <div
+                      className="overall-bar"
+                      style={{ ["--p" as string]: Math.min(1, Math.max(0, pct / 100)) }}
+                    >
+                      <span />
+                    </div>
+                    <p className="overall-score">
+                      Overall score: {overallPoints.points} / {overallPoints.possible}{" "}
+                      points ({pct}%)
+                      {notAssessedCount > 0 && (
+                        <span className="small">
+                          {" "}
+                          (over {assessed} of {report.scores.length} criteria;{" "}
+                          {notAssessedCount} not assessable)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                );
+              })()}
               <table>
                 <thead>
                   <tr>
@@ -282,8 +299,8 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {report.scores.map((s) => (
-                    <tr key={s.id}>
+                  {report.scores.map((s, i) => (
+                    <tr key={s.id} className="rise" style={{ ["--d" as string]: 3 + i * 0.7 }}>
                       <td>{s.name}</td>
                       <td className="score-cell">
                         {s.score === null ? (
@@ -307,7 +324,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
       )}
 
       {report && feedback && (
-        <div className="card">
+        <div className="card rise" style={{ ["--d" as string]: 3 }}>
           <h2>Feedback</h2>
           <h3>Strengths</h3>
           <ul>
@@ -336,7 +353,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
         </div>
       )}
 
-      <div className="card">
+      <div className="card rise" style={{ ["--d" as string]: 4 }}>
         <h2>Transcript</h2>
         <div className="transcript">
           {result.transcript.map((e, i) => (
@@ -367,6 +384,28 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
       </div>
     </div>
   );
+}
+
+/** Counts up to `value` with an ease-out, once, when the score arrives. */
+function CountUp({ value }: { value: number }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setShown(value);
+      return;
+    }
+    let raf = 0;
+    const start = performance.now();
+    const duration = 1100;
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - start) / duration);
+      setShown(value * (1 - Math.pow(1 - k, 4)));
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{Number.isInteger(value) ? Math.round(shown) : shown.toFixed(1)}</>;
 }
 
 function buildMarkdownReport(

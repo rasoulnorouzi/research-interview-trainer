@@ -291,6 +291,16 @@ export class InterviewSession {
     if (muted) this.opts.onStudentSpeaking(false);
   }
 
+  /** Current voice levels, 0 to 1, for the interview screen's orb. A
+   *  read-only view of the two speech meters; it changes no measurement. */
+  levels(): { student: number; interviewee: number } {
+    const scale = (rmsLevel: number) => Math.min(1, rmsLevel * 6);
+    return {
+      student: this.muted ? 0 : scale(this.micMeter?.level ?? 0),
+      interviewee: scale(this.remoteMeter?.level ?? 0),
+    };
+  }
+
   stop(): SessionResult {
     const wasStopped = this.stopped;
     // Ending the interview mid-answer cuts that answer off too.

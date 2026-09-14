@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { MeResponse } from "../types";
 import { api } from "../api";
+import { VoicePoweredOrb } from "../components/ui/voice-powered-orb";
+import { ORB_HUE } from "./InterviewScreen";
 
 interface Props {
   onLoggedIn: (me: MeResponse) => void;
@@ -78,12 +80,19 @@ export function LoginScreen({ onLoggedIn }: Props) {
 
   return (
     <div className="login">
-      <div className="card">
-        <h1>Research Interview Trainer</h1>
+      <section className="stage-panel login-hero">
+        <div className="orb-wrap orb-wrap-hero">
+          <VoicePoweredOrb className="orb-stage" hue={ORB_HUE} />
+        </div>
+        <h1 className="rise" style={{ ["--d" as string]: 1 }}>Research Interview Trainer</h1>
+        <p className="stage-sub rise" style={{ ["--d" as string]: 2 }}>
+          Practice qualitative interviewing by speaking with a simulated
+          interviewee. Get a report on your technique.
+        </p>
+      </section>
+      <div className="card login-card rise" style={{ ["--d" as string]: 3 }}>
         <p className="lede">
-          Practice qualitative research interviewing by speaking with a simulated
-          interviewee, then receive a report on your technique. Log in with the
-          university email address you are enrolled with.
+          Log in with the university email address you are enrolled with.
         </p>
 
         {error && <div className="banner-error">{error}</div>}

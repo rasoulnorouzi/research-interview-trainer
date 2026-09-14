@@ -28,6 +28,9 @@ export interface SpeechMeter {
   /** Total voiced milliseconds observed on this stream so far. */
   readonly speechMs: number;
   readonly speaking: boolean;
+  /** RMS amplitude of the latest sample, about 0 to 0.3 for speech. Read
+   *  by visuals only (the interview orb); never part of any measurement. */
+  readonly level: number;
   stop(): void;
 }
 
@@ -53,6 +56,7 @@ export function createSpeechMeter(
   const buf = new Float32Array(analyser.fftSize);
   let speechMs = 0;
   let speaking = false;
+  let level = 0;
   let msSinceVoice = Infinity;
   let stopped = false;
 
@@ -65,7 +69,8 @@ export function createSpeechMeter(
   const timer = setInterval(() => {
     if (stopped) return;
     analyser.getFloatTimeDomainData(buf);
-    if (rms(buf) >= VOICE_RMS_THRESHOLD) {
+    level = rms(buf);
+    if (level >= VOICE_RMS_THRESHOLD) {
       msSinceVoice = 0;
       speechMs += SAMPLE_INTERVAL_MS;
       setSpeaking(true);
@@ -82,6 +87,9 @@ export function createSpeechMeter(
     },
     get speaking() {
       return speaking;
+    },
+    get level() {
+      return stopped ? 0 : level;
     },
     stop() {
       if (stopped) return;
