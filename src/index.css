@@ -1899,6 +1899,608 @@ textarea.admin-large {
 }
 
 /* ===========================================================================
+   INSTRUCTOR DASHBOARD, "ui-orb" test design (branch ui-orb, 2026-09-14).
+   The same language as the student design above: Apple-like type, a
+   floating translucent header, a dark stage with the orb, pill controls, a
+   segmented tab bar with a sliding highlight, springy switches and soft
+   entrance motion. The dashboard keeps its own green identity (a green
+   accent and a green-tinted orb), so the two apps stay easy to tell apart.
+   Scoped to the dashboard page (:root:has(.admin-root)).
+   ======================================================================== */
+
+:root:has(.admin-root) {
+  --bg: #f5f5f7;
+  --card: #ffffff;
+  --field: #ffffff;
+  --surface-subtle: #f5f5f7;
+  --surface-chip: rgba(0, 0, 0, 0.05);
+  --text: #1d1d1f;
+  --text-muted: #6e6e73;
+  --placeholder: #a1a1a6;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.18);
+  --radius-card: 22px;
+  --radius-control: 12px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.03), 0 8px 28px rgba(0, 0, 0, 0.05);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --stage-bg: radial-gradient(120% 110% at 15% 0%, #15342b 0%, #06090a 65%);
+  --stage-text: #f5f5f7;
+  --stage-muted: rgba(245, 245, 247, 0.62);
+  --seg-thumb: #ffffff;
+}
+
+.admin-root {
+  --accent: #1d7a4c;
+  --accent-strong: #176740;
+  --accent-text: #19744a;
+  --accent-soft: rgba(29, 122, 76, 0.09);
+  --danger: #d70015;
+  --danger-text: #b3261e;
+  --danger-border: rgba(255, 59, 48, 0.28);
+  --danger-soft: rgba(255, 59, 48, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:has(.admin-root) {
+    --bg: #000000;
+    --card: #141416;
+    --field: #1c1c1e;
+    --surface-subtle: #1c1c1e;
+    --surface-chip: rgba(255, 255, 255, 0.08);
+    --text: #f5f5f7;
+    --text-muted: #a1a1a6;
+    --placeholder: #6e6e73;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-hover: rgba(255, 255, 255, 0.24);
+    --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --stage-bg: radial-gradient(120% 110% at 15% 0%, #173d31 0%, #07100d 65%);
+    --seg-thumb: #2c2c2e;
+  }
+
+  .admin-root {
+    --accent: #248f5a;
+    --accent-strong: #2ba868;
+    --accent-text: #4fd28c;
+    --accent-soft: rgba(48, 209, 120, 0.14);
+    --danger: #ff453a;
+    --danger-text: #ff8a80;
+    --danger-border: rgba(255, 69, 58, 0.4);
+    --danger-soft: rgba(255, 69, 58, 0.14);
+  }
+}
+
+.admin-root .admin-page {
+  padding-top: 16px;
+}
+
+.admin-root h1 {
+  font-size: clamp(1.8rem, 1.3rem + 1.6vw, 2.4rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.admin-root h2 {
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.admin-root h3 {
+  letter-spacing: -0.01em;
+}
+
+.admin-root label {
+  font-weight: 590;
+}
+
+/* Header: the same floating translucent bar as the student app. */
+.admin-root .app-header {
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 10px 18px;
+  margin: 0 0 22px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+}
+
+.admin-root .app-header .app-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.admin-root .app-header .app-name::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: conic-gradient(from 200deg, #2fd08a, #37b6d8, #0d4a33, #2fd08a);
+  box-shadow: 0 0 12px rgba(47, 208, 138, 0.5);
+}
+
+.admin-root .app-header .app-user {
+  color: var(--text-muted);
+}
+
+.admin-root .app-header .link-btn {
+  color: var(--accent-text);
+  border-bottom: none;
+  text-decoration: none;
+}
+
+.admin-root .app-header .link-btn:hover {
+  color: var(--accent-strong);
+}
+
+/* The hero: a compact dark stage with a green orb. */
+.admin-hero {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  text-align: left;
+  padding: 20px 28px;
+  margin-bottom: 22px;
+  border-radius: 26px;
+}
+
+.admin-hero .orb-wrap.admin-orb {
+  flex: none;
+  width: 104px;
+  margin: 0;
+}
+
+.admin-hero h1 {
+  margin: 2px 0 4px;
+  font-size: clamp(1.6rem, 1.2rem + 1.4vw, 2.1rem);
+}
+
+.admin-hero .eyebrow {
+  color: #7fe0a8;
+}
+
+.admin-root .orb-stage::before {
+  background: radial-gradient(
+    closest-side,
+    rgba(70, 220, 150, 0.5),
+    rgba(40, 160, 200, 0.18) 60%,
+    transparent
+  );
+}
+
+/* Tabs: a segmented control with a highlight that slides to the active tab.
+   AdminApp sets --x and --w from the active button. */
+.admin-root .admin-nav {
+  position: relative;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 4px;
+  margin: 0 0 26px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-chip);
+}
+
+.admin-root .admin-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-root .admin-nav::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: var(--w, 0px);
+  transform: translateX(var(--x, 0px));
+  border-radius: var(--radius-pill);
+  background: var(--seg-thumb);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 4px 14px rgba(0, 0, 0, 0.08);
+  transition: transform 0.55s var(--ease-spring), width 0.55s var(--ease-spring);
+}
+
+.admin-root .admin-nav button,
+.admin-root .admin-nav button:hover,
+.admin-root .admin-nav button.active {
+  position: relative;
+  z-index: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 18px;
+  font-weight: 590;
+  white-space: nowrap;
+  border-radius: var(--radius-pill);
+  transition: color 0.25s ease;
+}
+
+.admin-root .admin-nav button {
+  color: var(--text-muted);
+}
+
+.admin-root .admin-nav button:hover,
+.admin-root .admin-nav button.active {
+  color: var(--text);
+}
+
+.admin-root .admin-nav button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.admin-root .admin-title {
+  margin: 2px 0 18px;
+}
+
+/* Surfaces */
+.admin-root .card {
+  padding: 24px;
+  margin-bottom: 18px;
+}
+
+.admin-root .card > table,
+.admin-root .card > .table-flush {
+  margin-left: -24px;
+  margin-right: -24px;
+  width: calc(100% + 48px);
+}
+
+.admin-root .card > table:last-child,
+.admin-root .card > .table-flush:last-child {
+  margin-bottom: -24px;
+}
+
+.admin-root .card > table th:first-child,
+.admin-root .card > table td:first-child,
+.admin-root .table-flush th:first-child,
+.admin-root .table-flush td:first-child {
+  padding-left: 24px;
+}
+
+.admin-root .card > table th:last-child,
+.admin-root .card > table td:last-child,
+.admin-root .table-flush th:last-child,
+.admin-root .table-flush td:last-child {
+  padding-right: 24px;
+}
+
+.admin-root .admin-table-wrap {
+  border-radius: var(--radius-card);
+}
+
+.admin-root .admin-table-wrap th,
+.admin-root .admin-table-wrap td {
+  padding: 13px 16px;
+}
+
+.admin-root thead th {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+
+.admin-root .admin-clickable-row {
+  transition: background-color 0.2s ease;
+}
+
+.admin-root .admin-subrow > td {
+  background: var(--surface-subtle);
+}
+
+.admin-root .admin-copy-box {
+  border-radius: 12px;
+}
+
+/* Buttons: pills that lift on hover and give under the finger. */
+.admin-root .btn {
+  border-radius: var(--radius-pill);
+  padding: 10px 20px;
+  font-weight: 590;
+  letter-spacing: -0.01em;
+  transition: transform 0.4s var(--ease-spring), background-color 0.2s ease,
+    border-color 0.2s ease, color 0.2s ease, box-shadow 0.3s var(--ease-out);
+}
+
+.admin-root .btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.admin-root .btn:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
+}
+
+.admin-root .btn:disabled {
+  background: color-mix(in srgb, var(--accent) 35%, var(--card));
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.admin-root .btn-secondary {
+  background: var(--surface-chip);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.admin-root .btn-secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  border-color: transparent;
+  color: var(--text);
+  box-shadow: none;
+}
+
+.admin-root .btn-secondary:disabled,
+.admin-root .btn-danger:disabled {
+  background: var(--surface-chip);
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.admin-root .btn-danger {
+  background: var(--danger-soft);
+  border-color: transparent;
+  color: var(--danger);
+}
+
+.admin-root .btn-danger:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+/* Buttons inside tables stay compact and on one line. */
+.admin-root .admin-table-wrap .btn {
+  padding: 6px 14px;
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
+.admin-root .admin-row-actions {
+  gap: 4px;
+}
+
+.admin-root .admin-row-actions .btn {
+  padding: 4px 11px;
+  font-size: 0.8rem;
+}
+
+/* Table values (ids, cohorts, dates, names) stay on one line; a table wider
+   than the card scrolls sideways inside its wrapper instead. */
+.admin-root .admin-table-wrap td {
+  white-space: nowrap;
+}
+
+/* Each screen's own first heading reads as the page title. */
+.admin-root .screen > div > h2:first-child {
+  font-size: 1.6rem;
+  letter-spacing: -0.028em;
+  margin: 4px 0 16px;
+}
+
+/* A little more width and tighter cells, so the roster and persona tables
+   fit a laptop screen without scrolling sideways. */
+.admin-root .admin-page {
+  max-width: 1280px;
+}
+
+.admin-root .admin-table-wrap th,
+.admin-root .admin-table-wrap td {
+  padding: 12px 12px;
+}
+
+.admin-root .admin-table-wrap th:first-child,
+.admin-root .admin-table-wrap td:first-child {
+  padding-left: 18px;
+}
+
+.admin-root .admin-table-wrap th:last-child,
+.admin-root .admin-table-wrap td:last-child {
+  padding-right: 18px;
+}
+
+/* On a phone the toolbar stacks; its fields must not keep their 10rem flex
+   basis, which a column turns into a 10rem height (a bug that predates this
+   design). */
+@media (max-width: 640px) {
+  .admin-root .admin-toolbar .field {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+}
+
+.admin-root .link-btn {
+  text-decoration: none;
+}
+
+.admin-root .link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+/* Fields */
+.admin-root input[type="password"],
+.admin-root input[type="text"],
+.admin-root input[type="email"],
+.admin-root input[type="number"],
+.admin-root input[type="date"],
+.admin-root select,
+.admin-root textarea {
+  padding: 11px 13px;
+  border-radius: var(--radius-control);
+  transition: border-color 0.2s ease, box-shadow 0.3s var(--ease-out);
+}
+
+.admin-root input:focus,
+.admin-root select:focus,
+.admin-root textarea:focus {
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+/* Switches: an iOS-style track, the knob springs across. */
+.admin-root .toggle .toggle-track {
+  width: 46px;
+  height: 28px;
+  border-radius: 14px;
+  border: none;
+  background: color-mix(in srgb, var(--text) 16%, transparent);
+  transition: background-color 0.3s ease;
+}
+
+.admin-root .toggle .toggle-track::after,
+.admin-root .toggle input:checked + .toggle-track::after {
+  top: 2px;
+  left: 2px;
+  right: auto;
+  width: 24px;
+  height: 24px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), 0 0 1px rgba(0, 0, 0, 0.25);
+  transition: transform 0.45s var(--ease-spring);
+}
+
+.admin-root .toggle input:checked + .toggle-track {
+  background: var(--accent);
+}
+
+.admin-root .toggle input:checked + .toggle-track::after {
+  transform: translateX(18px);
+}
+
+.admin-root .banner-error,
+.admin-root .banner-info,
+.admin-root .banner-success {
+  border-radius: 14px;
+}
+
+.admin-root .chip {
+  padding: 3px 11px;
+}
+
+.admin-root blockquote {
+  border-radius: 0 14px 14px 0;
+}
+
+/* Motion: each tab enters, its cards and tables rise one after another, and
+   table rows fade in with a short stagger. */
+.admin-root .screen {
+  animation: screen-in 0.5s var(--ease-out) backwards;
+}
+
+.admin-root .rise {
+  animation: rise 0.9s var(--ease-out) backwards;
+  animation-delay: calc(var(--d, 0) * 80ms + 80ms);
+}
+
+.admin-root .screen :is(.card, .admin-table-wrap, .banner-info) {
+  animation: rise 0.8s var(--ease-out) backwards;
+  animation-delay: 60ms;
+}
+
+.admin-root .screen :is(.card, .admin-table-wrap):nth-child(2) {
+  animation-delay: 130ms;
+}
+
+.admin-root .screen :is(.card, .admin-table-wrap):nth-child(3) {
+  animation-delay: 200ms;
+}
+
+.admin-root .screen :is(.card, .admin-table-wrap):nth-child(4) {
+  animation-delay: 270ms;
+}
+
+.admin-root .screen :is(.card, .admin-table-wrap):nth-child(n + 5) {
+  animation-delay: 340ms;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.admin-root .admin-table-wrap tbody tr {
+  animation: row-in 0.55s var(--ease-out) backwards;
+  animation-delay: 200ms;
+}
+
+.admin-root .admin-table-wrap tbody tr:nth-child(2) { animation-delay: 230ms; }
+.admin-root .admin-table-wrap tbody tr:nth-child(3) { animation-delay: 260ms; }
+.admin-root .admin-table-wrap tbody tr:nth-child(4) { animation-delay: 290ms; }
+.admin-root .admin-table-wrap tbody tr:nth-child(5) { animation-delay: 320ms; }
+.admin-root .admin-table-wrap tbody tr:nth-child(6) { animation-delay: 350ms; }
+.admin-root .admin-table-wrap tbody tr:nth-child(7) { animation-delay: 380ms; }
+.admin-root .admin-table-wrap tbody tr:nth-child(n + 8) { animation-delay: 410ms; }
+
+@media (max-width: 640px) {
+  .admin-root .app-header {
+    border-radius: 22px;
+    margin: 0 0 18px;
+  }
+
+  .admin-hero {
+    gap: 14px;
+    padding: 16px 18px;
+  }
+
+  .admin-hero .orb-wrap.admin-orb {
+    width: 64px;
+  }
+
+  .admin-hero .stage-sub {
+    font-size: 0.88rem;
+  }
+
+  .admin-root .admin-page .card {
+    padding: 16px;
+  }
+
+  .admin-root .card > table,
+  .admin-root .card > .table-flush {
+    margin-left: -16px;
+    margin-right: -16px;
+    width: calc(100% + 32px);
+  }
+
+  .admin-root .card > table:last-child {
+    margin-bottom: -16px;
+  }
+
+  .admin-root .card > table th:first-child,
+  .admin-root .card > table td:first-child {
+    padding-left: 16px;
+  }
+
+  .admin-root .card > table th:last-child,
+  .admin-root .card > table td:last-child {
+    padding-right: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-root *,
+  .admin-root *::before,
+  .admin-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ===========================================================================
    PRINT — the report has to leave the app as plain black on white: no frame,
    no cards, no fills. The light values are forced here, so a student printing
    from a dark-scheme browser still gets a readable page. This block is last,
@@ -1908,6 +2510,7 @@ textarea.admin-large {
 @media print {
   :root,
   :root:has(.student-app),
+  :root:has(.admin-root),
   .admin-root {
     color-scheme: light;
     --bg: #ffffff;
