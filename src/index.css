@@ -15,7 +15,9 @@
    as text on a card, which has to lighten in dark mode while the fill has to
    stay dark enough for white text.
 
-   No external fonts, no gradients, no animation beyond hover/focus colour.
+   No external fonts. Since 2026-09-15 both apps use the orb design (the
+   blocks near the end of this file), which adds gradients and motion on
+   purpose; see CLAUDE.md, constraint 2.
    ========================================================================= */
 
 /* --- Light (default) ---------------------------------------------------- */
@@ -1089,9 +1091,9 @@ textarea.admin-large {
 }
 
 /* ===========================================================================
-   STUDENT APP, "ui-orb" test design (branch ui-orb, 2026-09-14).
-   A deliberate break from the design rules at the top of this file, at the
-   instructor's request, to try a calmer, more cinematic look: Apple-like type
+   STUDENT APP, the orb design (built 2026-09-14, shipped 2026-09-15).
+   The instructor's revised design rule (CLAUDE.md, constraint 2): a calmer,
+   more cinematic look: Apple-like type
    and spacing, a translucent floating header, soft entrance motion, and a
    WebGL orb that follows the voices during the interview. Everything is
    scoped to the student page (:root:has(.student-app)); the dashboard is a
@@ -1899,12 +1901,12 @@ textarea.admin-large {
 }
 
 /* ===========================================================================
-   INSTRUCTOR DASHBOARD, "ui-orb" test design (branch ui-orb, 2026-09-14).
+   INSTRUCTOR DASHBOARD, the orb design (shipped 2026-09-15).
    The same language as the student design above: Apple-like type, a
    floating translucent header, a dark stage with the orb, pill controls, a
    segmented tab bar with a sliding highlight, springy switches and soft
-   entrance motion. The dashboard keeps its own green identity (a green
-   accent and a green-tinted orb), so the two apps stay easy to tell apart.
+   entrance motion. The green accent set here is replaced by the ORB
+   PALETTE block below; the "Instructor" hero tells the two apps apart.
    Scoped to the dashboard page (:root:has(.admin-root)).
    ======================================================================== */
 
@@ -2501,7 +2503,7 @@ textarea.admin-large {
 }
 
 /* ===========================================================================
-   ORB PALETTE, both pages (branch ui-orb, 2026-09-14, instructor request).
+   ORB PALETTE, both pages (instructor request 2026-09-14, shipped 2026-09-15).
    The colours come from the orb: violet, indigo and cyan, on a white page.
    Colour is spent only where it carries meaning: the primary action, links,
    switches, selection, and the score. The orb gradient is kept for

@@ -7,6 +7,81 @@ one instruction per action.
 
 ---
 
+## 2026-09-15 — The orb design (student app and dashboard)
+
+Branch `ui-orb`, three commits (student design, dashboard design, orb
+palette) plus a docs commit, merged into `main` with a merge commit. No
+schema change, no settings change, no key change. One new client
+dependency: `ogl`. The release is tagged `release-2026-09-15`. The state
+before it (Worker version `596c8979`) is tagged `release-2026-09-13`.
+
+### What changed
+
+1. **A new look for both apps.** A white page with a faint violet and cyan
+   glow, a floating translucent header, pill buttons, larger type, and
+   soft motion: screens and cards rise in, buttons give under a press.
+2. **The orb.** A WebGL orb (`src/components/ui/voice-powered-orb.tsx`,
+   adapted from 21st.dev) sits on a dark stage. On the interview screen it
+   swells and glows with the interviewee's voice, and more softly with the
+   student's. It also greets the student on the login screen and heads the
+   dashboard.
+3. **Student screens.** Login: the orb stage with the form as a sheet
+   below it. Setup: interviewees as rows with initials avatars and a check
+   that springs in. Report: the overall score counts up above a bar that
+   fills, and a thin bar runs while scoring.
+4. **Dashboard.** A hero with the orb, a segmented tab bar whose highlight
+   slides to the active tab, iOS-style switches, compact row buttons, and
+   cards and table rows that rise in on each tab change.
+5. **One palette from the orb:** an indigo accent, a violet-to-indigo blend
+   on primary buttons, and the orb gradient on highlights only. The
+   dashboard's green is gone.
+6. **A bug fix:** on a phone, the dashboard's stacked search and add forms
+   had large gaps between fields (a 10rem flex basis became a height).
+
+### Decisions
+
+- The instructor tried the design on a local test branch first, then
+  asked for it to ship. It replaces the design rule of 2026-08-14
+  (CLAUDE.md, constraint 2 is rewritten).
+- The orb never opens the microphone. It reads the interview's own speech
+  meters (`SpeechMeter.level`, `InterviewSession.levels()`). The original
+  opened a second microphone stream with echo cancellation off, which can
+  change how Chrome processes the call's audio.
+- No Tailwind or shadcn: the app is plain CSS, and adding them would
+  restyle every screen. The component sits in `src/components/ui/`, the
+  shadcn-style folder, with a small `cn()` helper in `src/lib/utils.ts`.
+- Everything is scoped with `:root:has(.student-app)` and
+  `:root:has(.admin-root)`. Print output stays black on white. Motion
+  stops under `prefers-reduced-motion`.
+
+### Tests done
+
+- `npm run lint` and `npm run build` clean.
+- Headless Chrome with WebGL (SwiftShader), screenshots checked by eye:
+  login (both steps), setup, interview, scoring, report; every dashboard
+  tab; light and dark; desktop and phone width.
+- A full interview through the production gateway: the orb level rose to
+  about 0.2 to 0.5 while the student spoke and up to 0.98 while the
+  interviewee spoke; the report was scored and shown.
+- The instructor tried both apps locally and approved them.
+
+### Deploy procedure
+
+1. `npm run backup` (kept locally, never committed).
+2. `npm run lint && npm run build && npx wrangler deploy`.
+3. Smoke tests: `/` `200`; `/admin` and `/api/admin/settings` `302` to
+   Access; `/api/personas` `401`; the live bundle carries the orb.
+
+### Rollback
+
+- **Worker, immediately:**
+  `npx wrangler rollback 596c8979-1e1f-4a10-ac53-4b2c9188ca36` returns the
+  gateway release with the old design. No key or setting changes with it.
+- **Code, in git:** `git revert -m 1 <merge commit>` on `main`. The tag
+  `release-2026-09-13` marks the old state.
+
+---
+
 ## 2026-09-13 — AI calls through the university gateway (Tilburg.AI)
 
 Branch `azure-migration`, one commit (`5614894`), merged onto the
