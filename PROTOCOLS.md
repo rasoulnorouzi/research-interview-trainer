@@ -80,6 +80,22 @@ before it (Worker version `596c8979`) is tagged `release-2026-09-13`.
 - **Code, in git:** `git revert -m 1 <merge commit>` on `main`. The tag
   `release-2026-09-13` marks the old state.
 
+### Deploy record, 2026-09-15
+
+1. `npm run backup` wrote `backup-2026-09-15.sql`. D1 Time Travel
+   bookmark before the deploy:
+   `000000c3-00000000-000050e6-ac13121ce0fe5f25134063578af3d328`.
+2. `main` merged `ui-orb` as `881afb3`, tagged `release-2026-09-15`. Lint
+   and build clean. A last full interview on the final build passed.
+3. `npx wrangler deploy` at 22:06 UTC on 2026-09-14: Worker version
+   `35820845-ed1b-4c3b-b8e5-41dc6e54b7a0`. The previous version is
+   `596c8979`. No downtime: no key, schema or settings change.
+4. Smoke tests: `/` `200`; `/admin` and `/api/admin/settings` `302` to
+   Access; `/api/personas` and `/api/me` `401`. The live bundles carry the
+   orb styles, the palette and the gateway code.
+5. GitHub: the instructor pushes `main` and the tag (no credentials on the
+   machine that deployed).
+
 ---
 
 ## 2026-09-13 — AI calls through the university gateway (Tilburg.AI)
