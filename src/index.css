@@ -2501,6 +2501,134 @@ textarea.admin-large {
 }
 
 /* ===========================================================================
+   ORB PALETTE, both pages (branch ui-orb, 2026-09-14, instructor request).
+   The colours come from the orb: violet, indigo and cyan, on a white page.
+   Colour is spent only where it carries meaning: the primary action, links,
+   switches, selection, and the score. The orb gradient is kept for
+   highlights. Calm enough for an academic setting. Overrides the tokens of
+   the two blocks above, so this block must stay after them.
+   ======================================================================== */
+
+:root:has(.student-app),
+:root:has(.admin-root) {
+  --bg: #ffffff;
+  --card: #ffffff;
+  --field: #ffffff;
+  --surface-subtle: #f7f7fb;
+  --surface-chip: #f1f1f7;
+  --text: #111325;
+  --text-muted: #62667d;
+  --placeholder: #a3a6b8;
+  --border: rgba(20, 22, 60, 0.09);
+  --border-hover: rgba(20, 22, 60, 0.2);
+  --shadow-card: 0 1px 2px rgba(20, 22, 60, 0.04), 0 10px 30px rgba(20, 22, 60, 0.06);
+  --orb-gradient: linear-gradient(120deg, #8b5cf6 0%, #5b6cff 48%, #22b8e6 100%);
+  --btn-gradient: linear-gradient(135deg, #6a5cff 0%, #4f46e5 60%, #3f51e0 100%);
+  --stage-bg: radial-gradient(120% 90% at 50% 0%, #221c55 0%, #0b0a1c 62%);
+  --seg-thumb: #ffffff;
+}
+
+:root:has(.student-app),
+.admin-root {
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --accent-text: #4f46e5;
+  --accent-soft: rgba(79, 70, 229, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:has(.student-app),
+  :root:has(.admin-root) {
+    --bg: #07070d;
+    --card: #111119;
+    --field: #16161f;
+    --surface-subtle: #16161f;
+    --surface-chip: rgba(255, 255, 255, 0.07);
+    --text: #f3f3f8;
+    --text-muted: #a0a3b8;
+    --placeholder: #6b6e82;
+    --border: rgba(255, 255, 255, 0.09);
+    --border-hover: rgba(255, 255, 255, 0.22);
+    --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.05);
+    --orb-gradient: linear-gradient(120deg, #a78bfa 0%, #7c8cff 48%, #5fd4f5 100%);
+    --btn-gradient: linear-gradient(135deg, #7a6dff 0%, #5e55f5 60%, #4f5fe8 100%);
+    --stage-bg: radial-gradient(120% 90% at 50% 0%, #272063 0%, #0b0a1c 62%);
+    --seg-thumb: #262632;
+  }
+
+  :root:has(.student-app),
+  .admin-root {
+    --accent: #5e55f5;
+    --accent-strong: #7069ff;
+    --accent-text: #a29bff;
+    --accent-soft: rgba(124, 115, 255, 0.16);
+  }
+}
+
+/* A faint violet and cyan glow at the top of the white page. */
+body:has(.student-app, .admin-root)::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 560px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42% 60% at 12% 0%, rgba(139, 92, 246, 0.1), transparent 70%),
+    radial-gradient(38% 55% at 88% 0%, rgba(34, 184, 230, 0.1), transparent 70%);
+}
+
+/* The primary action carries the palette: a soft violet-to-indigo blend. */
+:is(.student-app, .admin-root)
+  .btn:not(.btn-secondary):not(.btn-danger):not(.btn-end):not(:disabled) {
+  background: var(--btn-gradient);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+/* Highlights: the brand mark, the score, its bar. */
+.admin-root .app-header .app-name::before {
+  background: conic-gradient(from 200deg, #9c43fe, #4cc2e9, #101499, #9c43fe);
+  box-shadow: 0 0 12px rgba(76, 194, 233, 0.55);
+}
+
+.overall-figure {
+  background: var(--orb-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.overall-bar > span {
+  background: var(--orb-gradient);
+}
+
+.eyebrow {
+  color: #b3a6ff;
+}
+
+.admin-hero .eyebrow {
+  color: #8fd8f5;
+}
+
+.admin-root .orb-stage::before {
+  background: radial-gradient(
+    closest-side,
+    rgba(90, 170, 255, 0.55),
+    rgba(120, 80, 255, 0.18) 60%,
+    transparent
+  );
+}
+
+/* Initials avatars in orb tones: violet through indigo into cyan. */
+.persona-avatar {
+  background: linear-gradient(
+    145deg,
+    hsl(var(--h, 250) 85% 66%),
+    hsl(calc(var(--h, 250) - 40) 78% 46%)
+  );
+}
+
+/* ===========================================================================
    PRINT — the report has to leave the app as plain black on white: no frame,
    no cards, no fills. The light values are forced here, so a student printing
    from a dark-scheme browser still gets a readable page. This block is last,
@@ -2631,6 +2759,10 @@ textarea.admin-large {
   .rise,
   .screen {
     animation: none !important;
+  }
+
+  body::before {
+    display: none !important;
   }
 
   .overall-figure {

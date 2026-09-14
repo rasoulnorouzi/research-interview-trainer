@@ -26,11 +26,12 @@ const initials = (name: string) =>
     .join("")
     .toUpperCase();
 
-/** A stable hue per persona id, for its avatar. */
+/** A stable hue per persona id, for its avatar. Kept to the orb's range,
+ *  indigo to violet (225 to 285), so every avatar belongs to the palette. */
 const hueOf = (id: string) => {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 360;
-  return h;
+  return 225 + (h % 60);
 };
 
 type PersonaState =

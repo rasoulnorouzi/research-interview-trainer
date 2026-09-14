@@ -19,9 +19,9 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "breakglass", label: "Break-glass" },
 ];
 
-/** Hue shift for the dashboard's orb: turns the student app's violet and
- *  cyan into greens, the dashboard's colour. */
-const ADMIN_ORB_HUE = 95;
+/** Hue shift for the dashboard's orb. 0 keeps the orb's own violet and cyan,
+ *  the palette both apps share (instructor request, 2026-09-14). */
+const ADMIN_ORB_HUE = 0;
 
 /** The active tab lives in location.hash (#roster), so Back moves between the
  *  tabs the instructor has visited instead of leaving the dashboard. An
