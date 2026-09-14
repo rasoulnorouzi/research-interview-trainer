@@ -87,6 +87,17 @@ is tagged `release-2026-09-13`. The state before it (Worker version
   before the patch, so the patch is most likely not on production yet.
   **Not deployed.** Robert Smolders was asked to patch production. Raw
   log: `~/Desktop/tilburg-prod-mint-raw-*.log`.
+- Production gateway, 2026-09-14 19:19 to 19:22 UTC, after Robert patched
+  production:
+  - Two direct mints to `api.tilburg.ai` with the production key: `200`.
+  - Local Worker with the production key and production's 25-minute
+    limit: mint `200` for the three personas; a fake key refused (`400`).
+  - A full interview in headless Chrome: SDP answer `201` from
+    `api.tilburg.ai/v1/realtime/calls`, WebRTC connected, five
+    interruptions with the heard-text note each time, no error events,
+    no transcript on screen, the report scored in 14.5 s.
+  - Raw logs: `~/Desktop/tilburg-prod-api-raw-20260914T192043Z.log` and
+    `~/Desktop/tilburg-prod-e2e-raw-20260914T192043Z.log`.
 - Production settings to change at the deploy: `interview_model` is
   `gpt-realtime-2.1` (the gateway answers `403` for our key) and
   `transcription_model` is `gpt-realtime-whisper` (not on the gateway).
