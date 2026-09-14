@@ -153,13 +153,14 @@ api.testing.tilburg.ai 51.105.176.118"`; that pin is no longer needed.
 `gpt-realtime-2.1` answers `403 team not allowed` for our key. Robert must
 grant it, or the voice cannot stay in the EU.
 
-**Status (2026-09-14).** Both blockers of 2026-09-11 are gone. UvT fixed
-the DNS on 2026-09-13, and Robert patched the production gateway on
-2026-09-14 (on 2026-09-13 its mint still answered `429`). The merged code
-passed a full interview through the production gateway with the production
-key (see `PROTOCOLS.md`). Before the deploy, set the production
-`interview_model` to `gpt-realtime-2.1-mini` and `transcription_model` to
-`gpt-live-transcribe`; the current values are not on the gateway.
+**Status (2026-09-14): live.** UvT fixed the DNS on 2026-09-13, and Robert
+patched the production gateway on 2026-09-14 (on 2026-09-13 its mint still
+answered `429`). The merged code passed a full interview through the
+production gateway, then shipped: `main` `5a12f4a`, tag
+`release-2026-09-13`, Worker version `596c8979`, production gateway key
+saved at 19:35 UTC. The production model rows now hold
+`gpt-realtime-2.1-mini` and `gpt-live-transcribe`. `PROTOCOLS.md` has the
+deploy record.
 
 **Switching production, and back.** The new Worker checks keys against the
 gateway, so the gateway key cannot be saved before the deploy, and

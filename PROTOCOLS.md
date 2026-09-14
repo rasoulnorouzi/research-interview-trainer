@@ -111,6 +111,34 @@ the steps: backup, check the model rows, deploy, then save the production
 gateway key on the Settings screen at once. Interviews fail between the
 deploy and the save.
 
+**Deploy record, 2026-09-14.**
+
+1. `npm run backup` wrote `backup-2026-09-14.sql` (kept locally, never
+   committed; it holds the OpenAI key, the way back). D1 Time Travel
+   bookmark before the changes:
+   `000000be-00000000-000050e6-77530a885238d251ba45b0858f41273c`.
+2. Production model rows changed: `interview_model` from
+   `gpt-realtime-2.1` to `gpt-realtime-2.1-mini`, `transcription_model`
+   from `gpt-realtime-whisper` to `gpt-live-transcribe`. `scoring_model`
+   stayed `gpt-5.6-terra`.
+3. `main` fast-forwarded to `azure-release` (`5a12f4a`), tagged
+   `release-2026-09-13`. Lint and build clean.
+4. `npx wrangler deploy` at 19:27 UTC: Worker version
+   `596c8979-1e1f-4a10-ac53-4b2c9188ca36`, `AI_BASE_URL`
+   `https://api.tilburg.ai/v1`. The previous version is `79a99a60`.
+5. The instructor saved the production gateway key on the Settings
+   screen at 19:35:35 UTC. Interviews failed for about 8.5 minutes.
+6. Smoke tests: `/` `200`; `/admin` and `/api/admin/settings` `302` to
+   Access; `/api/personas` and `/api/me` `401`. The live bundle carries
+   `callsUrl` and the heard-text note, and no `api.openai.com`.
+
+Open, 2026-09-14: the instructor asked for a longer admin login, like the
+students' "Remember this device". The login page belongs to Cloudflare
+Access, so the app cannot add a checkbox to it. The Access app "Research
+Interview Trainer Admin" keeps a login for 24 hours. The instructor sets
+its **Session Duration** (maximum one month) in the Zero Trust dashboard;
+Claude Code's permission check blocked the API change.
+
 ### Rollback
 
 - **Worker, immediately:**
