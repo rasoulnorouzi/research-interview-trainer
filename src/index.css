@@ -486,7 +486,8 @@ textarea {
 }
 
 /* On/off switch for binary settings. A real checkbox underneath; the track
-   and knob are drawn here. No motion: the knob changes side, nothing slides. */
+   and knob are drawn here. The dashboard block near the end of this file
+   restyles it as an iOS switch whose knob springs across. */
 .toggle {
   display: inline-flex;
   align-items: center;

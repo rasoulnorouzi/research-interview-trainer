@@ -605,6 +605,14 @@ address an allowed admin in one step, add an "Emails ending in" rule
 with the university domain — but then anyone at the university can open
 the dashboard, so prefer listing individual addresses for a small team.
 
+**How long a dashboard login lasts.** Cloudflare Access asks for a login
+code again when its session ends. The session of "Research Interview
+Trainer Admin" is 24 hours (2026-09-14). To stay logged in longer, open the
+application in Access → Applications, choose Configure, and set **Session
+Duration**, at most one month. A shorter value is safer on a shared
+computer. The login page itself belongs to Cloudflare, so the app cannot
+add a "Remember this device" box to it as it does for students.
+
 ## 11. Backups and disaster recovery
 
 Two mechanisms protect the data. Both are independent of this app's

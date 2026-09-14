@@ -18,6 +18,12 @@ straight from the browser to the university's AI gateway, Tilburg.AI
 carries audio. It logs students in, mints a short-lived voice token, scores
 the interview and emails the report.
 
+The design is modern and quiet: a white page, colours taken from the
+interview orb (violet, indigo, cyan), soft motion. During the interview a
+glowing orb on a dark stage follows the voices: it swells with the
+interviewee's voice and, more softly, with the student's. The orb only
+reads the call's own audio levels; it never opens the microphone itself.
+
 The transcript is not shown during the interview. The student reads it in
 the report. An interviewee answer that the student cut off keeps only the
 words the student heard, ends in "…", and carries the label
@@ -109,8 +115,9 @@ screen.
   `backup-<date>.sql` (gitignored; it holds the API key)
 - `npm run backup:local`: the same for the local database
 
-The client has two dependencies, `react` and `react-dom`. There is no AI
-SDK anywhere: the Worker and the browser use plain `fetch` and WebRTC.
+The client has three dependencies: `react`, `react-dom`, and `ogl`, the
+small WebGL library that draws the orb. There is no AI SDK anywhere: the
+Worker and the browser use plain `fetch` and WebRTC.
 
 ## Documentation
 

@@ -27,9 +27,8 @@ export function computeMetrics(result: SessionResult): Metrics {
   const student = result.transcript.filter((e) => e.speaker === "student");
   const interviewee = result.transcript.filter((e) => e.speaker === "interviewee");
 
-  // Both sides are now measured from audio, not from transcript timestamps:
-  // the student from the microphone energy gate, the interviewee from the
-  // sample count of every received chunk.
+  // Both sides are measured from audio, not from transcript timestamps: the
+  // same energy gate runs on the microphone and on the remote track.
   const studentSpeakingMs = result.studentSpeechMs;
   const intervieweeSpeakingMs = result.intervieweeAudioMs;
   const totalSpeaking = studentSpeakingMs + intervieweeSpeakingMs;

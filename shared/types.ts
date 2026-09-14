@@ -24,7 +24,7 @@ export interface SessionResult {
   transcript: TranscriptEntry[];
   startedAt: number; // epoch ms
   endedAt: number;
-  intervieweeAudioMs: number; // exact, from received audio sample counts
+  intervieweeAudioMs: number; // measured from the remote track by the same energy gate as the student
   studentSpeechMs: number; // measured from the microphone, not from transcript timing
   endedByError?: string;
 }

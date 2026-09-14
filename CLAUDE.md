@@ -101,10 +101,13 @@ cooldown_list=[...]"`.
   answer `201`, ICE connected about 0.5 s after the token, the model spoke
   three replies, 94 streaming transcription deltas arrived during speech,
   33 ms round trip, no packet loss.
-- Still open on the gateway side: roll the patch to production. One upstream
-  still answers a bare nginx `404` (no security headers, no CORS, so a
-  browser sees "Failed to fetch"), and the first request after a quiet
-  period tends to hit it.
+- Robert patched production on 2026-09-14; it mints since then. Still open
+  on the gateway side: one upstream still answers a bare nginx `404` (no
+  security headers, no CORS, so a browser sees "Failed to fetch"), and the
+  first request after a quiet period tends to hit it. On the evening of
+  2026-09-14 the **testing** gateway answered every mint with that `404`
+  or a `429` while production worked; for local tests use production then,
+  and tell Robert if it persists.
 
 **DNS: fixed on 2026-09-13.** At 15:28 UTC the `.ai` registry held a DS
 record for key tag 54271, the zone's KSK. `api.tilburg.ai` and
@@ -231,9 +234,9 @@ Resend sending domain `rslnorouzi.site` is verified (SPF, DKIM, MX in
 Cloudflare DNS), `EMAIL_FROM` is `Research Interview Trainer
 <trainer@rslnorouzi.site>`, and mail delivers to every address, not only
 the account owner's — see the Resend gotcha below, now historical for this
-deployment. The roster currently holds three test entries. `legacy-client`
-exists as a local git branch for rollback (`DEPLOYMENT.md` §6); pushing it
-to GitHub is still pending.
+deployment. The production roster held five entries on 2026-09-13, all of
+them tests. `legacy-client` exists as a git branch for rollback, locally
+and on GitHub (`DEPLOYMENT.md` §6).
 
 **The student welcome panel is an instructor setting (2026-09-11).** The
 card at the top of the setup screen used to be fixed text in
@@ -349,8 +352,9 @@ src/
     InterviewScreen.tsx       Orb stage, status line, countdown, mute, end
     ResultsScreen.tsx         Metrics, rubric, feedback, transcript, export
 admin/                        Instructor dashboard, behind Cloudflare Access
-  AdminApp.tsx, api.ts, and one file per screen: Roster, Personas, Rubric,
-  Settings, Submissions, Breakglass
+  AdminApp.tsx (shell: header, orb hero, sliding tab bar), api.ts, one file
+  per screen (Roster, Personas, Rubric, Settings, Submissions, Breakglass),
+  Toggle.tsx (the on/off switch) and zip.ts (store-only ZIP writer)
 ```
 
 **There are two HTML entry points, not one:** `index.html` (student app,
@@ -695,11 +699,7 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   student and a 0%/100% talk ratio.
   Under Gemini the interviewee's time was instead summed exactly from the
   sample count of every received PCM chunk. WebRTC never hands the app samples,
-  so that path is gone and the energy gate replaced it. Two comments still
-  describe the old chunk-counting method and are stale, not a second
-  measurement path: `shared/types.ts:20` (on `intervieweeAudioMs`) and
-  `src/lib/metrics.ts:32`. Worth correcting in the code and deleting these
-  two sentences.
+  so that path is gone and the energy gate replaced it.
 - Per-turn `speechMs`, for the student, is the mic meter's advance since that
   turn opened. For the interviewee it is set when the answer's audio stops
   (`output_audio_buffer.stopped` or `.cleared`): the remote meter's advance
@@ -822,12 +822,14 @@ needs first.
 (each persona against its rejected alternatives, plus Elena before and after
 the reverted 0.9 playback slowdown). It is gitignored and local-only. Re-record
 into it before changing any `voiceName`; do not commit it. The dashboard's
-persona editor now also has a "Preview voice" button (2026-08-31): `POST
+persona editor also has a "Preview voice" button (2026-08-31): `POST
 /api/admin/voice-preview` speaks one fixed sample sentence through
-`gpt-4o-mini-tts` on the university key — verified live to accept all ten
-realtime voices, marin and cedar included — so the instructor can cast by
-ear without this folder. The auditions stay the record of why the built-in
-casting is what it is.
+`gpt-4o-mini-tts`. That worked on the OpenAI key, for all ten voices. The
+university gateway offers no text-to-speech model, so since 2026-09-13 the
+button answers `502` with a message that says so; it works again with no
+code change once the gateway adds one. All ten voices do mint through the
+gateway (tested 2026-09-13). The auditions stay the record of why the
+built-in casting is what it is.
 
 ## Deployment
 
@@ -836,6 +838,17 @@ deploy`, serving from the account's `workers.dev` subdomain. Full first-deploy
 and update procedures, the Cloudflare Access click-through, and the Resend
 domain setup are in [`DEPLOYMENT.md`](DEPLOYMENT.md) — that document, not this
 one, is the source of truth for running any deploy command.
+
+**Release routine (since 2026-08-31).** One commit per feature on a branch,
+merged into `main` with `--no-ff`, tagged `release-YYYY-MM-DD`; `npm run
+backup` and the D1 Time Travel bookmark first; `npx wrangler deploy`; smoke
+tests; a section in `PROTOCOLS.md` with the deploy record and the previous
+Worker version for `wrangler rollback`. Write merge messages to a file
+(`git merge -F msg.txt`): `-F -` does not read standard input, and it
+failed twice. The instructor pushes to GitHub; Claude's machine has no
+GitHub credentials. `wrangler` needs D1 permission for backups: if a
+`--remote` command answers `7403`, run `npx wrangler login` again or use an
+account API token.
 
 `main` no longer deploys to GitHub Pages. **`legacy-client` is the fallback
 branch**: the last pre-backend commit, still a pure client-side build with
@@ -913,17 +926,25 @@ Also verified earlier and still true: setup-screen validation and localStorage
 round-trip, mic-denial path, and the results screen rendering metrics, all
 rubric rows and the transcript when every AI call fails.
 
-**Not yet verified — needs a human with a microphone:**
+**Verified by the instructor with a microphone (2026-09-11 onward).** Live
+interviews end to end, on OpenAI and then through the gateway: latency,
+transcription, barge-in with the heard-text note, the report. One open
+behaviour: a student who keeps saying "just a test" pulls the interviewee
+into helper talk; no tested rule fixed it (`PROMPTING.md`).
 
-- The live conversation end to end: latency, transcription fidelity, and
-  whether barge-in feels right through WebRTC.
-- **Whether the layered personas still behave under the OpenAI realtime models.**
-  The gating instructions were tuned against Gemini. This is the biggest open
-  risk, because the personas *are* the product. Check `gpt-realtime-2.1-mini`
-  especially — if it will not hold Layer 1, that is an argument for defaulting
-  to the flagship, not for weakening the rubric.
+**Not yet verified:**
+
+- **Whether the layered personas hold under `gpt-realtime-2.1-mini` across
+  a whole cohort.** The gating instructions were tuned against Gemini. This
+  is the biggest open risk, because the personas *are* the product. If the
+  mini model will not hold Layer 1, that is an argument for a larger model
+  (the EU `gpt-realtime-2.1` needs Tilburg.AI's approval), not for
+  weakening the rubric.
 - Whether Layer 3 is reachable in a realistic 10-minute interview. If the gates
   prove too tight, loosen the unlock conditions in `personas.ts` rather than
   weakening the rubric.
 - Speaking-time plausibility: the energy gate uses a fixed threshold, so a
   noisy room may over-count.
+- The orb design on real phones and tablets (tested only in headless Chrome
+  at phone width) and on low-end laptops, where WebGL can be slow; the orb
+  falls back to a still CSS disc without WebGL.
