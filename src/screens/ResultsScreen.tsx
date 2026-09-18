@@ -7,6 +7,14 @@ import {
   SessionResult,
 } from "../types";
 import { computeMetrics, fmtMs, fmtPercent } from "../lib/metrics";
+import {
+  CONSENT_NO,
+  CONSENT_QUESTION_EN,
+  CONSENT_QUESTION_NL,
+  CONSENT_YES,
+  consentAnswer,
+  consentShort,
+} from "../../shared/consent";
 import { api } from "../api";
 
 interface Props {
@@ -121,16 +129,8 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
                 the submission. */}
             <div className="consent-box">
               <p className="consent-title">Transcript consent / Toestemming transcript</p>
-              <p>
-                We collect transcripts in order to examine the quality of the
-                feedback of the chatbot. Do you consent to the usage of your
-                transcript to increase the quality of our chatbot?
-              </p>
-              <p lang="nl">
-                We verzamelen transcripten om de kwaliteit van de feedback van
-                de chatbot te beoordelen. Geef je toestemming het gebruik van
-                jouw transcript om de kwaliteit van onze chatbot te verbeteren?
-              </p>
+              <p>{CONSENT_QUESTION_EN}</p>
+              <p lang="nl">{CONSENT_QUESTION_NL}</p>
               <div className="consent-choices">
                 <label className="consent-chip">
                   <input
@@ -141,7 +141,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
                     disabled={state.status === "pending"}
                   />
                   <span className="consent-dot" aria-hidden="true" />
-                  Yes / Ja
+                  {CONSENT_YES}
                 </label>
                 <label className="consent-chip">
                   <input
@@ -152,7 +152,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
                     disabled={state.status === "pending"}
                   />
                   <span className="consent-dot" aria-hidden="true" />
-                  No / Nee
+                  {CONSENT_NO}
                 </label>
               </div>
             </div>
@@ -477,9 +477,12 @@ function buildMarkdownReport(
   lines.push(`- Research topic: ${persona.researchTopic}`);
   lines.push(`- Date: ${new Date(result.startedAt).toLocaleString()}`);
   lines.push(`- Duration: ${fmtMs(metrics.durationMs)}`);
-  lines.push(
-    `- Transcript consent: ${consent === null ? "Not answered" : consent ? "Yes" : "No"}`,
-  );
+  lines.push(``);
+  lines.push(`## Transcript consent: ${consentShort(consent).toUpperCase()}`);
+  lines.push(``);
+  lines.push(`Question asked: "${CONSENT_QUESTION_EN}"`);
+  lines.push(``);
+  lines.push(`Answered: ${consentAnswer(consent)}`);
   lines.push(``);
   lines.push(`## Speaking metrics`);
   lines.push(``);
