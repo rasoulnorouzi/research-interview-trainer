@@ -7,6 +7,88 @@ one instruction per action.
 
 ---
 
+## 2026-09-18 — Transcript consent before a student may submit
+
+Branch `consent-gate`, three commits, merged into `main` with a merge
+commit. One schema change: a new column on `submissions`. No settings
+change, no key change, no new dependency. The release is tagged
+`release-2026-09-18`. The state before it (Worker version `35820845`) is
+tagged `release-2026-09-15`.
+
+### What changed
+
+1. **The question.** The results screen asks for consent before the
+   student may submit. One box carries the instructor's wording in
+   English and Dutch, answered with "Yes / Ja" or "No / Nee". The submit
+   button stays disabled, with a bilingual hint under it, until one is
+   chosen.
+2. **"No" still submits.** The refusal is recorded. The interview is
+   scored, stored and emailed exactly as with "Yes".
+3. **The answer is stored.** `POST /api/report` carries `consent`, a
+   required boolean, into `submissions.transcript_consent` (1, 0, or
+   NULL for interviews from before the question existed).
+4. **Every report names it**, as a block that quotes the English
+   question: both emails in text and HTML, the two .txt attachments, the
+   student's Markdown download, and the dashboard's submission detail
+   and its Markdown export.
+5. **One definition of the wording**, `shared/consent.ts`, used by the
+   client, the Worker and the dashboard.
+
+### Decisions
+
+- **"No" does not block the submission** (instructor, 2026-09-18, after
+  being asked directly). Consent that costs a student their coursework
+  is not freely given, which is the standard an ethics committee
+  applies. The instructor can reverse this in one line if they choose.
+- **The answer is stored, not only shown.** A consent question nobody
+  records is worthless for research.
+- **A missing `consent` field is refused with `400`**, not stored as a
+  refusal, so a stale client cannot be mistaken for a student who said
+  no.
+- **The report quotes the question**, because "Transcript consent: Yes"
+  alone cannot be read in context later, and because the wording may
+  change.
+- **No `<fieldset>`/`<legend>`**: a legend sits on the border and reads
+  as overlapping text. The answers are pills in the app's own style.
+
+### Tests done
+
+- `npm run lint` and `npm run build` clean.
+- The results screen rendered with fake data in headless Chrome at
+  1000px and at 360px, in light and dark: no overlap, no sideways
+  scroll, no clipped text, measured in the page.
+- The button disabled before answering, enabled after; the POST body
+  carried `consent:false` after "No / Nee".
+- All four email builders rendered for "Yes", "No" and "Not asked". Each
+  copy carried the block exactly once; the assessor copy did not repeat
+  it.
+- Production after the deploy: `/` answers 200, `/api/me` 401,
+  `/api/report` 401 without a cookie, `/admin` redirects to Access. The
+  served bundle carries both language versions of the question.
+- **Not done: a live interview on production.** The instructor tests
+  that with a microphone.
+
+### Deploy
+
+- Backup first: `backup-2026-09-18.sql` (1.1 MB, holds the key,
+  gitignored). D1 Time Travel bookmark
+  `0000011e-00000000-000050ea-ce0ca2edbcb350a47af1149b2f0e9ff9`.
+- Schema before code, as the old code never writes the column:
+  `npx wrangler d1 execute riv-trainer --remote --command "ALTER TABLE
+  submissions ADD COLUMN transcript_consent INTEGER"`.
+- `npm run build && npx wrangler deploy` at 13:45 UTC. Worker version
+  `ad77c84c-4204-4cc1-9846-31a7577bfc24`.
+
+### Rollback
+
+- `npx wrangler rollback 35820845-ed1b-4c3b-b8e5-41dc6e54b7a0`. The old
+  code ignores the new column, so the column can stay. Nothing else has
+  to be undone.
+- For the data: `npx wrangler d1 time-travel restore riv-trainer
+  --bookmark=0000011e-00000000-000050ea-ce0ca2edbcb350a47af1149b2f0e9ff9`.
+
+---
+
 ## 2026-09-15 — The orb design (student app and dashboard)
 
 Branch `ui-orb`, three commits (student design, dashboard design, orb

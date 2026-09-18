@@ -278,6 +278,25 @@ answer's text, and the model then restarted its answer. So the app now
 tells the model, in a `system` note, what the student heard
 (`PROMPTING.md`, "After an interruption").
 
+**The student must answer a transcript-consent question before they may
+submit (instructor request, 2026-09-18).** The results screen carries one
+box with the instructor's wording in English and Dutch, answered with
+"Yes / Ja" or "No / Nee"; the submit button is disabled until one is
+chosen. **"No" submits exactly like "Yes"** and records a refusal
+(instructor decision, asked directly): consent that costs a student their
+coursework is not freely given. `POST /api/report` therefore carries
+`consent`, a required boolean; a body without it is refused with `400`
+rather than stored as a refusal, so a stale client cannot look like a
+student who said no. The answer lands in
+`submissions.transcript_consent` (1, 0, or NULL for interviews from
+before the question existed) and is quoted, next to the English question,
+in every copy of the report: both emails, the two .txt attachments, the
+student's Markdown download, and the dashboard's submission detail and
+its Markdown export. The wording has one definition,
+`shared/consent.ts`, imported by the client, the Worker and the
+dashboard. An existing database needs one `ALTER TABLE` before the code
+deploy (`DEPLOYMENT.md`).
+
 The results screen no longer scores automatically: a student clicks
 "Submit interview for scoring" on `ResultsScreen.tsx`, and only that click
 triggers `POST /api/report`. Login failures are explicit rather than a
@@ -329,6 +348,7 @@ worker/
 shared/
   types.ts                    Types both src/ and worker/ import; src/types.ts re-exports them
   format.ts                   fmtMs(), shared by the client and the report emails
+  consent.ts                  The transcript-consent question (EN + NL) and its answer labels
   models.ts                   The model ids the dashboard's Settings form offers
   voices.ts                   REALTIME_VOICES — the castable persona voices
 src/
@@ -948,3 +968,8 @@ into helper talk; no tested rule fixed it (`PROMPTING.md`).
 - The orb design on real phones and tablets (tested only in headless Chrome
   at phone width) and on low-end laptops, where WebGL can be slow; the orb
   falls back to a still CSS disc without WebGL.
+- A live interview through the consent gate on production (2026-09-18).
+  The screen, the request body and every rendered report were checked with
+  fake data and in headless Chrome, and the production deploy answered its
+  smoke tests, but no one has yet spoken an interview and submitted it with
+  a real microphone since the gate shipped.
