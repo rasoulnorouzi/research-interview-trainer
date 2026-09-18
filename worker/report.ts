@@ -316,6 +316,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     feedback: scored.feedback,
     overall,
     transcript,
+    transcriptConsent: consent,
   };
 
   // Only the switched-on addresses receive a copy. A recipient the instructor

@@ -82,7 +82,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
   const overallPoints = report ? computeOverallPoints(report.scores) : null;
 
   const downloadMarkdown = () => {
-    const md = buildMarkdownReport(result, metrics, persona, report);
+    const md = buildMarkdownReport(result, metrics, persona, report, consent);
     const blob = new Blob([md], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -119,8 +119,8 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
             {/* Both languages stand in one box, in the instructor's own
                 wording. The answer travels with the report and is stored on
                 the submission. */}
-            <fieldset className="consent-box">
-              <legend className="small">Transcript consent / Toestemming transcript</legend>
+            <div className="consent-box">
+              <p className="consent-title">Transcript consent / Toestemming transcript</p>
               <p>
                 We collect transcripts in order to examine the quality of the
                 feedback of the chatbot. Do you consent to the usage of your
@@ -132,7 +132,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
                 jouw transcript om de kwaliteit van onze chatbot te verbeteren?
               </p>
               <div className="consent-choices">
-                <label className="checkbox-row">
+                <label className="consent-chip">
                   <input
                     type="radio"
                     name="transcript-consent"
@@ -140,9 +140,10 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
                     onChange={() => setConsent(true)}
                     disabled={state.status === "pending"}
                   />
+                  <span className="consent-dot" aria-hidden="true" />
                   Yes / Ja
                 </label>
-                <label className="checkbox-row">
+                <label className="consent-chip">
                   <input
                     type="radio"
                     name="transcript-consent"
@@ -150,10 +151,11 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
                     onChange={() => setConsent(false)}
                     disabled={state.status === "pending"}
                   />
+                  <span className="consent-dot" aria-hidden="true" />
                   No / Nee
                 </label>
               </div>
-            </fieldset>
+            </div>
             <div className="btn-row">
               <button
                 className="btn"
@@ -465,7 +467,8 @@ function buildMarkdownReport(
   result: SessionResult,
   metrics: Metrics,
   persona: PersonaSummary,
-  report: ReportResponse | null
+  report: ReportResponse | null,
+  consent: boolean | null,
 ): string {
   const lines: string[] = [];
   lines.push(`# Interview Report`);
@@ -474,6 +477,9 @@ function buildMarkdownReport(
   lines.push(`- Research topic: ${persona.researchTopic}`);
   lines.push(`- Date: ${new Date(result.startedAt).toLocaleString()}`);
   lines.push(`- Duration: ${fmtMs(metrics.durationMs)}`);
+  lines.push(
+    `- Transcript consent: ${consent === null ? "Not answered" : consent ? "Yes" : "No"}`,
+  );
   lines.push(``);
   lines.push(`## Speaking metrics`);
   lines.push(``);

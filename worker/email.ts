@@ -123,6 +123,20 @@ export interface ReportEmailData {
   feedback: QualitativeFeedback | null;
   overall: number | null;
   transcript: TranscriptEntry[];
+  /**
+   * The student's answer to the transcript-consent question (instructor
+   * request, 2026-09-18). Null only for interviews stored before the
+   * question existed. It is named in the header of every copy of the
+   * report, so an assessor reading a transcript knows at once whether it
+   * may be used to improve the chatbot.
+   */
+  transcriptConsent: boolean | null;
+}
+
+/** The consent answer as it is written in a report header. */
+function consentLabel(v: boolean | null): string {
+  if (v === null) return "Not asked";
+  return v ? "Yes" : "No";
 }
 
 // The two copies of a report must be tellable apart at a glance (instructor
@@ -168,6 +182,7 @@ export function studentTranscriptEmail(
   lines.push(`Student: ${d.studentName}`);
   lines.push(`Date: ${formatDateTime(d.startedAt)}`);
   lines.push(`Duration: ${fmtMs(d.durationMs)}`);
+  lines.push(`Transcript consent: ${consentLabel(d.transcriptConsent)}`);
   lines.push(``);
   lines.push(WITHHELD_NOTICE);
   lines.push(``);
@@ -184,6 +199,9 @@ export function studentTranscriptEmail(
   parts.push(`<p style="${P_STYLE}">Student: ${escapeHtml(d.studentName)}</p>`);
   parts.push(`<p style="${P_STYLE}">Date: ${escapeHtml(formatDateTime(d.startedAt))}</p>`);
   parts.push(`<p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>`);
+  parts.push(
+    `<p style="${P_STYLE}">Transcript consent: ${escapeHtml(consentLabel(d.transcriptConsent))}</p>`,
+  );
   parts.push(`<p style="${P_STYLE}">${escapeHtml(WITHHELD_NOTICE)}</p>`);
   parts.push(`<h2 style="${h2Style(ACCENT)}">Transcript</h2>`);
   parts.push(...transcriptHtmlParts(d));
@@ -212,6 +230,7 @@ export function instructorReportEmail(
     `Persona: ${d.personaName} (${d.personaTitle})`,
     `Started: ${formatDateTime(d.startedAt)}`,
     `Duration: ${fmtMs(d.durationMs)}`,
+    `Transcript consent: ${consentLabel(d.transcriptConsent)}`,
     ``,
     `----------------------------------------`,
     ``,
@@ -225,6 +244,7 @@ ${d.cohort === null ? "" : `<p style="${P_STYLE}">Cohort: ${escapeHtml(d.cohort)
 <p style="${P_STYLE}">Persona: ${escapeHtml(d.personaName)} (${escapeHtml(d.personaTitle)})</p>
 <p style="${P_STYLE}">Started: ${escapeHtml(formatDateTime(d.startedAt))}</p>
 <p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>
+<p style="${P_STYLE}">Transcript consent: ${escapeHtml(consentLabel(d.transcriptConsent))}</p>
 <hr style="border:none; border-top:1px solid ${BORDER_COLOR}; margin:20px 0;">
 `;
   const html = htmlDocument(subject, identityHtml + reportBodyHtml(d, ASSESSOR_ACCENT, false));
@@ -284,6 +304,7 @@ function headerTextLines(d: ReportEmailData): string[] {
     `Student: ${d.studentName} (${d.studentId})`,
     `Date: ${formatDateTime(d.startedAt)}`,
     `Duration: ${fmtMs(d.durationMs)}`,
+    `Transcript consent: ${consentLabel(d.transcriptConsent)}`,
     ``,
   ];
 }
@@ -341,6 +362,7 @@ function reportBodyText(d: ReportEmailData, withHeader = true): string {
     lines.push(`${d.personaName} (${d.personaTitle})`);
     lines.push(`Date: ${formatDateTime(d.startedAt)}`);
     lines.push(`Duration: ${fmtMs(d.durationMs)}`);
+    lines.push(`Transcript consent: ${consentLabel(d.transcriptConsent)}`);
     lines.push(``);
   }
 
@@ -440,6 +462,9 @@ function reportBodyHtml(d: ReportEmailData, accent: string, withHeader = true): 
     );
     parts.push(`<p style="${P_STYLE}">Date: ${escapeHtml(formatDateTime(d.startedAt))}</p>`);
     parts.push(`<p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>`);
+    parts.push(
+      `<p style="${P_STYLE}">Transcript consent: ${escapeHtml(consentLabel(d.transcriptConsent))}</p>`,
+    );
   }
 
   parts.push(`<h2 style="${h2Style(accent)}">Speaking metrics</h2>`);
