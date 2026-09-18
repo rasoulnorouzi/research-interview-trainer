@@ -1,5 +1,10 @@
 // Cloudflare Worker config. See BACKEND-PLAN.md for the full design.
 //
+// This branch targets the NEW account (the one that owns
+// qualitativeinterviewskills.com). The account, the database and the
+// sending domain all differ from the 2026-09-15 production deployment;
+// PROTOCOLS.md records the move.
+//
 // Secrets are NOT here. Set with `wrangler secret put <NAME>`:
 //   SESSION_SECRET   HMAC key for the signed session cookie (§6)
 // Mail needs no key since 2026-09-18: Cloudflare Email Service sends
@@ -18,14 +23,30 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  "send_email": [{ "name": "EMAIL" }],
+  // The app answers on the domain only. The workers.dev address is off, so
+  // there is one address to protect with Access and one to give students.
+  "routes": [{ "pattern": "qualitativeinterviewskills.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+  // Cloudflare Email Service. The binding may only send as this address, so
+  // a mistake elsewhere cannot mail students from some other sender.
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["trainer@qualitativeinterviewskills.com"]
+    }
+  ],
   "d1_databases": [
-    { "binding": "DB", "database_name": "riv-trainer", "database_id": "33a29bc2-6efd-4d16-a214-467084202acc" }
+    { "binding": "DB", "database_name": "riv-trainer", "database_id": "81264e33-443c-45ec-8593-3db6c01acd16" }
   ],
   "vars": {
-    "ACCESS_TEAM_DOMAIN": "rasouldns.cloudflareaccess.com",
-    "ACCESS_AUD": "f9bb9a4af8edd275dc920609a2c79290dcb1a79a41842fb324e25a0e2c6ad8f5",
-    "EMAIL_FROM": "Research Interview Trainer <trainer@rslnorouzi.site>",
+    // Empty until Zero Trust is set up in the new account. worker/access.ts
+    // fails CLOSED while these are unset: every /api/admin/* request is
+    // refused, which is the correct state before the Access app exists.
+    // Fill both from the new Access application, then redeploy.
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    "EMAIL_FROM": "Qualitative Interview Skills <trainer@qualitativeinterviewskills.com>",
     // The university AI gateway (Tilburg.AI: LiteLLM in front of Azure OpenAI).
     // Every AI call goes here, and the browser's WebRTC call address is built
     // from it. The testing gateway is https://api.testing.tilburg.ai/v1.

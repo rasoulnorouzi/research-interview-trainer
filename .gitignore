@@ -17,3 +17,4 @@ seed-criteria.sql
 .dev.vars
 .wrangler/
 backup-*.sql
+migration-*.sql
