@@ -900,6 +900,36 @@ td.num {
   margin-top: 0.9rem;
 }
 
+/* Transcript-consent question on the results screen (instructor request,
+   2026-09-18). One box holds the English and the Dutch wording, and the
+   submit button stays disabled until one of the two answers is chosen. */
+.consent-box {
+  margin-top: 0.9rem;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--card);
+}
+
+.consent-box legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+
+.consent-box p {
+  margin: 0 0 0.6rem;
+}
+
+.consent-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+}
+
+.consent-choices .checkbox-row {
+  margin: 0;
+}
+
 /* ===========================================================================
    INSTRUCTOR DASHBOARD (admin.html / admin/*)
    Layout only: the green identity comes from the token overrides on

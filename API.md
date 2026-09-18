@@ -266,9 +266,19 @@ Scores a finished interview, stores it, and emails it.
   ],
   "startedAt": 1755179000000,
   "endedAt": 1755179720000,
-  "metrics": { "...": "Metrics, see shared/types.ts" }
+  "metrics": { "...": "Metrics, see shared/types.ts" },
+  "consent": true
 }
 ```
+
+`consent` (2026-09-18) is the student's answer to the transcript-consent
+question on the results screen. It is required and must be a boolean; a
+body without it is refused with `400` and the message "Answer the consent
+question before submitting the interview." `false` is a valid answer: the
+report is scored, stored and emailed exactly as with `true`, and only the
+stored answer differs. The value goes to `submissions.transcript_consent`
+(1, 0, or NULL for interviews stored before the question existed) and
+shows on the dashboard's submission detail and its Markdown export.
 
 The transcript is capped at 500 entries and 200 KB serialized. Every
 field on every entry is validated or defaulted; a missing or

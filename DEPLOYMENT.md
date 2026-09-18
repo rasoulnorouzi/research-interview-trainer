@@ -365,6 +365,20 @@ OpenAI key on the Settings screen again. The old Worker cannot use the
 gateway key. The `openai_api_key` row of the backup file from step 2 holds
 the OpenAI key.
 
+### Deploying the transcript-consent question to an existing database
+
+The consent question (2026-09-18) adds one column to `submissions`.
+`schema.sql` carries it for a new database. An existing database needs one
+command, because SQLite cannot add a column with `IF NOT EXISTS`:
+
+```bash
+npx wrangler d1 execute riv-trainer --remote --command "ALTER TABLE submissions ADD COLUMN transcript_consent INTEGER"
+```
+
+Run it **before** the code deploy. The old code never writes the column,
+and the new code needs it. Running it twice answers "duplicate column
+name"; that error means the column is already there.
+
 ### Deploying persona cohorts to an existing database
 
 The persona cohorts feature (2026-09-11) adds one table,

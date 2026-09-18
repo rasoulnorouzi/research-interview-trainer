@@ -33,6 +33,8 @@ interface SubmissionDetail {
   metrics: Metrics;
   transcript: TranscriptEntry[];
   emailedAt: number | null;
+  /** Null for interviews submitted before the consent question existed. */
+  transcriptConsent: boolean | null;
   createdAt: number;
 }
 
@@ -539,6 +541,13 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
           {formatUnixOrMs(detail.startedAt)} · Duration {fmtMs(detail.durationMs)}
           <br />
           Emailed: {detail.emailedAt !== null ? "Yes" : "No"}
+          <br />
+          Transcript consent:{" "}
+          {detail.transcriptConsent === null
+            ? "Not asked"
+            : detail.transcriptConsent
+              ? "Yes"
+              : "No"}
         </p>
       </div>
 
@@ -733,6 +742,11 @@ function buildSubmissionMarkdown(detail: SubmissionDetail, includeFeedback: bool
   lines.push(`- Persona: ${detail.personaId}`);
   lines.push(`- Date: ${formatUnixOrMs(detail.startedAt)}`);
   lines.push(`- Duration: ${fmtMs(detail.durationMs)}`);
+  lines.push(
+    `- Transcript consent: ${
+      detail.transcriptConsent === null ? "Not asked" : detail.transcriptConsent ? "Yes" : "No"
+    }`,
+  );
   lines.push(``);
 
   lines.push(`## Speaking metrics`);

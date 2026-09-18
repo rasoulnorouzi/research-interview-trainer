@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS submissions (
   metrics_json    TEXT NOT NULL,
   transcript_json TEXT NOT NULL,
   emailed_at      INTEGER,
+  -- Transcript-consent answer (instructor request, 2026-09-18): 1 = the
+  -- student agreed that their transcript may be used to improve the chatbot,
+  -- 0 = they refused, NULL = stored before the question existed. An existing
+  -- database needs one ALTER TABLE; see DEPLOYMENT.md.
+  transcript_consent INTEGER,
   created_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id, created_at);
