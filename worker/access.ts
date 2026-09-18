@@ -34,6 +34,18 @@ const JWKS_TTL_MS = 60 * 60 * 1000;
 // schedule, so an hour of staleness costs nothing and a refetch covers rotation.
 let jwksCache: { domain: string; keys: AccessJwk[]; fetchedAt: number } | null = null;
 
+/**
+ * Whether this deployment has an Access application in front of it at all.
+ * A fresh account has none until someone creates it, and "denied" then
+ * means "no gate exists yet", not "your email was refused". The two read
+ * the same to a browser, so the route guard tells them apart in the
+ * message. Saying so reveals nothing useful: the Worker rejects every
+ * admin request in this state, whoever asks.
+ */
+export function accessConfigured(env: Env): boolean {
+  return (env.ACCESS_TEAM_DOMAIN ?? "").trim() !== "" && (env.ACCESS_AUD ?? "").trim() !== "";
+}
+
 export async function identifyInstructor(request: Request, env: Env): Promise<{ email: string } | null> {
   const domain = (env.ACCESS_TEAM_DOMAIN ?? "").trim();
   const audience = (env.ACCESS_AUD ?? "").trim();

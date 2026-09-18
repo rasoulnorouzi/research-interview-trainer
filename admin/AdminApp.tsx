@@ -33,7 +33,7 @@ function tabFromHash(): Tab {
 
 export function AdminApp() {
   const [tab, setTab] = useState<Tab>(tabFromHash);
-  const [accessDenied, setAccessDenied] = useState(false);
+  const [accessDenied, setAccessDenied] = useState<string | null>(null);
 
   useEffect(() => {
     const onHashChange = () => setTab(tabFromHash());
@@ -49,12 +49,14 @@ export function AdminApp() {
   };
 
   // Every screen reports its API errors here through this one callback. A 403
-  // means this instructor's email is not on the Access allow-list
-  // (worker/access.ts, BACKEND-PLAN.md §7) and nothing on any tab will work,
-  // so it replaces the whole dashboard with one banner rather than letting
-  // five screens each show their own version of the same failure.
+  // means no admin request will work on any tab (worker/access.ts,
+  // BACKEND-PLAN.md §7), so it replaces the whole dashboard with one banner
+  // rather than letting five screens each show their own version of the same
+  // failure. The Worker's own wording is kept, because it distinguishes an
+  // email that was refused from a deployment where the Access application
+  // does not exist yet; those need different people to fix them.
   const onApiError = (err: unknown) => {
-    if (err instanceof ApiError && err.status === 403) setAccessDenied(true);
+    if (err instanceof ApiError && err.status === 403) setAccessDenied(err.message);
   };
 
   // The segmented tab bar's highlight slides to the active tab: its offset and
@@ -115,10 +117,8 @@ export function AdminApp() {
           </div>
         </section>
 
-        {accessDenied ? (
-          <div className="banner-error">
-            Access denied. Your email is not on the dashboard allow-list.
-          </div>
+        {accessDenied !== null ? (
+          <div className="banner-error">{accessDenied}</div>
         ) : (
           <>
             <nav className="admin-nav no-print" ref={navRef}>
