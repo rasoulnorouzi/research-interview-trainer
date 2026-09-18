@@ -364,12 +364,8 @@ export function Rubric({ onApiError }: Props) {
             <label htmlFor="criterion-description">
               Description
               <Help label="Description">
-                <p>
-                  What the AI is asked to judge, in one or two sentences. Name the
-                  observable behaviour, not the ideal: "uses open questions that invite
-                  explanation" works better than "asks good questions".
-                </p>
-              </Help>
+            <p>What the AI judges for this criterion. Name observable behaviour rather than the ideal.</p>
+          </Help>
             </label>
             <textarea
               id="criterion-description"
@@ -408,13 +404,8 @@ export function Rubric({ onApiError }: Props) {
             <label htmlFor="criterion-anchor-high">
               What the top score looks like
               <Help label="Top anchor">
-                <p>
-                  Describe excellence as something you could observe in a transcript. If
-                  this anchor only repeats the description, the AI has nothing to
-                  separate a competent interview from an excellent one, and top marks
-                  become easy.
-                </p>
-              </Help>
+            <p>What excellence looks like in a transcript. If it only repeats the description, top marks become easy.</p>
+          </Help>
             </label>
             <textarea
               id="criterion-anchor-high"
@@ -428,17 +419,8 @@ export function Rubric({ onApiError }: Props) {
             <label htmlFor="criterion-scale-max">
               Top score
               <Help label="Top score">
-                <p>
-                  The highest mark this criterion can receive. Most rubrics use 5. A
-                  criterion can differ from the others; the report shows each score with
-                  its own scale, for example 3 / 5.
-                </p>
-                <p>
-                  The overall percentage is points earned over points available, so a
-                  criterion with a higher top score weighs more. Changing it affects the
-                  next interview scored, not reports already stored.
-                </p>
-              </Help>
+            <p>The highest mark this criterion can reach. The overall result is points earned over points available, so a higher top score weighs more.</p>
+          </Help>
             </label>
             <input
               id="criterion-scale-max"
@@ -459,25 +441,7 @@ export function Rubric({ onApiError }: Props) {
             <Toggle
               id="criterion-ground-truth"
               label="Uses hidden core"
-              help={
-                <>
-                  <p>
-                    Gives this one evaluator the persona's hidden backstory, which the
-                    student never sees. Without it, the AI can only judge what appears
-                    in the transcript and cannot know what the student failed to
-                    uncover.
-                  </p>
-                  <p>
-                    Switch it on for criteria about depth or discovery. Leave it off
-                    elsewhere: knowing the secret is irrelevant to whether a question
-                    was open or leading.
-                  </p>
-                  <p>
-                    It is scenario knowledge, not score knowledge, so it does not let
-                    one criterion influence another.
-                  </p>
-                </>
-              }
+              help={<p>Gives this one evaluator the persona's hidden backstory. Use it for criteria about depth or discovery, not elsewhere.</p>}
               checked={form.needsGroundTruth}
               onChange={(needsGroundTruth) => setForm((f) => ({ ...f, needsGroundTruth }))}
             />

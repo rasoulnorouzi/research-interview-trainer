@@ -159,14 +159,7 @@ export function Prompts({ onApiError }: Props) {
         <h2>
           AI assessor instructions
           <Help label="AI assessor instructions">
-            <p>
-              Scoring is done by an AI that reads the transcript and is told what to
-              look for. These two boxes are those instructions.
-            </p>
-            <p>
-              Nothing here changes a report that already exists. The next interview a
-              student submits is scored with whatever is saved at that moment.
-            </p>
+            <p>What the AI is told before it scores an interview. A change applies to the next interview, not to reports already stored.</p>
           </Help>
         </h2>
         <p className="lede">
@@ -185,16 +178,7 @@ export function Prompts({ onApiError }: Props) {
         <h3>
           Placeholders
           <Help label="Placeholders">
-            <p>
-              A placeholder is a slot the app fills in at the moment of scoring. You
-              write <code>{"{{PERSONA_NAME}}"}</code> and the assessor reads "Elena van
-              Dijk".
-            </p>
-            <p>
-              Two are required, because the prompt makes no sense without them: the
-              transcript, and (for the per-criterion prompt) the criterion being judged.
-              Saving without them is refused.
-            </p>
+            <p>Slots the app fills in at scoring time. The transcript is always required, and the per-criterion prompt also needs the criterion.</p>
           </Help>
         </h3>
         <table className="prompt-tokens">
@@ -222,24 +206,7 @@ export function Prompts({ onApiError }: Props) {
 
       <PromptBox
         title="Per-criterion prompt"
-        help={
-          <>
-            <p>
-              This produces the <strong>numbers</strong>. It is sent once for every
-              active criterion, so a rubric of 13 criteria means 13 separate calls.
-            </p>
-            <p>
-              Each call sees the transcript and exactly one criterion, never the others
-              and never a score already given. That isolation is deliberate: scoring
-              everything in one call lets a low mark early on drag the rest down.
-            </p>
-            <p>
-              Because it runs once per criterion, a paragraph added here costs 13 times
-              as much as the same paragraph in the feedback prompt, and it shapes every
-              mark.
-            </p>
-          </>
-        }
+        help={<p>Produces the scores. Sent once for every active criterion, and each call sees only that one criterion, never the other scores.</p>}
         kind="criterion"
         value={criterionText}
         problem={problems.criterion}
@@ -250,24 +217,7 @@ export function Prompts({ onApiError }: Props) {
 
       <PromptBox
         title="Feedback prompt"
-        help={
-          <>
-            <p>
-              This produces the <strong>written feedback</strong>: strengths,
-              improvements, quoted moments, what depth was missed, and the summary. It
-              runs once per report.
-            </p>
-            <p>
-              It is never told any score, so the advice a student reads is not written
-              to justify a number it already saw. It always receives what the persona
-              was hiding, which is how it can name the opening the student missed.
-            </p>
-            <p>
-              The Settings screen can switch this call off entirely. Criterion scoring
-              is unaffected by that switch.
-            </p>
-          </>
-        }
+        help={<p>Produces the written feedback. Sent once per report, and never sees any score.</p>}
         kind="feedback"
         value={feedbackText}
         problem={problems.feedback}
@@ -306,16 +256,7 @@ export function Prompts({ onApiError }: Props) {
         <h3>
           What the assessor receives
           <Help label="What the assessor receives">
-            <p>
-              The finished prompt, with the placeholders filled in, using a short sample
-              interview and your first active criterion.
-            </p>
-            <p>
-              It is built by the same code the Worker uses at scoring time, so this is
-              genuinely what the AI is sent. Only the transcript differs: a real one is
-              the student's own interview, and the guard text is inserted where the
-              sample shows a note.
-            </p>
+            <p>The finished prompt with the placeholders filled in, using a sample interview and your first active criterion.</p>
           </Help>
         </h3>
         <div className="btn-row" style={{ marginBottom: "0.8rem" }}>
