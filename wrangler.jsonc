@@ -40,12 +40,12 @@
     { "binding": "DB", "database_name": "riv-trainer", "database_id": "81264e33-443c-45ec-8593-3db6c01acd16" }
   ],
   "vars": {
-    // Empty until Zero Trust is set up in the new account. worker/access.ts
-    // fails CLOSED while these are unset: every /api/admin/* request is
-    // refused, which is the correct state before the Access app exists.
-    // Fill both from the new Access application, then redeploy.
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": "",
+    // The Access application "Interview Trainer Admin" in the new account
+    // (created 2026-09-18), covering /admin and /api/admin/*. worker/access.ts
+    // verifies the JWT Access issues against these two values on every admin
+    // request, and fails CLOSED if either is empty.
+    "ACCESS_TEAM_DOMAIN": "qualitativeinterviewskills.cloudflareaccess.com",
+    "ACCESS_AUD": "f7c4a40e4c059344dafed4d19cc170662d1cf6d29f9041bff23af89b0bf7c702",
     "EMAIL_FROM": "Qualitative Interview Skills <trainer@qualitativeinterviewskills.com>",
     // The university AI gateway (Tilburg.AI: LiteLLM in front of Azure OpenAI).
     // Every AI call goes here, and the browser's WebRTC call address is built
