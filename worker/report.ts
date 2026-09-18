@@ -12,7 +12,7 @@
 // messages below are ours, not OpenAI's; see the key-hygiene note in openai.ts.
 
 import { identify } from "./auth";
-import { getSettings, json, PERSONA_OPEN_TO_COHORT, readJsonBody, type Env } from "./db";
+import { getSettings, json, mailer, PERSONA_OPEN_TO_COHORT, readJsonBody, type Env } from "./db";
 import {
   assessmentAttachment,
   instructorReportEmail,
@@ -337,9 +337,9 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     const forStudent = shareWithStudent
       ? studentReportEmail(emailData)
       : studentTranscriptEmail(emailData);
+    const send = mailer(env);
     await sendEmail(
-      env.RESEND_API_KEY,
-      env.EMAIL_FROM,
+      send,
       [student.email],
       forStudent.subject,
       forStudent.text,
@@ -351,8 +351,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     if (recipients.length > 0) {
       const forInstructor = instructorReportEmail(emailData);
       await sendEmail(
-        env.RESEND_API_KEY,
-        env.EMAIL_FROM,
+        send,
         recipients,
         forInstructor.subject,
         forInstructor.text,

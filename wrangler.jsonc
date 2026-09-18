@@ -2,7 +2,9 @@
 //
 // Secrets are NOT here. Set with `wrangler secret put <NAME>`:
 //   SESSION_SECRET   HMAC key for the signed session cookie (§6)
-//   RESEND_API_KEY   email dispatch
+// Mail needs no key since 2026-09-18: Cloudflare Email Service sends
+// through the `send_email` binding below. The domain in EMAIL_FROM must be
+// onboarded once per account (DEPLOYMENT.md §4).
 // The university AI gateway key is NOT a secret either: it lives in the
 // `settings` table (row `openai_api_key`), write-only from /api/admin, so it
 // can be rotated from the dashboard without a deploy. See BACKEND-PLAN.md §7.
@@ -16,6 +18,7 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+  "send_email": [{ "name": "EMAIL" }],
   "d1_databases": [
     { "binding": "DB", "database_name": "riv-trainer", "database_id": "33a29bc2-6efd-4d16-a214-467084202acc" }
   ],

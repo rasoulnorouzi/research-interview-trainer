@@ -16,7 +16,7 @@ Gather these before you start.
 | Cloudflare account ID | `d47f04214378f82cee8294125ebf2c0b` |
 | D1 database | `riv-trainer`, id `33a29bc2-6efd-4d16-a214-467084202acc`, region WEUR (already created) |
 | Node.js | version 22 |
-| Resend account | owner `rasoulzaryab@gmail.com` |
+| Email | Cloudflare Email Service, sending domain onboarded in the same account |
 | Instructor email for Access | `r.norouzinikjeh@tilburguniversity.edu` |
 
 ### Cloudflare API token
@@ -94,7 +94,7 @@ any time from its source file. Skipping the second command leaves the
 `criteria` table empty, and every `POST /api/report` then answers `503`
 until it is seeded.
 
-**6. Set the two Worker secrets.**
+**6. Set the Worker secret.**
 
 ```bash
 openssl rand -base64 32
@@ -104,11 +104,11 @@ Copy the output. Use it as the session secret in the next command.
 
 ```bash
 npx wrangler secret put SESSION_SECRET
-npx wrangler secret put RESEND_API_KEY
 ```
 
-Wrangler prompts for each value on stdin. `SESSION_SECRET` signs the
-student login cookie. `RESEND_API_KEY` is your Resend API key.
+Wrangler prompts for the value on stdin. `SESSION_SECRET` signs the
+student login cookie. It is the only secret: mail needs no key, because
+Cloudflare Email Service sends through the `send_email` binding.
 
 **Caution.** The gateway key is not a Worker secret. It is not set with
 `wrangler secret put`. Step 7 sets it a different way.
@@ -161,7 +161,7 @@ Write this URL down. You need it for Cloudflare Access setup in section 3.
 1. Open the deployed URL in a browser.
 2. Confirm the login screen loads.
 3. Enter your own email address and request a code.
-4. Confirm you receive it (see section 4 on Resend if you do not).
+4. Confirm you receive it (see section 4 on email if you do not).
 5. Log in with the code and confirm the setup screen loads.
 
 The admin dashboard at `/admin` still rejects every request at this point,
@@ -254,66 +254,90 @@ closed: it rejects every admin request with 403, rather than allowing them
 through unchecked. Steps 1 through 11 remove that block; they do not create
 protection that was previously absent.
 
-## 4. Resend email setup
+## 4. Email setup (Cloudflare Email Service)
 
-The Worker sends student login codes and interview reports through Resend.
+The Worker sends student login codes and interview reports through
+Cloudflare Email Service. There is no mail API key: the `send_email`
+binding in `wrangler.jsonc` authorizes the Worker, and the account pays
+for the sends. It needs the Workers Paid plan.
 
-### Current state: domain verified, mail live
+### Onboard the sending domain
 
-The sending domain, `rslnorouzi.site`, is verified at
-[resend.com/domains](https://resend.com/domains). Its DNS records (SPF,
-DKIM, and MX) are set in Cloudflare DNS. `EMAIL_FROM` in `wrangler.jsonc`
-is `Research Interview Trainer <trainer@rslnorouzi.site>`. Mail delivers
-to every address, students included, not only to the Resend account
-owner's own address. No further Resend setup is needed for this
-deployment.
+Mail may only leave from a domain onboarded in the same Cloudflare
+account, and that domain must use Cloudflare DNS.
 
-**Note.** A brand-new Resend account, before its domain is verified,
-restricts outgoing mail two ways: mail can only be sent from
-`onboarding@resend.dev`, and can only be delivered to the account owner's
-own address. That restriction does not apply to this deployment. It
-matters only if you set up Resend again from scratch, for example for a
-separate deployment of this app.
+```bash
+npx wrangler email sending enable <your-domain>
+npx wrangler email sending dns get <your-domain>
+```
 
-### Changing the sending domain later
+Onboarding adds the DNS records itself: SPF, DKIM, DMARC, and an MX
+record on a `cf-bounce` subdomain for bounces. Propagation usually
+finishes in 5 to 15 minutes.
 
-Follow these steps if this deployment ever needs to move to a different
-sending domain.
+**Caution.** If the domain already carries an SPF record from another
+mail provider, do not leave both: two SPF records break delivery. Merge
+them into one, or remove the old provider's record if it is not used.
 
-**1. Choose a sending domain** you control, for example a different
-subdomain of the university's mail domain.
-
-**2. Verify the domain at [resend.com/domains](https://resend.com/domains).**
-
-Resend gives you DNS records to add at your domain's DNS provider,
-typically an SPF record (TXT), a DKIM record (TXT or CNAME), and an MX
-record. Add every record it gives you.
-
-**3. Wait for verification.** Resend checks the records automatically.
-This can take up to 48 hours, though it is usually much faster.
-
-**Caution.** A domain missing any required record gets mail rejected by
-many university mail servers, not filed to spam. A student checking their
-spam folder will not find a message that was never accepted. Verify every
-record before trusting delivery.
-
-**4. Update `EMAIL_FROM` in `wrangler.jsonc`.**
+Then set `EMAIL_FROM` in `wrangler.jsonc` to an address on that domain,
+and redeploy:
 
 ```jsonc
 "vars": {
-  "EMAIL_FROM": "Sender Name <noreply@your-new-domain.example>"
+  "EMAIL_FROM": "Your Course Name <trainer@your-domain>"
 }
 ```
 
-**5. Redeploy.**
+### Check the daily limit before a cohort
+
+A new account starts with a low daily send limit, which grows on its own
+as the account sends good mail.
 
 ```bash
-npm run build && npx wrangler deploy
+curl "https://api.cloudflare.com/client/v4/accounts/<account-id>/email/sending/limits" \
+  --header "Authorization: Bearer <API_TOKEN>"
 ```
 
-**6. Send one test code to a real student-side inbox**, not just to your
-own address, before students start using the new domain. Confirm it
-arrives in the inbox, not spam.
+Estimate about 3 emails per active student per day: a login code, the
+student's report, and the assessor copy. If the limit is below that,
+ask Cloudflare for an increase early; it is a form, and it takes days,
+not minutes. The Workers Paid plan includes 3,000 emails a month, then
+charges $0.35 per 1,000. Mail to addresses verified in the account is
+free and does not count.
+
+### Test before students arrive
+
+Send to a real university mailbox and to a consumer mailbox, and look in
+the spam folder as well as the inbox:
+
+```bash
+npx wrangler email sending send --from "trainer@your-domain" \
+  --to "you@university.example" --subject "Test" --text "Test."
+```
+
+A brand-new domain has no sending reputation, and university mail
+systems are strict. If the mail is quarantined, ask the university IT
+department to allow the sending domain. Do this days before a cohort
+starts, not the night before.
+
+### What failure looks like
+
+The Worker logs the error code from the binding. `E_SENDER_NOT_VERIFIED`
+means the domain is not onboarded, or `EMAIL_FROM` uses a different
+domain. `E_DAILY_LIMIT_EXCEEDED` means the daily limit is reached.
+`E_RECIPIENT_SUPPRESSED` means that address hard-bounced or reported
+spam before; the suppression list is in the dashboard under Email
+Service.
+
+### The Resend history
+
+Until 2026-09-18 this app sent through Resend, with a `RESEND_API_KEY`
+secret and the verified domain `rslnorouzi.site`. That secret is no
+longer read. Delete it from any deployment that still carries it:
+
+```bash
+npx wrangler secret delete RESEND_API_KEY
+```
 
 ## 5. Update deploy
 

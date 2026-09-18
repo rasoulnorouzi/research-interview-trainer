@@ -18,7 +18,7 @@
 // do not extend the same candour to the verify path, which still answers with a
 // single message for every failure.
 
-import { json, readJsonBody, type Env, type RosterIdentity } from "./db";
+import { json, mailer, readJsonBody, type Env, type RosterIdentity } from "./db";
 import { sendLoginCode } from "./email";
 import type { MeResponse } from "../shared/types";
 
@@ -154,7 +154,7 @@ export async function handleAuthRequest(request: Request, env: Env): Promise<Res
     .run();
 
   try {
-    await sendLoginCode(env.RESEND_API_KEY, env.EMAIL_FROM, email, code);
+    await sendLoginCode(mailer(env), email, code);
   } catch (err) {
     // The address and the transport failure, never the code itself.
     console.error("login code send failed for", email, err instanceof Error ? err.message : String(err));

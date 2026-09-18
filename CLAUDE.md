@@ -339,7 +339,7 @@ worker/
   access.ts                   Cloudflare Access JWT verification for /api/admin/*
   db.ts                       Env binding, settings read, json()/readJsonBody() helpers
   openai.ts                   Token minting + /v1/responses calls, zero Cloudflare imports
-  email.ts                    Resend dispatch + report email rendering, zero Cloudflare imports
+  email.ts                    Report email rendering + the MailSender contract, zero Cloudflare imports
   scoring.ts                  One evaluator call per active D1 criterion (moved from src/lib)
   report.ts                   POST /api/session, POST /api/report handlers
   admin.ts                    The whole /api/admin/* surface
@@ -794,8 +794,23 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   anyone. `worker/access.ts` fails closed (rejects, does not wave through)
   whenever `ACCESS_TEAM_DOMAIN` or `ACCESS_AUD` is unset, which is the
   correct state for this file to be absent in.
-- **A brand-new Resend account is restricted until its sending domain is
-  verified — historical for this deployment, still true for a fresh one.**
+- **Mail goes through Cloudflare Email Service since 2026-09-18, not
+  Resend.** The Worker holds a `send_email` binding (`EMAIL` in
+  `wrangler.jsonc`) and there is no mail API key any more. Two rules
+  follow. The sending domain must be onboarded once per account
+  (`wrangler email sending enable <domain>`), or every send fails with
+  `E_SENDER_NOT_VERIFIED`; and `EMAIL_FROM` must use that same domain.
+  `worker/email.ts` still knows nothing about Cloudflare: it takes a
+  `MailSender` function, and `mailer()` in `worker/db.ts` is the one
+  place that builds one from the binding. A new account starts with a
+  low daily send limit that grows on its own; `GET
+  /accounts/<id>/email/sending/limits` reports it, and
+  `E_DAILY_LIMIT_EXCEEDED` in the logs is what hitting it looks like.
+  Sends to addresses verified in the account are free and uncapped;
+  everything else counts against the 3,000 a month the Workers Paid plan
+  includes.
+- **The Resend history, for a deployment still on it.** A brand-new
+  Resend account is restricted until its sending domain is verified.
   Until verified, mail can only go out from `onboarding@resend.dev` and can
   only be delivered to the Resend account owner's own address. This
   project's domain, `rslnorouzi.site`, is verified (SPF, DKIM, MX in
@@ -806,7 +821,8 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   still named `openai_api_key` (it held the OpenAI key until 2026-09-13).
   The gateway address is not a secret either: it is the `AI_BASE_URL` var
   in `wrangler.jsonc`, overridden in `.dev.vars` for local tests. `wrangler
-  secret put` is for `SESSION_SECRET` and `RESEND_API_KEY` only. The key is
+  secret put` is for `SESSION_SECRET` alone since mail stopped needing a
+  key. The gateway key is
   bootstrapped once by hand into D1 (`DEPLOYMENT.md` §2 step 7) and rotated
   afterward from the dashboard, which validates it live before saving and
   never displays it in full (`GET /api/admin/settings` masks it to
