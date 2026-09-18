@@ -210,6 +210,8 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     "instructor_recipients",
     "share_report_with_student",
     "generate_feedback",
+    "scoring_criterion_prompt",
+    "scoring_feedback_prompt",
   ]);
   const apiKey = settings.openai_api_key ?? "";
   if (!apiKey) return json(503, { error: NOT_CONFIGURED });
@@ -251,6 +253,10 @@ export async function handleReport(request: Request, env: Env): Promise<Response
       transcript,
       criteria,
       generateFeedback,
+      {
+        criterion: settings.scoring_criterion_prompt,
+        feedback: settings.scoring_feedback_prompt,
+      },
     );
   } catch (err) {
     console.error("scoring failed:", err instanceof Error ? err.message : "unknown");

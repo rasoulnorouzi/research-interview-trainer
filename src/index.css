@@ -992,6 +992,42 @@ td.num {
   opacity: 0.6;
 }
 
+
+/* Prompts screen: the AI assessor's instructions, editable by the instructor
+   (2026-09-18). Monospace, because whitespace and placeholder tokens matter
+   here in a way they do not anywhere else in the dashboard. */
+.prompt-editor {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.prompt-preview {
+  max-height: 460px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+}
+
+.prompt-tokens td {
+  padding: 5px 10px 5px 0;
+  vertical-align: top;
+  font-size: 0.86rem;
+}
+
+.prompt-tokens code {
+  white-space: nowrap;
+}
+
 /* ===========================================================================
    INSTRUCTOR DASHBOARD (admin.html / admin/*)
    Layout only: the green identity comes from the token overrides on

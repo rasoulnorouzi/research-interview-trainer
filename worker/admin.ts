@@ -22,6 +22,7 @@ import { synthesizeVoicePreview, validateApiKey } from "./openai";
 import { TRANSCRIPTION_MODEL_IDS } from "../shared/models";
 import { parseRecipients, serializeRecipients } from "../shared/recipients";
 import { REALTIME_VOICES } from "../shared/voices";
+import { PROMPT_SETTING_KEYS, validateTemplate } from "../shared/prompts";
 
 const ROSTER_LIST_LIMIT = 500;
 const SUBMISSION_LIST_DEFAULT = 100;
@@ -48,6 +49,11 @@ const SETTING_KEYS = [
   "share_report_with_student",
   "generate_feedback",
   "instructor_recipients",
+  // The editable scoring prompts (2026-09-18). Validated against
+  // shared/prompts.ts: a template that drops the transcript block, or the
+  // criterion block in the per-criterion prompt, is refused.
+  "scoring_criterion_prompt",
+  "scoring_feedback_prompt",
   "student_panel",
 ] as const;
 
@@ -318,6 +324,20 @@ async function putSettings(request: Request, env: Env, instructorEmail: string):
 
     if (typeof raw !== "string") return json(400, { error: `${key} must be text.` });
     const value = raw.trim();
+
+    // The scoring prompts. An empty value clears the row and restores the
+    // default from shared/prompts.ts, which is what the dashboard's "Restore
+    // default" button sends. Anything else must still place the transcript
+    // block, so an edit cannot drop the injection guard.
+    if (key === PROMPT_SETTING_KEYS.criterion || key === PROMPT_SETTING_KEYS.feedback) {
+      if (value.length > 0) {
+        const kind = key === PROMPT_SETTING_KEYS.criterion ? "criterion" : "feedback";
+        const problem = validateTemplate(kind, value);
+        if (problem) return json(400, { error: problem });
+      }
+      updates.push([key, value]);
+      continue;
+    }
 
     if (key === "instructor_recipients") {
       // The stored format is shared/recipients.ts: comma-separated, with a "!"

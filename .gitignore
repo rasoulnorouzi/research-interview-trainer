@@ -18,3 +18,4 @@ seed-criteria.sql
 .wrangler/
 backup-*.sql
 migration-*.sql
+wrangler.local.jsonc
