@@ -224,19 +224,30 @@ touches keys, scoring or personas, since the implementation is authoritative
 over the plan wherever the two differ, and `API.md` §7 lists the known
 differences.
 
-**The Worker is deployed and live (2026-08-14).** It runs at
-https://research-interview-trainer.rasoulnorouzi.workers.dev, backed by the
-`riv-trainer` D1 database (migrated and seeded) and a Cloudflare Access app,
-"Interview Trainer Admin" (team `rasouldns.cloudflareaccess.com`), with
-`ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` filled in `wrangler.jsonc`; admin
-routes have been verified to reject missing or forged Access JWTs. The
-Resend sending domain `rslnorouzi.site` is verified (SPF, DKIM, MX in
-Cloudflare DNS), `EMAIL_FROM` is `Research Interview Trainer
-<trainer@rslnorouzi.site>`, and mail delivers to every address, not only
-the account owner's — see the Resend gotcha below, now historical for this
-deployment. The production roster held five entries on 2026-09-13, all of
-them tests. `legacy-client` exists as a git branch for rollback, locally
-and on GitHub (`DEPLOYMENT.md` §6).
+**The Worker is deployed and live. Production moved to a new Cloudflare
+account and domain on 2026-09-18.** It runs at
+https://qualitativeinterviewskills.com (with `www` redirecting to it), in
+the account `ef71fbe7795df43f5adddf5abdd8f4a7`, which the instructor's
+colleague owns and the instructor administers. The workers.dev address and
+preview URLs are switched off, so the domain is the only way in. Backing
+it: the `riv-trainer` D1 database in that account
+(`81264e33-443c-45ec-8593-3db6c01acd16`, WEUR), holding the data copied
+from the old deployment, and the Cloudflare Access app "Interview Trainer
+Admin" (team `qualitativeinterviewskills.cloudflareaccess.com`) covering
+`/admin` and `/api/admin/*`, with a 24 hour session and two allowed
+addresses. Both login methods are enabled, so an instructor without a
+Cloudflare account signs in with an emailed code. Mail goes through
+Cloudflare Email Service from `trainer@qualitativeinterviewskills.com`,
+and delivery to Microsoft 365 and Gmail is verified. The production roster
+held five entries, all tests.
+
+**The old deployment still exists**, at
+https://research-interview-trainer.rasoulnorouzi.workers.dev in account
+`d47f04214378f82cee8294125ebf2c0b`, with its own database
+(`33a29bc2-6efd-4d16-a214-467084202acc`) and its own Resend-based mail. It
+is the fallback until the instructor retires it. Anything written there
+after 2026-09-18 does not reach the new deployment. `legacy-client`
+remains the older git-branch fallback (`DEPLOYMENT.md` §6).
 
 **The student welcome panel is an instructor setting (2026-09-11).** The
 card at the top of the setup screen used to be fixed text in
@@ -349,6 +360,7 @@ shared/
   types.ts                    Types both src/ and worker/ import; src/types.ts re-exports them
   format.ts                   fmtMs(), shared by the client and the report emails
   consent.ts                  The transcript-consent question (EN + NL) and its answer labels
+  prompts.ts                  The editable scoring prompts: defaults, placeholders, validator
   models.ts                   The model ids the dashboard's Settings form offers
   voices.ts                   REALTIME_VOICES — the castable persona voices
 src/
@@ -373,8 +385,9 @@ src/
     ResultsScreen.tsx         Metrics, rubric, feedback, transcript, export
 admin/                        Instructor dashboard, behind Cloudflare Access
   AdminApp.tsx (shell: header, orb hero, sliding tab bar), api.ts, one file
-  per screen (Roster, Personas, Rubric, Settings, Submissions, Breakglass),
-  Toggle.tsx (the on/off switch) and zip.ts (store-only ZIP writer)
+  per screen (Roster, Personas, Rubric, Prompts, Settings, Submissions,
+  Breakglass), Toggle.tsx (the on/off switch), Help.tsx (the "?" note next
+  to a setting) and zip.ts (store-only ZIP writer)
 ```
 
 **There are two HTML entry points, not one:** `index.html` (student app,
@@ -616,6 +629,23 @@ that touches one. Therefore:
   `ResultsScreen.tsx` retries the **whole report** with one more `POST
   /api/report` — see `API.md` §3.
 
+**The prompts around the criteria are instructor-editable (2026-09-18).**
+`shared/prompts.ts` holds the two default templates, the placeholder list
+and the validator; `worker/scoring.ts` renders the real prompt from them
+and the dashboard's Prompts screen previews with the same function, so
+what the instructor reads is what the evaluator receives. Overrides live
+in the settings rows `scoring_criterion_prompt` and
+`scoring_feedback_prompt`; an empty row means the default, which is what
+"Restore default" writes, so a deployment that never opens that screen
+scores exactly as before. **The injection guard and the `<transcript>`
+fence are NOT editable:** they are assembled in `transcriptBlock()` and
+placed with `{{TRANSCRIPT_BLOCK}}`, and `validateTemplate()` refuses a
+template that omits that token, that writes its own `<transcript>` tags,
+or (for the criterion prompt) that omits `{{CRITERION_BLOCK}}`. Treat an
+edit here as seriously as an edit to the template itself was before: it
+changes every future report silently, and re-run the `PROMPTING.md` §B
+injection test after touching the guard.
+
 **Do not "optimise" this into a single call that scores everything at once.**
 That would reintroduce exactly the bias the design exists to prevent, and
 running server-side is not a reason to revisit it — `worker/scoring.ts` says
@@ -809,14 +839,13 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   Sends to addresses verified in the account are free and uncapped;
   everything else counts against the 3,000 a month the Workers Paid plan
   includes.
-- **The Resend history, for a deployment still on it.** A brand-new
-  Resend account is restricted until its sending domain is verified.
-  Until verified, mail can only go out from `onboarding@resend.dev` and can
-  only be delivered to the Resend account owner's own address. This
-  project's domain, `rslnorouzi.site`, is verified (SPF, DKIM, MX in
-  Cloudflare DNS) and mail reaches every address, students included. Keep
-  this note in mind only if you ever set up Resend again for a different
-  deployment. See `DEPLOYMENT.md` §4.
+- **The Resend history, for the old deployment, which still uses it.** A
+  brand-new Resend account is restricted until its sending domain is
+  verified: mail can only go out from `onboarding@resend.dev` and only to
+  the account owner's own address. The old deployment's domain,
+  `rslnorouzi.site`, is verified and reaches every address. Its DNS lives
+  in the old Cloudflare account, so closing that account would break it.
+  The new deployment needs none of this. See `DEPLOYMENT.md` §4.
 - **The gateway key is a `settings` row, not a Worker secret.** The row is
   still named `openai_api_key` (it held the OpenAI key until 2026-09-13).
   The gateway address is not a secret either: it is the `AI_BASE_URL` var

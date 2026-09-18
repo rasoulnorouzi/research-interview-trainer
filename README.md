@@ -4,6 +4,8 @@ Students practise qualitative research interviewing. They hold a spoken
 interview with an AI interviewee, then get a scored report on their
 interviewing technique.
 
+It runs at **https://qualitativeinterviewskills.com**.
+
 Nothing to install. Students open the link, log in with their university
 email address and a mailed code, and start. They need no API key and no AI
 account of their own. The site is served over HTTPS, which the browser
@@ -16,7 +18,7 @@ and the interviewee speak; there is no typing. The voice runs over WebRTC,
 straight from the browser to the university's AI gateway, Tilburg.AI
 (LiteLLM in front of Azure OpenAI, Sweden Central). The Worker never
 carries audio. It logs students in, mints a short-lived voice token, scores
-the interview and emails the report.
+the interview and emails the report through Cloudflare Email Service.
 
 The design is modern and quiet: a white page, colours taken from the
 interview orb (violet, indigo, cyan), soft motion. During the interview a
@@ -66,10 +68,12 @@ cohorts.
 
 ## For the instructor
 
-The dashboard is at `/admin`, behind Cloudflare Access. It manages the
-roster and its cohorts, the personas, the rubric, the settings (the
-gateway key, the models, the time limit, the session quota, report
-sharing, the welcome panel) and the submissions.
+The dashboard is at `/admin`, behind Cloudflare Access; an instructor
+without a Cloudflare account signs in with an emailed code. It manages the
+roster and its cohorts, the personas, the rubric, the AI assessor's own
+instructions, the settings (the gateway key, the models, the time limit,
+the session quota, report sharing, the welcome panel) and the
+submissions.
 [OPERATIONS.md](OPERATIONS.md) explains each screen and the safe values.
 
 ## Running it locally

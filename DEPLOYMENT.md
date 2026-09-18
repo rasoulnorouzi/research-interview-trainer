@@ -13,31 +13,45 @@ Gather these before you start.
 
 | Item | Value for this project |
 |---|---|
-| Cloudflare account ID | `d47f04214378f82cee8294125ebf2c0b` |
-| D1 database | `riv-trainer`, id `33a29bc2-6efd-4d16-a214-467084202acc`, region WEUR (already created) |
+| Cloudflare account ID | `ef71fbe7795df43f5adddf5abdd8f4a7` (production since 2026-09-18). The old one was `d47f04214378f82cee8294125ebf2c0b`. |
+| Domain | `qualitativeinterviewskills.com`, zone `1925d88527d4f93e101a8245404fde04` |
+| D1 database | `riv-trainer`, id `81264e33-443c-45ec-8593-3db6c01acd16`, region WEUR (already created) |
 | Node.js | version 22 |
 | Email | Cloudflare Email Service, sending domain onboarded in the same account |
 | Instructor email for Access | `r.norouzinikjeh@tilburguniversity.edu` |
 
 ### Cloudflare API token
 
-Create an account-scoped API token in the Cloudflare dashboard. Grant it
-exactly these permissions.
+Create an API token in the Cloudflare dashboard. The instructor holds the
+Administrator role on the production account rather than owning it, so the
+token is a **user token** (My Profile > API Tokens), not an account-owned
+one: only a Super Administrator can create those. A user token carries a
+subset of its owner's permissions, so it stops working if the role is
+removed.
 
-| Resource | Permission |
-|---|---|
-| Workers Scripts | Edit |
-| D1 | Edit |
-| Access: Apps and Policies | Edit |
-| User Details | Read |
-| Memberships | Read |
+Grant it exactly these permissions.
+
+| Scope | Resource | Permission |
+|---|---|---|
+| Account | Workers Scripts | Edit |
+| Account | D1 | Edit |
+| Account | Email Sending | Edit |
+| Account | Access: Apps and Policies | Edit |
+| Account | Access: Organizations, Identity Providers, and Groups | Edit |
+| Account | Account Settings | Read |
+| Zone | Workers Routes | Edit |
+| Zone | DNS | Edit |
+| Zone | Zone | Read |
+| Zone | Single Redirect | Edit |
+| User | User Details | Read |
+| User | Memberships | Read |
 
 Wrangler, the Cloudflare CLI, reads two environment variables. Set both
 before you run any `wrangler` command.
 
 ```bash
 export CLOUDFLARE_API_TOKEN="<your token>"
-export CLOUDFLARE_ACCOUNT_ID="d47f04214378f82cee8294125ebf2c0b"
+export CLOUDFLARE_ACCOUNT_ID="ef71fbe7795df43f5adddf5abdd8f4a7"
 ```
 
 ## 2. First deploy, step by step
