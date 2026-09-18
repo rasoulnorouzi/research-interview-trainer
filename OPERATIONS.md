@@ -196,9 +196,10 @@ message they saw.
    address, or more than 120 in the last hour from the same network
    (see `API.md` section 4). Ask them to wait a minute and try again.
 3. **"The code email could not be sent. Try again in a minute."** The
-   address was accepted but Resend failed to deliver the message. Ask
+   address was accepted but the mail service failed to deliver the
+   message. Ask
    the student to try again in a minute. If it keeps happening, check
-   the Resend account status.
+   the Email Service status in the Cloudflare dashboard.
 4. **No error, but still no email.** Ask them to check spam or junk.
    This resolves most of these cases. The login screen already tells
    students to do this.
@@ -654,7 +655,8 @@ has a problem":
 
 1. **Students screen**: is the email on the list, spelled right, and
    active? Most cases end here.
-2. **Resend dashboard** (resend.com, Emails): was the mail sent, and
+2. **Cloudflare dashboard** (Compute & AI > Email Service > Analytics):
+   was the mail sent, and
    does it say delivered? "Delivered" but not in the inbox means the
    receiving side filtered it - for university addresses, the Microsoft
    quarantine (section 4).
@@ -665,8 +667,12 @@ has a problem":
 5. If only login is broken: **Break-glass** unblocks the student now;
    investigate afterwards.
 
-Common log lines and their meaning: "login code send failed" = Resend
-refused the send (check the Resend dashboard and the API key);
+Common log lines and their meaning: "login code send failed" = the mail
+service refused the send. The line carries a code:
+`E_SENDER_NOT_VERIFIED` (the sending domain is not onboarded in this
+account, or EMAIL_FROM uses another domain), `E_DAILY_LIMIT_EXCEEDED`
+(the account's daily limit is reached) or `E_RECIPIENT_SUPPRESSED` (that
+address bounced or reported spam before; see the suppression list);
 "scoring failed: The AI gateway rate limit was hit." = the gateway key
 is over its rate or budget limit (ask Tilburg.AI);
 "scoring aborted: the rubric has no active criteria" = the rubric was

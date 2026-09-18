@@ -4,7 +4,7 @@
 
 import { handleAdmin } from "./admin";
 import { handleAuthLogout, handleAuthRequest, handleAuthVerify, handleMe, handleRedeem, identify } from "./auth";
-import { identifyInstructor } from "./access";
+import { accessConfigured, identifyInstructor } from "./access";
 import { json, PERSONA_OPEN_TO_COHORT, type Env } from "./db";
 import { handleReport, handleSession } from "./report";
 import type { PersonaSummary } from "../shared/types";
@@ -47,7 +47,13 @@ export default {
         // dashboard-managed second list existed 2026-08-26/27 and was removed
         // the same week at the instructor's request.)
         const instructor = await identifyInstructor(request, env);
-        if (!instructor) return json(403, { error: "Access denied." });
+        if (!instructor) {
+          return json(403, {
+            error: accessConfigured(env)
+              ? "Access denied."
+              : "The dashboard login is not set up on this deployment yet. Create the Cloudflare Access application, then set ACCESS_TEAM_DOMAIN and ACCESS_AUD.",
+          });
+        }
         return await handleAdmin(request, env, instructor.email, segments.slice(2));
       }
 

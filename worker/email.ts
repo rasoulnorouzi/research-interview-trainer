@@ -1,15 +1,17 @@
 // Email dispatch for the hosted trainer (BACKEND-PLAN.md sections 5-7).
 //
-// Sends through the Resend HTTP API with plain `fetch`. This module has
-// ZERO Cloudflare imports and no platform types: it does not import `Env`
-// or anything else from worker/, and every type it uses comes from
-// ../shared/types or ../shared/format. That is deliberate (BACKEND-PLAN.md
-// section 9, "keep the OpenAI and email calls in thin modules with no
-// Cloudflare imports ... they lift to Python almost mechanically").
+// Since 2026-09-18 the mail goes out through Cloudflare Email Service, not
+// Resend. This module still has ZERO Cloudflare imports and no platform
+// types: it does not import `Env`, the `send_email` binding, or anything
+// else from worker/, and every type it uses comes from ../shared/types or
+// ../shared/format. That is deliberate (BACKEND-PLAN.md section 9, "keep
+// the OpenAI and email calls in thin modules with no Cloudflare imports
+// ... they lift to Python almost mechanically").
 //
-// The caller (the request handler) is responsible for reading the Resend
-// API key and the "from" address out of settings/secrets and passing them
-// in; this module never reads configuration itself.
+// The transport is passed in as a `MailSender` function. `worker/db.ts`
+// builds one from the binding and the "from" address; this module never
+// reads configuration and never learns which service carries the mail.
+// Swapping the service again is one function, not an edit here.
 
 import type {
   CriterionScore,
@@ -21,56 +23,49 @@ import { fmtMs } from "../shared/format";
 import { CONSENT_QUESTION_EN, consentAnswer, consentShort } from "../shared/consent";
 
 // ---------------------------------------------------------------------
-// Resend transport
+// Transport
 // ---------------------------------------------------------------------
 
-/**
- * Sends one email through the Resend HTTP API.
- *
- * Throws on a non-2xx response. The thrown message includes the HTTP
- * status and Resend's own `message` field (safe to surface), and never
- * includes `apiKey`.
- */
 export interface EmailAttachment {
   filename: string;
-  /** File contents, base64-encoded (what Resend's API expects). */
+  /**
+   * File contents as plain text, NOT base64. Cloudflare Email Service
+   * takes a raw string for a text attachment; Resend took base64, so the
+   * old `toBase64()` helper went with it.
+   */
   content: string;
+  /** Media type, for example "text/plain; charset=utf-8". */
+  contentType: string;
 }
 
+/** One email, as this module hands it to whatever carries the mail. */
+export interface OutgoingEmail {
+  to: string[];
+  subject: string;
+  text: string;
+  html: string;
+  attachments?: EmailAttachment[];
+}
+
+/**
+ * The transport. It throws on failure, and the caller decides what a
+ * failure means: a login code that cannot be sent fails the request, a
+ * report email that cannot be sent does not lose the report.
+ *
+ * The "from" address belongs to the sender, not to this module.
+ */
+export type MailSender = (message: OutgoingEmail) => Promise<void>;
+
+/** Sends one email. Kept as a function so every caller reads the same. */
 export async function sendEmail(
-  apiKey: string,
-  from: string,
+  send: MailSender,
   to: string[],
   subject: string,
   text: string,
   html: string,
   attachments?: EmailAttachment[],
 ): Promise<void> {
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(
-      attachments && attachments.length > 0
-        ? { from, to, subject, text, html, attachments }
-        : { from, to, subject, text, html },
-    ),
-  });
-
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const body = (await res.json()) as { message?: unknown };
-      if (body && typeof body.message === "string" && body.message.length > 0) {
-        message = body.message;
-      }
-    } catch {
-      // Resend did not return a JSON error body; fall back to statusText.
-    }
-    throw new Error(`Resend request failed with status ${res.status}: ${message}`);
-  }
+  await send({ to, subject, text, html, attachments });
 }
 
 /**
@@ -78,8 +73,7 @@ export async function sendEmail(
  * (BACKEND-PLAN.md section 6).
  */
 export async function sendLoginCode(
-  apiKey: string,
-  from: string,
+  send: MailSender,
   to: string,
   code: string,
 ): Promise<void> {
@@ -102,7 +96,7 @@ export async function sendLoginCode(
 
   const html = htmlDocument(subject, bodyHtml);
 
-  await sendEmail(apiKey, from, [to], subject, text, html);
+  await sendEmail(send, [to], subject, text, html);
 }
 
 // ---------------------------------------------------------------------
@@ -407,13 +401,8 @@ function reportBodyText(d: ReportEmailData, withHeader = true): string {
 // Attachments: the transcript and the assessment as two plain-text files
 // ---------------------------------------------------------------------
 
-/** UTF-8 text to the base64 form Resend's attachment API expects. */
-function toBase64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary);
-}
+/** Both attachments are plain text; Cloudflare wants the type named. */
+const TEXT_MEDIA_TYPE = "text/plain; charset=utf-8";
 
 function attachmentDate(d: ReportEmailData): string {
   return new Date(d.startedAt).toISOString().slice(0, 10); // UTC YYYY-MM-DD
@@ -431,7 +420,8 @@ export function transcriptAttachment(d: ReportEmailData, forAssessor = false): E
     filename: forAssessor
       ? `interview-${d.studentId}-transcript-${attachmentDate(d)}.txt`
       : `interview-transcript-${attachmentDate(d)}.txt`,
-    content: toBase64(lines.join("\n")),
+    content: lines.join("\n"),
+    contentType: TEXT_MEDIA_TYPE,
   };
 }
 
@@ -442,7 +432,8 @@ export function assessmentAttachment(d: ReportEmailData, forAssessor = false): E
     filename: forAssessor
       ? `interview-${d.studentId}-assessment-${attachmentDate(d)}.txt`
       : `interview-assessment-${attachmentDate(d)}.txt`,
-    content: toBase64(lines.join("\n")),
+    content: lines.join("\n"),
+    contentType: TEXT_MEDIA_TYPE,
   };
 }
 

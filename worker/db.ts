@@ -1,6 +1,8 @@
 // Worker plumbing shared by every module: the environment binding, the
 // settings read, and the two HTTP helpers. See BACKEND-PLAN.md §3.
 //
+import type { MailSender } from "./email";
+
 // There is no ORM and no query builder. Handlers write their own SQL with
 // .prepare(...).bind(...), which keeps the schema portable to plain SQLite or
 // Postgres on a university VM (BACKEND-PLAN.md §9).
@@ -10,9 +12,16 @@ export interface Env {
   ASSETS: Fetcher;
   /** HMAC key for the signed session cookie. `wrangler secret put SESSION_SECRET`. */
   SESSION_SECRET: string;
-  RESEND_API_KEY: string;
+  /**
+   * Cloudflare Email Service, the `send_email` binding in wrangler.jsonc.
+   * It replaced Resend on 2026-09-18, so there is no mail API key any
+   * more: the binding authorizes itself, and the domain it may send from
+   * is onboarded once per account.
+   */
+  EMAIL: SendEmail;
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
+  /** The sender, as "Name <address>" or a bare address. */
   EMAIL_FROM: string;
   /**
    * The university AI gateway (Tilburg.AI, OpenAI-compatible), ending in /v1
@@ -107,4 +116,59 @@ export async function readJsonBody<T>(
   } catch {
     return { ok: false, response: json(400, { error: "Malformed JSON body." }) };
   }
+}
+
+// ---------------------------------------------------------------------
+// Mail
+// ---------------------------------------------------------------------
+
+/**
+ * Splits `EMAIL_FROM` into the shape the binding wants. It accepts both
+ * "Research Interview Trainer <trainer@example.org>" and a bare address,
+ * because the var has held both.
+ */
+function parseFrom(value: string): { email: string; name: string } {
+  const match = /^\s*(.*?)\s*<\s*([^>]+)\s*>\s*$/.exec(value);
+  if (match) return { name: match[1].replace(/^"|"$/g, ""), email: match[2] };
+  return { name: "", email: value.trim() };
+}
+
+/**
+ * The mail transport for `worker/email.ts`, built from the binding and
+ * the configured sender. That module stays free of Cloudflare types; this
+ * is the one place that knows which service carries the mail.
+ *
+ * A failure throws, as it did with Resend, so the callers' existing
+ * handling still applies. The binding's errors carry a `code` such as
+ * E_SENDER_NOT_VERIFIED or E_DAILY_LIMIT_EXCEEDED, which says what an
+ * operator has to fix, so it is kept in the message. Neither the code nor
+ * the message carries a recipient or any report content.
+ */
+export function mailer(env: Env): MailSender {
+  const from = parseFrom(env.EMAIL_FROM);
+  return async (message) => {
+    try {
+      await env.EMAIL.send({
+        to: message.to,
+        from,
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
+        ...(message.attachments && message.attachments.length > 0
+          ? {
+              attachments: message.attachments.map((a) => ({
+                disposition: "attachment" as const,
+                filename: a.filename,
+                type: a.contentType,
+                content: a.content,
+              })),
+            }
+          : {}),
+      });
+    } catch (err) {
+      const code = (err as { code?: unknown }).code;
+      const detail = err instanceof Error ? err.message : "unknown error";
+      throw new Error(`Email send failed${typeof code === "string" ? ` (${code})` : ""}: ${detail}`);
+    }
+  };
 }
