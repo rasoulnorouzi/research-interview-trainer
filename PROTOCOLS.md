@@ -7,6 +7,96 @@ one instruction per action.
 
 ---
 
+## 2026-09-18 (evening) — Production moves to its own account and domain
+
+Two branches merged into `main`: `cf-email-service` (the move) and
+`editable-prompts` (the dashboard prompts and the help notes). Tagged
+`release-2026-09-18-migration`. No schema change. The previous state of
+the NEW deployment (Worker `c852b069`) is the rollback target; the older
+account still runs the pre-move app untouched.
+
+### What changed
+
+1. **A new home.** The app runs at https://qualitativeinterviewskills.com
+   in account `ef71fbe7795df43f5adddf5abdd8f4a7`, owned by a colleague and
+   administered by the instructor. The workers.dev address and preview
+   URLs are off. `www` redirects to the apex, 301, path preserved.
+2. **The data moved.** The whole database was exported from the old
+   account and imported into `riv-trainer`
+   (`81264e33-443c-45ec-8593-3db6c01acd16`, WEUR), then compared table by
+   table against the export: 5 roster, 8 personas, 13 criteria, 4
+   submissions, 11 settings, 64 persona versions, 29 criteria versions.
+3. **Mail left Resend for Cloudflare Email Service.** No mail API key
+   exists any more; `SESSION_SECRET` is the only secret. `worker/email.ts`
+   keeps zero Cloudflare imports and takes a `MailSender`; `mailer()` in
+   `worker/db.ts` is the one place that knows the transport. Attachments
+   became raw text with a media type, where Resend wanted base64.
+4. **The dashboard login** is an Access app covering `/admin` and
+   `/api/admin/*`, 24 hour session, two allowed addresses, with both
+   "Login with Cloudflare" and one-time PIN enabled so a colleague without
+   a Cloudflare account can sign in.
+5. **The AI assessor's instructions are editable** from a new Prompts
+   screen, backed by `shared/prompts.ts` and the settings rows
+   `scoring_criterion_prompt` and `scoring_feedback_prompt`.
+6. **Twenty "?" notes** across Settings, Prompts, Rubric, Personas and
+   Break-glass.
+
+### Decisions
+
+- **The injection guard stays in code.** A template places it with
+  `{{TRANSCRIPT_BLOCK}}` and is refused without it. Editing everything
+  else is allowed; removing the guard is not.
+- **An empty prompt row means the shipped default**, so the feature is
+  inert until someone uses it, and "Restore default" clears rather than
+  pastes.
+- **A user API token, not an account-owned one**, because the instructor
+  administers that account rather than owning it.
+- **Zero Trust had never been enabled** on the new account. That, not a
+  missing role, was behind "your current role does not allow this"; the
+  owner enabled it.
+- **The old deployment stays up** as the fallback. Anything written there
+  from now on does not reach the new one.
+
+### Tests done
+
+- `npm run lint` and `npm run build` clean.
+- Data compared against the export, row counts per table.
+- Mail: test sends delivered to Gmail and to Microsoft 365 at
+  `tilburguniversity.edu`; the instructor confirmed a real login code
+  arrived at the university address from the new domain.
+- Scoring through the live gateway against the real 13-criterion rubric:
+  14 calls in 8.7 s, scores tracking planted flaws, one criterion
+  correctly returned as not assessable.
+- A prompt containing "begin every justification with MARKER" produced
+  justifications beginning with MARKER, which proves the dashboard's text
+  reaches the evaluator. An invalid template was refused with its reason.
+- Help notes: all panels open and close, a "?" on a switch leaves the
+  switch untouched, Escape closes, nothing overflows at 390px.
+- After the deploy: `/` 200, `/api/me` 401, `/api/personas` 401, `/admin`
+  and `/api/admin/*` 302 to Access, `www` 301 to the apex, and the live
+  admin bundle contains the Prompts screen and the help notes.
+- **Not done: a live voice interview on the new domain.** The instructor
+  runs that with a microphone.
+
+### Deploy
+
+- Backup first: `backup-new-2026-09-18.sql` (1.16 MB, holds the key,
+  gitignored).
+- `npm run build && npx wrangler deploy` with the new account's token.
+  Worker version `aee893e7-55d5-44d5-b028-e4e72567d749`.
+
+### Rollback
+
+- Code: `npx wrangler rollback c852b069-f1a1-424a-9828-4a76bea9ffb5` in
+  the new account.
+- Whole service: the old deployment at
+  https://research-interview-trainer.rasoulnorouzi.workers.dev is still
+  live with its own database and its own Resend mail. Point students back
+  at it. Data created on the new deployment would have to be exported and
+  imported to follow them.
+
+---
+
 ## 2026-09-18 — Transcript consent before a student may submit
 
 Branch `consent-gate`, three commits, merged into `main` with a merge
