@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "./api";
+import { Help } from "./Help";
 
 interface BreakglassResponse {
   url: string;
@@ -45,7 +46,12 @@ export function Breakglass({ onApiError }: Props) {
 
   return (
     <div>
-      <h2>Break-glass login</h2>
+      <h2>
+        Break-glass login
+        <Help label="Break-glass login">
+            <p>A one-time link that logs a student in without an emailed code. It works once and expires after 15 minutes.</p>
+          </Help>
+      </h2>
       <p>
         A student who cannot receive the login email gets a direct link. The link works once and
         expires in 15 minutes.

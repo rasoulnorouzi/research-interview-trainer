@@ -530,6 +530,20 @@ clear the stored key. Every subsequent `POST /api/session` and
 one setting that supports removal; every other setting key must always
 carry a value.
 
+### The scoring prompts
+
+`scoring_criterion_prompt` and `scoring_feedback_prompt` (added
+2026-09-18) hold the instructor's version of the AI assessor's
+instructions. An empty or absent row means the default in
+`shared/prompts.ts`.
+
+A save is validated against `validateTemplate()`: both must contain
+`{{TRANSCRIPT_BLOCK}}`, the criterion prompt must also contain
+`{{CRITERION_BLOCK}}`, neither may contain literal `<transcript>` tags,
+and each is capped at 12000 characters. A template that fails is refused
+with `400` and a message naming the problem. The guard and the transcript
+fence are assembled server-side and cannot be edited, only placed.
+
 ### The transcription model list
 
 `transcription_model` (added 2026-08-31, default `gpt-live-transcribe`) is

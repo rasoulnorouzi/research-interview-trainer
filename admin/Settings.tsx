@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Toggle } from "./Toggle";
+import { Help } from "./Help";
 import { api } from "./api";
 import {
   INTERVIEW_MODEL_OPTIONS,
@@ -359,7 +360,12 @@ export function Settings({ onApiError }: Props) {
 
       <form className="card" onSubmit={submit}>
         <div className="field">
-          <label htmlFor="interview_limit_minutes">Interview time limit (minutes)</label>
+          <label htmlFor="interview_limit_minutes">
+            Interview time limit (minutes)
+            <Help label="Interview time limit">
+            <p>How long a student may speak with the interviewee. A countdown runs on their screen and the session stops at zero.</p>
+          </Help>
+          </label>
           <input
             id="interview_limit_minutes"
             type="number"
@@ -371,7 +377,12 @@ export function Settings({ onApiError }: Props) {
         </div>
 
         <div className="field">
-          <label htmlFor="interview_warn_minutes">Warning countdown starts at (minutes)</label>
+          <label htmlFor="interview_warn_minutes">
+            Warning countdown starts at (minutes)
+            <Help label="Warning countdown">
+            <p>When the timer becomes a visible warning, so the student can close the interview properly. Must be less than the time limit.</p>
+          </Help>
+          </label>
           <input
             id="interview_warn_minutes"
             type="number"
@@ -386,7 +397,12 @@ export function Settings({ onApiError }: Props) {
         </div>
 
         <div className="field">
-          <label htmlFor="sessions_total">Interview sessions per student (total)</label>
+          <label htmlFor="sessions_total">
+            Interview sessions per student (total)
+            <Help label="Sessions per student">
+            <p>How many interviews one student may start in total. A start that fails also counts; use Reset sessions on the Students screen.</p>
+          </Help>
+          </label>
           <input
             id="sessions_total"
             type="number"
@@ -429,6 +445,7 @@ export function Settings({ onApiError }: Props) {
           <Toggle
             id="generate_feedback"
             label="Generate AI feedback"
+            help={<p>The written part of the report. Off means no copy has a feedback section. Criterion scores are unaffected.</p>}
             checked={form.generate_feedback === "1"}
             onChange={(on) => setField("generate_feedback", on ? "1" : "0")}
           />
@@ -446,6 +463,7 @@ export function Settings({ onApiError }: Props) {
           <Toggle
             id="share_report_with_student"
             label="Send scores and feedback to students"
+            help={<p>Off means a student sees only their transcript. The interview is still scored, and assessors still receive the full report.</p>}
             // Subordinate to the feedback switch above (instructor decision,
             // 2026-08-31): with feedback off this switch is inert and shows the
             // forced Off, but the stored value underneath is untouched, so
@@ -472,7 +490,12 @@ export function Settings({ onApiError }: Props) {
         </div>
 
         <div className="field">
-          <label htmlFor="instructor_recipients">Assessment recipients</label>
+          <label htmlFor="instructor_recipients">
+            Assessment recipients
+            <Help label="Assessment recipients">
+            <p>Who receives the assessor copy of every report. Switching an address off keeps it on the list but sends it nothing.</p>
+          </Help>
+          </label>
           {recipients.length > 0 ? (
             <table>
               <tbody>
@@ -556,7 +579,12 @@ export function Settings({ onApiError }: Props) {
         </div>
 
         <div className="field">
-          <label htmlFor="openai_api_key">API key (university AI gateway)</label>
+          <label htmlFor="openai_api_key">
+            API key (university AI gateway)
+            <Help label="Gateway API key">
+            <p>The key for the university AI gateway, used by the interviews and the scoring. Stored on the server and never shown in full.</p>
+          </Help>
+          </label>
           {keyEntry ? (
             <p className="admin-help">
               A key is set: {keyEntry.value}. Saved by {keyEntry.updatedBy ?? "unknown"} on{" "}
@@ -596,7 +624,12 @@ export function Settings({ onApiError }: Props) {
         </div>
 
         <div className="field">
-          <label htmlFor="student_panel">Welcome panel for students</label>
+          <label htmlFor="student_panel">
+            Welcome panel for students
+            <Help label="Welcome panel">
+            <p>The card students read before choosing an interviewee. Headings, bullets and bold work. Leave it empty to show no panel.</p>
+          </Help>
+          </label>
           <textarea
             id="student_panel"
             className="admin-large"

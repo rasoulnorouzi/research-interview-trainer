@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Toggle } from "./Toggle";
+import { Help } from "./Help";
 import { api } from "./api";
 
 interface CriterionListItem {
@@ -360,7 +361,12 @@ export function Rubric({ onApiError }: Props) {
             />
           </div>
           <div className="field">
-            <label htmlFor="criterion-description">Description</label>
+            <label htmlFor="criterion-description">
+              Description
+              <Help label="Description">
+            <p>What the AI judges for this criterion. Name observable behaviour rather than the ideal.</p>
+          </Help>
+            </label>
             <textarea
               id="criterion-description"
               required
@@ -395,7 +401,12 @@ export function Rubric({ onApiError }: Props) {
             />
           </div>
           <div className="field">
-            <label htmlFor="criterion-anchor-high">What the top score looks like</label>
+            <label htmlFor="criterion-anchor-high">
+              What the top score looks like
+              <Help label="Top anchor">
+            <p>What excellence looks like in a transcript. If it only repeats the description, top marks become easy.</p>
+          </Help>
+            </label>
             <textarea
               id="criterion-anchor-high"
               required
@@ -405,7 +416,12 @@ export function Rubric({ onApiError }: Props) {
           </div>
 
           <div className="field">
-            <label htmlFor="criterion-scale-max">Top score</label>
+            <label htmlFor="criterion-scale-max">
+              Top score
+              <Help label="Top score">
+            <p>The highest mark this criterion can reach. The overall result is points earned over points available, so a higher top score weighs more.</p>
+          </Help>
+            </label>
             <input
               id="criterion-scale-max"
               type="number"
@@ -425,6 +441,7 @@ export function Rubric({ onApiError }: Props) {
             <Toggle
               id="criterion-ground-truth"
               label="Uses hidden core"
+              help={<p>Gives this one evaluator the persona's hidden backstory. Use it for criteria about depth or discovery, not elsewhere.</p>}
               checked={form.needsGroundTruth}
               onChange={(needsGroundTruth) => setForm((f) => ({ ...f, needsGroundTruth }))}
             />

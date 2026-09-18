@@ -5,16 +5,18 @@ import { Settings } from "./Settings";
 import { Roster } from "./Roster";
 import { Personas } from "./Personas";
 import { Rubric } from "./Rubric";
+import { Prompts } from "./Prompts";
 import { Submissions } from "./Submissions";
 import { Breakglass } from "./Breakglass";
 
-type Tab = "settings" | "roster" | "personas" | "rubric" | "submissions" | "breakglass";
+type Tab = "settings" | "roster" | "personas" | "rubric" | "prompts" | "submissions" | "breakglass";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "settings", label: "Settings" },
   { id: "roster", label: "Students" },
   { id: "personas", label: "Personas" },
   { id: "rubric", label: "Rubric" },
+  { id: "prompts", label: "Prompts" },
   { id: "submissions", label: "Submissions" },
   { id: "breakglass", label: "Break-glass" },
 ];
@@ -140,6 +142,7 @@ export function AdminApp() {
               {tab === "roster" && <Roster onApiError={onApiError} />}
               {tab === "personas" && <Personas onApiError={onApiError} />}
               {tab === "rubric" && <Rubric onApiError={onApiError} />}
+              {tab === "prompts" && <Prompts onApiError={onApiError} />}
               {tab === "submissions" && <Submissions onApiError={onApiError} />}
               {tab === "breakglass" && <Breakglass onApiError={onApiError} />}
             </main>

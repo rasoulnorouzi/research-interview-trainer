@@ -992,6 +992,155 @@ td.num {
   opacity: 0.6;
 }
 
+
+/* Prompts screen: the AI assessor's instructions, editable by the instructor
+   (2026-09-18). Monospace, because whitespace and placeholder tokens matter
+   here in a way they do not anywhere else in the dashboard. */
+.prompt-editor {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.prompt-preview {
+  max-height: 460px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+}
+
+.prompt-tokens td {
+  padding: 5px 10px 5px 0;
+  vertical-align: top;
+  font-size: 0.86rem;
+}
+
+.prompt-tokens code {
+  white-space: nowrap;
+}
+
+
+/* The "?" help affordance (2026-09-18). Sits inline after a label or a
+   heading, opens on hover, on click and on keyboard focus. The panel is
+   absolutely positioned so it never pushes the form around, and it clamps
+   to the viewport width on a phone. */
+.help-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.help-btn {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-hover, var(--border));
+  background: var(--card);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-grid;
+  place-items: center;
+  cursor: help;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease,
+    transform 0.35s var(--ease-spring, ease);
+}
+
+.help-btn:hover,
+.help-btn.is-open {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  transform: scale(1.08);
+}
+
+.help-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.help-panel {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: -8px;
+  width: max-content;
+  max-width: min(360px, 78vw);
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 12px 32px rgba(15, 18, 45, 0.16);
+  font-size: 0.84rem;
+  font-weight: normal;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: left;
+  white-space: normal;
+  animation: help-in 0.18s ease both;
+}
+
+.help-title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.help-panel p {
+  margin: 0 0 0.5rem;
+}
+
+.help-panel p:last-child {
+  margin-bottom: 0;
+}
+
+.help-panel code {
+  font-size: 0.78rem;
+}
+
+/* Opacity only: the panel's transform carries its on-screen nudge, so
+   animating transform here would undo it. */
+@keyframes help-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .help-panel {
+    animation: none;
+  }
+  .help-btn {
+    transition: none;
+  }
+}
+
+/* Print: a popover is a screen affordance, never part of a printed report. */
+@media print {
+  .help-wrap {
+    display: none;
+  }
+}
+
 /* ===========================================================================
    INSTRUCTOR DASHBOARD (admin.html / admin/*)
    Layout only: the green identity comes from the token overrides on

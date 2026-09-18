@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Toggle } from "./Toggle";
+import { Help } from "./Help";
 import { api, apiBlob } from "./api";
 import { REALTIME_VOICES } from "../shared/voices";
 
@@ -495,7 +496,12 @@ export function Personas({ onApiError }: Props) {
             />
           </div>
           <div className="field">
-            <label htmlFor="persona-hidden-core">Hidden core</label>
+            <label htmlFor="persona-hidden-core">
+              Hidden core
+              <Help label="Hidden core">
+            <p>What this persona is really hiding, written for the AI assessor. Students never see it.</p>
+          </Help>
+            </label>
             <textarea
               id="persona-hidden-core"
               className="admin-large"
@@ -516,7 +522,12 @@ export function Personas({ onApiError }: Props) {
             />
           </div>
           <div className="field" role="radiogroup" aria-labelledby="persona-audience">
-            <label id="persona-audience">Who sees this persona</label>
+            <label id="persona-audience">
+              Who sees this persona
+              <Help label="Who sees this persona">
+            <p>With no cohort selected, every student sees this interviewee. Select cohorts to limit it to them.</p>
+          </Help>
+            </label>
             <label className="checkbox-row">
               <input
                 type="radio"
