@@ -136,6 +136,13 @@ export interface ReportRequest {
   startedAt: number;
   endedAt: number;
   metrics: Metrics;
+  /**
+   * The student's answer to the transcript-consent question, asked on the
+   * results screen before they may submit (instructor request, 2026-09-18).
+   * Required: the server rejects a report without it. False is a valid
+   * answer and stores a refusal; it never blocks the submission.
+   */
+  consent: boolean;
 }
 
 /**

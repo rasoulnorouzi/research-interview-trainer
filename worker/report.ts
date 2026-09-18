@@ -183,7 +183,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
   if (!parsed.ok) return parsed.response;
   const validated = validateReport(parsed.value);
   if ("error" in validated) return json(validated.status, { error: validated.error });
-  const { personaId, transcript, startedAt, endedAt, metrics } = validated;
+  const { personaId, transcript, startedAt, endedAt, metrics, consent } = validated;
 
   const personaRow = await env.DB.prepare(
     "SELECT id, name, title, research_topic, hidden_core FROM personas WHERE id = ? AND active = 1",
@@ -283,8 +283,8 @@ export async function handleReport(request: Request, env: Env): Promise<Response
   const endedAtSeconds = Math.floor(endedAt / 1000);
   await env.DB.prepare(
     "INSERT INTO submissions (id, student_id, persona_id, started_at, ended_at, duration_ms, overall_score, " +
-      "scores_json, feedback_json, metrics_json, transcript_json, emailed_at, created_at) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+      "scores_json, feedback_json, metrics_json, transcript_json, emailed_at, transcript_consent, created_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
   )
     .bind(
       submissionId,
@@ -298,6 +298,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
       JSON.stringify(scored.feedback),
       JSON.stringify(metrics),
       JSON.stringify(transcript),
+      consent ? 1 : 0,
       nowSeconds,
     )
     .run();
@@ -315,6 +316,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     feedback: scored.feedback,
     overall,
     transcript,
+    transcriptConsent: consent,
   };
 
   // Only the switched-on addresses receive a copy. A recipient the instructor
@@ -427,6 +429,7 @@ interface ValidReport {
   startedAt: number;
   endedAt: number;
   metrics: Metrics;
+  consent: boolean;
 }
 
 /**
@@ -476,6 +479,12 @@ function validateReport(body: unknown): ValidReport | { status: number; error: s
   }
 
   if (!isFiniteNumber(b.startedAt) || !isFiniteNumber(b.endedAt)) return bad("Malformed report.");
+  // The consent answer is required, and only a real boolean counts. A missing
+  // one is a client that skipped the question, not a student who refused, so
+  // it is rejected rather than stored as a refusal.
+  if (typeof b.consent !== "boolean") {
+    return bad("Answer the consent question before submitting the interview.");
+  }
   if (typeof b.metrics !== "object" || b.metrics === null || Array.isArray(b.metrics)) {
     return bad("Malformed report.");
   }
@@ -486,6 +495,7 @@ function validateReport(body: unknown): ValidReport | { status: number; error: s
     startedAt: b.startedAt,
     endedAt: b.endedAt,
     metrics: b.metrics as Metrics,
+    consent: b.consent,
   };
 }
 

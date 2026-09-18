@@ -3,6 +3,7 @@ import { Toggle } from "./Toggle";
 import { api, adminUrl } from "./api";
 import { buildZip } from "./zip";
 import { fmtMs } from "../shared/format";
+import { CONSENT_QUESTION_EN, consentAnswer, consentShort } from "../shared/consent";
 import type { CriterionScore, Metrics, QualitativeFeedback, TranscriptEntry } from "../shared/types";
 
 interface SubmissionListItem {
@@ -33,6 +34,8 @@ interface SubmissionDetail {
   metrics: Metrics;
   transcript: TranscriptEntry[];
   emailedAt: number | null;
+  /** Null for interviews submitted before the consent question existed. */
+  transcriptConsent: boolean | null;
   createdAt: number;
 }
 
@@ -542,6 +545,14 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
         </p>
       </div>
 
+      {/* Its own block, not a line in the header: an assessor deciding
+          whether they may use a transcript must not have to hunt for it. */}
+      <div className="card">
+        <h3>Transcript consent: {consentShort(detail.transcriptConsent).toUpperCase()}</h3>
+        <p className="small">Question asked: &ldquo;{CONSENT_QUESTION_EN}&rdquo;</p>
+        <p>The student answered: {consentAnswer(detail.transcriptConsent)}</p>
+      </div>
+
       <div className="card no-print">
         <Toggle
           id="detail-include-feedback"
@@ -733,6 +744,12 @@ function buildSubmissionMarkdown(detail: SubmissionDetail, includeFeedback: bool
   lines.push(`- Persona: ${detail.personaId}`);
   lines.push(`- Date: ${formatUnixOrMs(detail.startedAt)}`);
   lines.push(`- Duration: ${fmtMs(detail.durationMs)}`);
+  lines.push(``);
+  lines.push(`## Transcript consent: ${consentShort(detail.transcriptConsent).toUpperCase()}`);
+  lines.push(``);
+  lines.push(`Question asked: "${CONSENT_QUESTION_EN}"`);
+  lines.push(``);
+  lines.push(`The student answered: ${consentAnswer(detail.transcriptConsent)}`);
   lines.push(``);
 
   lines.push(`## Speaking metrics`);

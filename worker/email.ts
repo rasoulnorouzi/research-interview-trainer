@@ -18,6 +18,7 @@ import type {
   TranscriptEntry,
 } from "../shared/types";
 import { fmtMs } from "../shared/format";
+import { CONSENT_QUESTION_EN, consentAnswer, consentShort } from "../shared/consent";
 
 // ---------------------------------------------------------------------
 // Resend transport
@@ -123,6 +124,39 @@ export interface ReportEmailData {
   feedback: QualitativeFeedback | null;
   overall: number | null;
   transcript: TranscriptEntry[];
+  /**
+   * The student's answer to the transcript-consent question (instructor
+   * request, 2026-09-18). Null only for interviews stored before the
+   * question existed. It is named in the header of every copy of the
+   * report, so an assessor reading a transcript knows at once whether it
+   * may be used to improve the chatbot.
+   */
+  transcriptConsent: boolean | null;
+}
+
+/**
+ * The consent block every copy of the report carries, as plain text. It
+ * quotes the question so the answer cannot be read out of context.
+ */
+function consentTextLines(d: ReportEmailData): string[] {
+  return [
+    `TRANSCRIPT CONSENT: ${consentShort(d.transcriptConsent).toUpperCase()}`,
+    ``,
+    `Question asked: "${CONSENT_QUESTION_EN}"`,
+    `The student answered: ${consentAnswer(d.transcriptConsent)}`,
+    ``,
+  ];
+}
+
+/** The same block for the HTML emails: a bordered panel, hard to skim past. */
+function consentHtml(d: ReportEmailData): string {
+  return [
+    `<div style="border:1px solid ${BORDER_COLOR}; padding:10px 14px; margin:16px 0;">`,
+    `<p style="${P_STYLE} font-weight:bold;">Transcript consent: ${escapeHtml(consentShort(d.transcriptConsent).toUpperCase())}</p>`,
+    `<p style="${P_STYLE}">Question asked: &ldquo;${escapeHtml(CONSENT_QUESTION_EN)}&rdquo;</p>`,
+    `<p style="${P_STYLE}">The student answered: ${escapeHtml(consentAnswer(d.transcriptConsent))}</p>`,
+    `</div>`,
+  ].join("\n");
 }
 
 // The two copies of a report must be tellable apart at a glance (instructor
@@ -169,6 +203,7 @@ export function studentTranscriptEmail(
   lines.push(`Date: ${formatDateTime(d.startedAt)}`);
   lines.push(`Duration: ${fmtMs(d.durationMs)}`);
   lines.push(``);
+  lines.push(...consentTextLines(d));
   lines.push(WITHHELD_NOTICE);
   lines.push(``);
   lines.push(`TRANSCRIPT`);
@@ -184,6 +219,7 @@ export function studentTranscriptEmail(
   parts.push(`<p style="${P_STYLE}">Student: ${escapeHtml(d.studentName)}</p>`);
   parts.push(`<p style="${P_STYLE}">Date: ${escapeHtml(formatDateTime(d.startedAt))}</p>`);
   parts.push(`<p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>`);
+  parts.push(consentHtml(d));
   parts.push(`<p style="${P_STYLE}">${escapeHtml(WITHHELD_NOTICE)}</p>`);
   parts.push(`<h2 style="${h2Style(ACCENT)}">Transcript</h2>`);
   parts.push(...transcriptHtmlParts(d));
@@ -213,6 +249,7 @@ export function instructorReportEmail(
     `Started: ${formatDateTime(d.startedAt)}`,
     `Duration: ${fmtMs(d.durationMs)}`,
     ``,
+    ...consentTextLines(d),
     `----------------------------------------`,
     ``,
   ];
@@ -225,6 +262,7 @@ ${d.cohort === null ? "" : `<p style="${P_STYLE}">Cohort: ${escapeHtml(d.cohort)
 <p style="${P_STYLE}">Persona: ${escapeHtml(d.personaName)} (${escapeHtml(d.personaTitle)})</p>
 <p style="${P_STYLE}">Started: ${escapeHtml(formatDateTime(d.startedAt))}</p>
 <p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>
+${consentHtml(d)}
 <hr style="border:none; border-top:1px solid ${BORDER_COLOR}; margin:20px 0;">
 `;
   const html = htmlDocument(subject, identityHtml + reportBodyHtml(d, ASSESSOR_ACCENT, false));
@@ -285,6 +323,7 @@ function headerTextLines(d: ReportEmailData): string[] {
     `Date: ${formatDateTime(d.startedAt)}`,
     `Duration: ${fmtMs(d.durationMs)}`,
     ``,
+    ...consentTextLines(d),
   ];
 }
 
@@ -342,6 +381,9 @@ function reportBodyText(d: ReportEmailData, withHeader = true): string {
     lines.push(`Date: ${formatDateTime(d.startedAt)}`);
     lines.push(`Duration: ${fmtMs(d.durationMs)}`);
     lines.push(``);
+    // Only the student copies add it here. The assessor copy already carries
+    // the block in its identity header, and printing it twice would bury it.
+    lines.push(...consentTextLines(d));
   }
 
   lines.push(`SPEAKING METRICS`);
@@ -440,6 +482,8 @@ function reportBodyHtml(d: ReportEmailData, accent: string, withHeader = true): 
     );
     parts.push(`<p style="${P_STYLE}">Date: ${escapeHtml(formatDateTime(d.startedAt))}</p>`);
     parts.push(`<p style="${P_STYLE}">Duration: ${escapeHtml(fmtMs(d.durationMs))}</p>`);
+    // Student copies only; see reportBodyText.
+    parts.push(consentHtml(d));
   }
 
   parts.push(`<h2 style="${h2Style(accent)}">Speaking metrics</h2>`);

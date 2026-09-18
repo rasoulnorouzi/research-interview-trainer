@@ -900,6 +900,98 @@ td.num {
   margin-top: 0.9rem;
 }
 
+/* Transcript-consent question on the results screen (instructor request,
+   2026-09-18). One block holds the English and the Dutch wording, and the
+   submit button stays disabled until one of the two answers is chosen.
+   The heading is a paragraph, not a <legend>: a legend sits ON the border
+   and reads as overlapping text. The native radio is taken out of the
+   flow and the ring is drawn here, so the answers match the app's pills;
+   the input itself stays in the DOM, focusable and announced. */
+.consent-box {
+  margin-top: 1rem;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--card);
+}
+
+.consent-title {
+  margin: 0 0 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.consent-box p {
+  margin: 0 0 0.7rem;
+}
+
+.consent-box p:last-of-type {
+  margin-bottom: 1rem;
+}
+
+.consent-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.consent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 10px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--card);
+  color: var(--text);
+  font-weight: 590;
+  cursor: pointer;
+}
+
+.consent-chip input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.consent-dot {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-hover, var(--border));
+  background: transparent;
+}
+
+.consent-chip:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.consent-chip:has(input:checked) .consent-dot {
+  border-color: var(--accent);
+  background:
+    radial-gradient(circle at center, var(--accent) 0 4.5px, transparent 4.5px);
+}
+
+.consent-chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.consent-chip:has(input:disabled) {
+  cursor: default;
+  opacity: 0.6;
+}
+
 /* ===========================================================================
    INSTRUCTOR DASHBOARD (admin.html / admin/*)
    Layout only: the green identity comes from the token overrides on

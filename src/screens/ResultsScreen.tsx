@@ -7,6 +7,14 @@ import {
   SessionResult,
 } from "../types";
 import { computeMetrics, fmtMs, fmtPercent } from "../lib/metrics";
+import {
+  CONSENT_NO,
+  CONSENT_QUESTION_EN,
+  CONSENT_QUESTION_NL,
+  CONSENT_YES,
+  consentAnswer,
+  consentShort,
+} from "../../shared/consent";
 import { api } from "../api";
 
 interface Props {
@@ -39,6 +47,11 @@ function computeOverallPoints(
 export function ResultsScreen({ result, persona, onNewInterview }: Props) {
   const metrics = useMemo(() => computeMetrics(result), [result]);
   const [state, setState] = useState<ReportState>({ status: "idle" });
+  // Transcript-consent answer (instructor request, 2026-09-18). Null means the
+  // student has not answered yet, and the submit button stays disabled until
+  // they do. "No" submits exactly like "Yes"; only the stored answer differs,
+  // because refusing must not cost a student their coursework.
+  const [consent, setConsent] = useState<boolean | null>(null);
 
   // The nine independent evaluators run on the server, so the browser sees a
   // finished report rather than nine promises. This only runs when the
@@ -46,6 +59,9 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
   // - never automatically on mount, so the student decides when scoring,
   // storing, and emailing happen.
   const submit = () => {
+    // The button is disabled until the question is answered; this guard also
+    // covers the Retry button in the error branch.
+    if (consent === null) return;
     setState({ status: "pending" });
     api<ReportResponse>("/api/report", {
       method: "POST",
@@ -55,6 +71,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
         startedAt: result.startedAt,
         endedAt: result.endedAt,
         metrics,
+        consent,
       }),
     })
       .then((report) => setState({ status: "done", report }))
@@ -73,7 +90,7 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
   const overallPoints = report ? computeOverallPoints(report.scores) : null;
 
   const downloadMarkdown = () => {
-    const md = buildMarkdownReport(result, metrics, persona, report);
+    const md = buildMarkdownReport(result, metrics, persona, report, consent);
     const blob = new Blob([md], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -107,15 +124,53 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
               Your interview is complete. Submit it for scoring. You and your
               instructor receive a copy by email.
             </p>
+            {/* Both languages stand in one box, in the instructor's own
+                wording. The answer travels with the report and is stored on
+                the submission. */}
+            <div className="consent-box">
+              <p className="consent-title">Transcript consent / Toestemming transcript</p>
+              <p>{CONSENT_QUESTION_EN}</p>
+              <p lang="nl">{CONSENT_QUESTION_NL}</p>
+              <div className="consent-choices">
+                <label className="consent-chip">
+                  <input
+                    type="radio"
+                    name="transcript-consent"
+                    checked={consent === true}
+                    onChange={() => setConsent(true)}
+                    disabled={state.status === "pending"}
+                  />
+                  <span className="consent-dot" aria-hidden="true" />
+                  {CONSENT_YES}
+                </label>
+                <label className="consent-chip">
+                  <input
+                    type="radio"
+                    name="transcript-consent"
+                    checked={consent === false}
+                    onChange={() => setConsent(false)}
+                    disabled={state.status === "pending"}
+                  />
+                  <span className="consent-dot" aria-hidden="true" />
+                  {CONSENT_NO}
+                </label>
+              </div>
+            </div>
             <div className="btn-row">
               <button
                 className="btn"
                 onClick={submit}
-                disabled={state.status === "pending"}
+                disabled={consent === null || state.status === "pending"}
               >
                 Submit interview for scoring
               </button>
             </div>
+            {consent === null && (
+              <p className="small">
+                Answer the question above to submit. / Antwoord op de vraag
+                hierboven om te verzenden.
+              </p>
+            )}
             {state.status === "pending" && (
               <>
                 <div className="progress-indeterminate" aria-hidden="true" />
@@ -412,7 +467,8 @@ function buildMarkdownReport(
   result: SessionResult,
   metrics: Metrics,
   persona: PersonaSummary,
-  report: ReportResponse | null
+  report: ReportResponse | null,
+  consent: boolean | null,
 ): string {
   const lines: string[] = [];
   lines.push(`# Interview Report`);
@@ -421,6 +477,12 @@ function buildMarkdownReport(
   lines.push(`- Research topic: ${persona.researchTopic}`);
   lines.push(`- Date: ${new Date(result.startedAt).toLocaleString()}`);
   lines.push(`- Duration: ${fmtMs(metrics.durationMs)}`);
+  lines.push(``);
+  lines.push(`## Transcript consent: ${consentShort(consent).toUpperCase()}`);
+  lines.push(``);
+  lines.push(`Question asked: "${CONSENT_QUESTION_EN}"`);
+  lines.push(``);
+  lines.push(`Answered: ${consentAnswer(consent)}`);
   lines.push(``);
   lines.push(`## Speaking metrics`);
   lines.push(``);

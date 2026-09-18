@@ -1812,7 +1812,8 @@ async function listSubmissions(env: Env, url: URL): Promise<Response> {
 async function getSubmission(env: Env, id: string): Promise<Response> {
   const row = await env.DB.prepare(
     "SELECT s.id, s.student_id, r.full_name, r.cohort, s.persona_id, s.started_at, s.ended_at, s.duration_ms, " +
-      "s.overall_score, s.scores_json, s.feedback_json, s.metrics_json, s.transcript_json, s.emailed_at, s.created_at " +
+      "s.overall_score, s.scores_json, s.feedback_json, s.metrics_json, s.transcript_json, s.emailed_at, " +
+      "s.transcript_consent, s.created_at " +
       "FROM submissions s JOIN roster r ON r.student_id = s.student_id WHERE s.id = ?",
   )
     .bind(id)
@@ -1823,6 +1824,7 @@ async function getSubmission(env: Env, id: string): Promise<Response> {
         feedback_json: string;
         metrics_json: string;
         transcript_json: string;
+        transcript_consent: number | null;
         created_at: number;
       }
     >();
@@ -1843,6 +1845,8 @@ async function getSubmission(env: Env, id: string): Promise<Response> {
     metrics: parseJson(row.metrics_json),
     transcript: parseJson(row.transcript_json),
     emailedAt: row.emailed_at,
+    // Null for interviews submitted before the consent question existed.
+    transcriptConsent: row.transcript_consent === null ? null : row.transcript_consent === 1,
     createdAt: row.created_at,
   });
 }
