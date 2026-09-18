@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
+import { Help } from "./Help";
 import {
   DEFAULT_CRITERION_PROMPT,
   DEFAULT_FEEDBACK_PROMPT,
@@ -155,7 +156,19 @@ export function Prompts({ onApiError }: Props) {
   return (
     <div>
       <div className="card">
-        <h2>AI assessor instructions</h2>
+        <h2>
+          AI assessor instructions
+          <Help label="AI assessor instructions">
+            <p>
+              Scoring is done by an AI that reads the transcript and is told what to
+              look for. These two boxes are those instructions.
+            </p>
+            <p>
+              Nothing here changes a report that already exists. The next interview a
+              student submits is scored with whatever is saved at that moment.
+            </p>
+          </Help>
+        </h2>
         <p className="lede">
           What the AI is told before it scores an interview. The criteria and their
           anchors live on the Rubric screen; this is everything around them.
@@ -169,7 +182,21 @@ export function Prompts({ onApiError }: Props) {
       </div>
 
       <div className="card">
-        <h3>Placeholders</h3>
+        <h3>
+          Placeholders
+          <Help label="Placeholders">
+            <p>
+              A placeholder is a slot the app fills in at the moment of scoring. You
+              write <code>{"{{PERSONA_NAME}}"}</code> and the assessor reads "Elena van
+              Dijk".
+            </p>
+            <p>
+              Two are required, because the prompt makes no sense without them: the
+              transcript, and (for the per-criterion prompt) the criterion being judged.
+              Saving without them is refused.
+            </p>
+          </Help>
+        </h3>
         <table className="prompt-tokens">
           <tbody>
             {PLACEHOLDER_HELP.map((p) => (
@@ -195,6 +222,24 @@ export function Prompts({ onApiError }: Props) {
 
       <PromptBox
         title="Per-criterion prompt"
+        help={
+          <>
+            <p>
+              This produces the <strong>numbers</strong>. It is sent once for every
+              active criterion, so a rubric of 13 criteria means 13 separate calls.
+            </p>
+            <p>
+              Each call sees the transcript and exactly one criterion, never the others
+              and never a score already given. That isolation is deliberate: scoring
+              everything in one call lets a low mark early on drag the rest down.
+            </p>
+            <p>
+              Because it runs once per criterion, a paragraph added here costs 13 times
+              as much as the same paragraph in the feedback prompt, and it shapes every
+              mark.
+            </p>
+          </>
+        }
         kind="criterion"
         value={criterionText}
         problem={problems.criterion}
@@ -205,6 +250,24 @@ export function Prompts({ onApiError }: Props) {
 
       <PromptBox
         title="Feedback prompt"
+        help={
+          <>
+            <p>
+              This produces the <strong>written feedback</strong>: strengths,
+              improvements, quoted moments, what depth was missed, and the summary. It
+              runs once per report.
+            </p>
+            <p>
+              It is never told any score, so the advice a student reads is not written
+              to justify a number it already saw. It always receives what the persona
+              was hiding, which is how it can name the opening the student missed.
+            </p>
+            <p>
+              The Settings screen can switch this call off entirely. Criterion scoring
+              is unaffected by that switch.
+            </p>
+          </>
+        }
         kind="feedback"
         value={feedbackText}
         problem={problems.feedback}
@@ -240,7 +303,21 @@ export function Prompts({ onApiError }: Props) {
       </div>
 
       <div className="card">
-        <h3>What the assessor receives</h3>
+        <h3>
+          What the assessor receives
+          <Help label="What the assessor receives">
+            <p>
+              The finished prompt, with the placeholders filled in, using a short sample
+              interview and your first active criterion.
+            </p>
+            <p>
+              It is built by the same code the Worker uses at scoring time, so this is
+              genuinely what the AI is sent. Only the transcript differs: a real one is
+              the student's own interview, and the guard text is inserted where the
+              sample shows a note.
+            </p>
+          </Help>
+        </h3>
         <div className="btn-row" style={{ marginBottom: "0.8rem" }}>
           <button
             className={previewOf === "criterion" ? "btn" : "btn btn-secondary"}
@@ -269,6 +346,7 @@ export function Prompts({ onApiError }: Props) {
 
 interface BoxProps {
   title: string;
+  help: React.ReactNode;
   kind: PromptKind;
   value: string;
   problem: string | null;
@@ -277,11 +355,12 @@ interface BoxProps {
   onRestore: () => void;
 }
 
-function PromptBox({ title, kind, value, problem, isDefault, onChange, onRestore }: BoxProps) {
+function PromptBox({ title, help, kind, value, problem, isDefault, onChange, onRestore }: BoxProps) {
   return (
     <div className="card">
       <h3>
         {title} {isDefault ? <span className="admin-help">(default)</span> : null}
+        <Help label={title}>{help}</Help>
       </h3>
       <textarea
         className="prompt-editor"

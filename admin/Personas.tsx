@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Toggle } from "./Toggle";
+import { Help } from "./Help";
 import { api, apiBlob } from "./api";
 import { REALTIME_VOICES } from "../shared/voices";
 
@@ -495,7 +496,21 @@ export function Personas({ onApiError }: Props) {
             />
           </div>
           <div className="field">
-            <label htmlFor="persona-hidden-core">Hidden core</label>
+            <label htmlFor="persona-hidden-core">
+              Hidden core
+              <Help label="Hidden core">
+                <p>
+                  A short summary of what this persona is really hiding, written for the
+                  AI assessor, not for the interviewee. It is never sent to the browser
+                  and no student can see it.
+                </p>
+                <p>
+                  Only evaluators whose criterion has "Uses hidden core" switched on
+                  receive it, plus the call that writes the feedback. That is how the
+                  report can say what the student almost reached.
+                </p>
+              </Help>
+            </label>
             <textarea
               id="persona-hidden-core"
               className="admin-large"
@@ -516,7 +531,20 @@ export function Personas({ onApiError }: Props) {
             />
           </div>
           <div className="field" role="radiogroup" aria-labelledby="persona-audience">
-            <label id="persona-audience">Who sees this persona</label>
+            <label id="persona-audience">
+              Who sees this persona
+              <Help label="Who sees this persona">
+                <p>
+                  With no cohort selected, every student sees this interviewee. Select
+                  cohorts and only students in those cohorts see it, and only they can
+                  start an interview with it.
+                </p>
+                <p>
+                  Cohorts come from the Students screen. A student whose cohort changes
+                  mid-interview still gets their report; the limit applies when starting.
+                </p>
+              </Help>
+            </label>
             <label className="checkbox-row">
               <input
                 type="radio"
