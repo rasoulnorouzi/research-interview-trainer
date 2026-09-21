@@ -560,6 +560,34 @@ submission. Each rubric criterion gets its own column. A criterion that
 was not assessable exports as an empty cell, never as a zero: the two are
 different things, and the export must not blur them.
 
+### Score an interview again
+
+Every stored interview keeps its full transcript, so you can score it
+again later, for example after you change the rubric or the prompts.
+
+1. Select one or more interviews with the checkboxes. Click **Score N
+   selected**. Or open one interview and click **Score with current
+   rubric**.
+2. The **New score** column on the list shows the result.
+3. Open the interview. The new score shows each criterion next to the
+   original score. "Not in rubric then" means the criterion did not exist
+   when the interview was first scored. A criterion is paired only when
+   its id and its name are both the same, so a renamed criterion shows as
+   new.
+4. **What produced this score** shows the criteria and the prompts that
+   were used.
+
+An interview has one new score. Scoring it again replaces the previous
+new score. The original score never changes, no email is sent, and the
+student does not see the new score. It uses the persona as it was saved
+before the interview, so a later edit to a persona does not change the
+result.
+
+The same interview can get a slightly different score each time. The
+scoring model does not accept a setting that removes this variation.
+
+Deleting a submission or a student also deletes its new score.
+
 ### Deleting a submission
 
 Open a submission's detail view to find its **Delete submission**

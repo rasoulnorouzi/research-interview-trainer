@@ -19,6 +19,7 @@
 import { sha256Hex } from "./auth";
 import { getSettings, json, readJsonBody, type Env } from "./db";
 import { synthesizeVoicePreview, validateApiKey } from "./openai";
+import { getRescore, handleRescore } from "./report";
 import { TRANSCRIPTION_MODEL_IDS } from "../shared/models";
 import { parseRecipients, serializeRecipients } from "../shared/recipients";
 import { REALTIME_VOICES } from "../shared/voices";
@@ -201,6 +202,11 @@ export async function handleAdmin(
         if (method === "GET") return await getSubmission(env, path[1]);
         if (method === "DELETE") return await deleteSubmission(env, path[1]);
         return methodNotAllowed();
+      }
+      // Score a stored interview again (2026-09-21). The original stays.
+      if (path.length === 3 && path[2] === "rescore") {
+        if (method !== "POST") return methodNotAllowed();
+        return await handleRescore(env, path[1], instructorEmail);
       }
       break;
 
@@ -668,7 +674,11 @@ async function deleteRosterEntry(env: Env, studentId: string): Promise<Response>
 
   await env.DB.batch([
     // Reports first: the roster row must not go while submissions still
-    // reference it, or the foreign key stops the batch halfway.
+    // reference it, or the foreign key stops the batch halfway. Re-scores
+    // before reports, for the same reason.
+    env.DB.prepare(
+      "DELETE FROM rescores WHERE submission_id IN (SELECT id FROM submissions WHERE student_id = ?)",
+    ).bind(studentId),
     env.DB.prepare("DELETE FROM submissions WHERE student_id = ?").bind(studentId),
     env.DB.prepare("DELETE FROM login_codes WHERE email = ?").bind(student.email),
     // Otherwise a student re-added under the same ID inherits today's quota count.
@@ -741,7 +751,11 @@ async function bulkRemoveStudents(request: Request, env: Env): Promise<Response>
     .first<{ n: number }>();
 
   await env.DB.batch([
-    // Reports before roster rows, or the foreign key stops the batch halfway.
+    // Re-scores, then reports, then roster rows, or the foreign key stops the
+    // batch halfway.
+    env.DB.prepare(
+      `DELETE FROM rescores WHERE submission_id IN (SELECT id FROM submissions WHERE student_id IN (${foundPh}))`,
+    ).bind(...found),
     env.DB.prepare(`DELETE FROM submissions WHERE student_id IN (${foundPh})`).bind(...found),
     env.DB.prepare(`DELETE FROM login_codes WHERE email IN (${emailPh})`).bind(...emails),
     env.DB.prepare(`DELETE FROM session_grants WHERE student_id IN (${foundPh})`).bind(...found),
@@ -1754,6 +1768,9 @@ interface SubmissionListRow {
   duration_ms: number;
   overall_score: number | null;
   emailed_at: number | null;
+  /** The new score's overall, null when there is none or nothing was assessable. */
+  rescore_overall?: number | null;
+  rescore_count?: number;
 }
 
 interface SubmissionFilters {
@@ -1806,7 +1823,9 @@ async function listSubmissions(env: Env, url: URL): Promise<Response> {
   // The four big JSON columns are not selected: a list of 500 reports would
   // otherwise carry 500 full transcripts.
   const rows = await env.DB.prepare(
-    "SELECT s.id, s.student_id, r.full_name, r.cohort, s.persona_id, s.started_at, s.duration_ms, s.overall_score, s.emailed_at " +
+    "SELECT s.id, s.student_id, r.full_name, r.cohort, s.persona_id, s.started_at, s.duration_ms, s.overall_score, s.emailed_at, " +
+      "(SELECT x.overall_score FROM rescores x WHERE x.submission_id = s.id ORDER BY x.created_at DESC, x.id LIMIT 1) AS rescore_overall, " +
+      "(SELECT COUNT(*) FROM rescores x WHERE x.submission_id = s.id) AS rescore_count " +
       `FROM submissions s JOIN roster r ON r.student_id = s.student_id${filters.where} ` +
       `ORDER BY ${filters.order} LIMIT ${filters.limit}`,
   )
@@ -1824,6 +1843,9 @@ async function listSubmissions(env: Env, url: URL): Promise<Response> {
       durationMs: row.duration_ms,
       overallScore: row.overall_score,
       emailedAt: row.emailed_at,
+      rescoreOverall: row.rescore_overall ?? null,
+      // 0 or 1: an interview keeps only its latest new score.
+      hasRescore: (row.rescore_count ?? 0) > 0,
     })),
     limit: filters.limit,
   });
@@ -1868,6 +1890,8 @@ async function getSubmission(env: Env, id: string): Promise<Response> {
     // Null for interviews submitted before the consent question existed.
     transcriptConsent: row.transcript_consent === null ? null : row.transcript_consent === 1,
     createdAt: row.created_at,
+    // The latest new score, or null. The original scores above never change.
+    rescore: await getRescore(env, row.id),
   });
 }
 
@@ -1882,7 +1906,10 @@ async function deleteSubmission(env: Env, id: string): Promise<Response> {
   const row = await env.DB.prepare("SELECT id FROM submissions WHERE id = ?").bind(id).first<{ id: string }>();
   if (!row) return json(404, { error: "No submission with that ID." });
 
-  await env.DB.prepare("DELETE FROM submissions WHERE id = ?").bind(id).run();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM rescores WHERE submission_id = ?").bind(id),
+    env.DB.prepare("DELETE FROM submissions WHERE id = ?").bind(id),
+  ]);
   return json(200, { id, deleted: true });
 }
 
@@ -1913,9 +1940,10 @@ async function bulkDeleteSubmissions(request: Request, env: Env): Promise<Respon
   }
 
   const placeholders = ids.map(() => "?").join(", ");
-  const result = await env.DB.prepare(`DELETE FROM submissions WHERE id IN (${placeholders})`)
-    .bind(...ids)
-    .run();
+  const [, result] = await env.DB.batch([
+    env.DB.prepare(`DELETE FROM rescores WHERE submission_id IN (${placeholders})`).bind(...ids),
+    env.DB.prepare(`DELETE FROM submissions WHERE id IN (${placeholders})`).bind(...ids),
+  ]);
   return json(200, { deleted: result.meta.changes ?? 0 });
 }
 

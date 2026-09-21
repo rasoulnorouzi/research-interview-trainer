@@ -54,6 +54,30 @@ CREATE TABLE IF NOT EXISTS submissions (
 );
 CREATE INDEX IF NOT EXISTS idx_submissions_student ON submissions(student_id, created_at);
 
+-- A stored interview scored again later from its transcript (instructor
+-- request, 2026-09-21), to test a changed rubric or changed prompts. One row
+-- per submission at most: scoring again replaces it (no history, instructor
+-- decision). The submission row is never touched: what the student and the
+-- assessors got stays as it was. Each row keeps a copy of what produced it (the rubric,
+-- both prompt templates, the model, which persona text), so a score can
+-- always be traced to the rubric version that gave it. No email is sent.
+CREATE TABLE IF NOT EXISTS rescores (
+  id                 TEXT PRIMARY KEY,         -- uuid
+  submission_id      TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+  overall_score      REAL,                     -- null when nothing was assessable
+  scores_json        TEXT NOT NULL,
+  feedback_json      TEXT NOT NULL,            -- JSON null when feedback was off
+  model              TEXT NOT NULL,
+  rubric_json        TEXT NOT NULL,            -- the active criteria, in full, as used
+  prompts_json       TEXT NOT NULL,            -- {criterion, feedback} templates as used
+  -- Which persona text the evaluators saw: the persona_versions row saved
+  -- last before the interview, or the current row when there is none.
+  persona_version_id INTEGER,                  -- null = the current persona row
+  created_at         INTEGER NOT NULL,
+  created_by         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rescores_submission ON rescores(submission_id, created_at);
+
 -- Per-student daily cap on realtime sessions. Protects the university key.
 CREATE TABLE IF NOT EXISTS session_grants (
   student_id TEXT NOT NULL,

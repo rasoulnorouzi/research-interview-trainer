@@ -308,6 +308,22 @@ its Markdown export. The wording has one definition,
 dashboard. An existing database needs one `ALTER TABLE` before the code
 deploy (`DEPLOYMENT.md`).
 
+**The instructor can score a stored interview again (2026-09-21, branch
+`rescore`).** The Submissions screen scores selected interviews, or one
+from its detail view, with the rubric, prompts and model as they are now;
+`POST /api/admin/submissions/:id/rescore` runs `scoreAll` unchanged. The
+result goes into the `rescores` table, at most one row per interview (a
+new score replaces the last; the instructor wants no history), and never
+into `submissions`: the original is what the student received. No email,
+never shown to the student. The persona text comes from the
+`persona_versions` row saved before the interview, so a later persona
+edit cannot move an old score. Each row stores the rubric, both prompts
+and the model it used. The detail view pairs criteria on id AND name,
+because the dashboard lets an id take a new meaning. `gpt-5.6-terra`
+refuses `temperature` and `top_p` (400 from the gateway), so a score
+cannot be made deterministic. Every submission delete path deletes
+`rescores` first; the table needs `schema.sql` applied before the deploy.
+
 **Students can look back at their own interviews (instructor request,
 2026-09-21).** "Your interviews" lists them with the date, the interviewee,
 the overall score when sharing allows it, and a Download button that

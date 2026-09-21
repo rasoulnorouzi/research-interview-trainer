@@ -529,13 +529,45 @@ Worker.
 | DELETE | `/api/admin/criteria/:id` | none | `200 {id, deleted: true}`. Permanently removes the criterion, only when no stored report references it and it is not the last active criterion (`409`/`400` otherwise). `criteria_versions` is kept either way. |
 | GET | `/api/admin/criteria/:id/versions` | none | `{"criterionId", "versions": [{id, savedAt, savedBy, snapshot}]}` |
 | POST | `/api/admin/criteria/reorder` | `{ids: [...]}`, every criterion exactly once | `200 {reordered}`. Rewrites `sort_order` in the given order (drag-and-drop on the Rubric screen). Writes no version snapshots: order is layout, not content. |
-| GET | `/api/admin/submissions` | query: `student` (substring match on student id), `cohort`, `from`, `to`, `sort=duration`, `limit` | `{"submissions": [...], "limit"}`. Excludes the four large JSON columns. |
-| GET | `/api/admin/submissions/:id` | none | `200` full submission, including transcript, scores, feedback, metrics; or `404` |
-| DELETE | `/api/admin/submissions/:id` | none | `200 {id, deleted: true}`. Permanently removes one submission. Nothing else references a submission, so there is no reference count and no deactivate-instead option; the dashboard offers this only from the submission's own detail view, not the list. |
-| POST | `/api/admin/submissions/bulk-delete` | `{ids: [...]}` (max 500) | `200 {deleted}`. Deletes the listed submissions in one statement. Unknown ids are ignored; `deleted` counts the rows really removed. |
+| GET | `/api/admin/submissions` | query: `student` (substring match on student id), `cohort`, `from`, `to`, `sort=duration`, `limit` | `{"submissions": [...], "limit"}`. Excludes the four large JSON columns. Each row carries `rescoreOverall` (the new score's overall, or null) and `hasRescore`. |
+| GET | `/api/admin/submissions/:id` | none | `200` full submission, including transcript, scores, feedback, metrics, and `rescore` (the new score, the `Rescore` shape in `shared/types.ts`, or null); or `404` |
+| DELETE | `/api/admin/submissions/:id` | none | `200 {id, deleted: true}`. Permanently removes one submission and its new score. The dashboard offers this only from the submission's own detail view, not the list. |
+| POST | `/api/admin/submissions/bulk-delete` | `{ids: [...]}` (max 500) | `200 {deleted}`. Deletes the listed submissions and their new scores. Unknown ids are ignored; `deleted` counts the submissions really removed. |
+| POST | `/api/admin/submissions/:id/rescore` | none | `200` one `Rescore`. Scores the stored transcript again with the rubric, the prompts, the model and the feedback switch as they are now, and replaces the interview's previous new score. The submission row is not changed and no email is sent. See "Re-scoring" below. `404` unknown submission, `409` persona gone or no active criterion, `422` no readable transcript, `503` no gateway key, `502` scoring failed. |
 | GET | `/api/admin/submissions.csv` | same query params as list | `text/csv`, one row per submission plus one column per rubric criterion |
 | POST | `/api/admin/breakglass` | `{studentId}` | `200 {url, expiresInMinutes, studentId, fullName}`, or `404`/`400` |
 | POST | `/api/admin/voice-preview` | `{voice}` | `200` with `audio/mpeg` bytes: a short fixed sample sentence spoken in that voice, for the persona editor's preview button. The voice must be on the same list persona saves enforce (`400` otherwise). The sample text is fixed server-side; the client cannot send text to speak. `503` when no API key is set, `502` when the gateway refuses. The university AI gateway offers no text-to-speech model yet (2026-09-11: `403` on `gpt-4o-mini-tts`), so today this answers `502` with a message saying so; once the gateway offers that model, the preview works again with no code change. |
+
+### Re-scoring
+
+`POST /api/admin/submissions/:id/rescore` (2026-09-21) runs `scoreAll`
+unchanged: one independent call per active criterion, the injection
+guard, one retry per call, all-or-nothing. It differs from
+`POST /api/report` in four ways:
+
+- It writes a row in `rescores`, never in `submissions`. The original
+  scores are what the student and the assessors received. An interview
+  has at most one row: the new score replaces the previous one in the
+  same batch (instructor decision: no history of new scores).
+- It sends no email and never reaches the student. `GET
+  /api/my-submissions` does not read `rescores`.
+- For the persona text, it uses the newest `persona_versions` row saved at
+  or before the interview's `started_at`. Only when there is none does it
+  use the current `personas` row, in any state. `personaVersionId` says
+  which (null = current).
+- It stores what produced the score: the active criteria in full
+  (`rubric`), both templates as resolved (`prompts`; an empty settings row
+  is stored as the default text, and `feedback` is null when the feedback
+  switch was off), and the model.
+
+The dashboard sends one request per interview, two at a time, so a large
+selection stays inside the Worker's subrequest limit and one failure does
+not stop the rest.
+
+The model cannot be made deterministic. `gpt-5.6-terra` is a reasoning
+model: the gateway answers `400 "Unsupported parameter: 'temperature'"`
+for `temperature` and the same for `top_p` (tested 2026-09-21). To see how
+stable a score is, score the same interview more than once and compare.
 
 ### Key masking rule
 

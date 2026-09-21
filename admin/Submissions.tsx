@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useState } from "react";
 import { Toggle } from "./Toggle";
+import { Help } from "./Help";
 import { api, adminUrl } from "./api";
 import { buildZip } from "./zip";
 import { fmtMs } from "../shared/format";
 import { CONSENT_QUESTION_EN, consentAnswer, consentShort } from "../shared/consent";
-import type { CriterionScore, Metrics, QualitativeFeedback, TranscriptEntry } from "../shared/types";
+import type { CriterionScore, Metrics, QualitativeFeedback, Rescore, TranscriptEntry } from "../shared/types";
 
 interface SubmissionListItem {
   id: string;
@@ -16,7 +17,14 @@ interface SubmissionListItem {
   durationMs: number;
   overallScore: number | null;
   emailedAt: number | null;
+  /** The new score's overall. */
+  rescoreOverall: number | null;
+  hasRescore: boolean;
 }
+
+// Scoring runs one interview per request, this many at a time, so a large
+// selection neither floods the gateway nor fails as one block.
+const RESCORE_PARALLEL = 2;
 
 interface SubmissionDetail {
   id: string;
@@ -37,6 +45,8 @@ interface SubmissionDetail {
   /** Null for interviews submitted before the consent question existed. */
   transcriptConsent: boolean | null;
   createdAt: number;
+  /** The latest new score, or null. Never changes the original scores above. */
+  rescore: Rescore | null;
 }
 
 interface Props {
@@ -143,6 +153,9 @@ export function Submissions({ onApiError }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  // Progress of a bulk scoring run: done of total, and how many failed.
+  const [rescoring, setRescoring] = useState<{ done: number; total: number; failed: number } | null>(null);
+  const [rescoreNote, setRescoreNote] = useState<string | null>(null);
 
   // Which student rows are open. The list shows one row per student.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -269,6 +282,52 @@ export function Submissions({ onApiError }: Props) {
       .finally(() => setBulkDownloading(false));
   };
 
+  /**
+   * Every selected interview scored again with today's rubric and prompts,
+   * one request per interview, a few at a time. One failure does not stop
+   * the rest; the note at the end says how many failed.
+   */
+  const bulkRescore = () => {
+    if (!list || selected.size === 0) return;
+    const ids = list.filter((s) => selected.has(s.id)).map((s) => s.id);
+    const n = ids.length;
+    if (
+      !confirm(
+        `Score ${n} ${n === 1 ? "interview" : "interviews"} with the current rubric and prompts? ` +
+          "This replaces any earlier new score. The original scores stay, and no email is sent.",
+      )
+    ) {
+      return;
+    }
+    setListError(null);
+    setRescoreNote(null);
+    const progress = { done: 0, total: n, failed: 0 };
+    setRescoring({ ...progress });
+    let next = 0;
+    const worker = async () => {
+      while (next < ids.length) {
+        const id = ids[next++];
+        try {
+          await api<Rescore>(`/submissions/${encodeURIComponent(id)}/rescore`, { method: "POST" });
+        } catch (err) {
+          progress.failed++;
+          onApiError(err);
+        }
+        progress.done++;
+        setRescoring({ ...progress });
+      }
+    };
+    Promise.all(Array.from({ length: Math.min(RESCORE_PARALLEL, n) }, worker)).then(() => {
+      setRescoring(null);
+      setRescoreNote(
+        progress.failed === 0
+          ? `Scored ${n} ${n === 1 ? "interview" : "interviews"}. Open one to compare with the original.`
+          : `Scored ${n - progress.failed} of ${n}; ${progress.failed} failed. Select them and try again.`,
+      );
+      load();
+    });
+  };
+
   const bulkDelete = () => {
     if (selected.size === 0) return;
     const n = selected.size;
@@ -306,6 +365,22 @@ export function Submissions({ onApiError }: Props) {
       .finally(() => setDetailLoading(false));
   };
 
+  const [rescoringOne, setRescoringOne] = useState(false);
+
+  const rescoreDetail = () => {
+    if (!detail) return;
+    setDetailError(null);
+    setRescoringOne(true);
+    const id = detail.id;
+    api<Rescore>(`/submissions/${encodeURIComponent(id)}/rescore`, { method: "POST" })
+      .then((r) => setDetail((d) => (d && d.id === id ? { ...d, rescore: r } : d)))
+      .catch((err) => {
+        setDetailError(err instanceof Error ? err.message : "Could not score this interview.");
+        onApiError(err);
+      })
+      .finally(() => setRescoringOne(false));
+  };
+
   const removeDetail = () => {
     if (!detail) return;
     if (!confirm("Delete this submission permanently? The emailed copies are not affected.")) return;
@@ -327,13 +402,30 @@ export function Submissions({ onApiError }: Props) {
     return (
       <div>
         <p className="no-print">
-          <button className="btn btn-secondary" type="button" onClick={() => setDetail(null)}>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={() => {
+              setDetail(null);
+              setDetailError(null);
+              // The list's New score column may be out of date after scoring here.
+              load();
+            }}
+          >
             Back to submissions
           </button>
         </p>
         {detailLoading && <p className="small">Loading…</p>}
         {detailError && <div className="banner-error">{detailError}</div>}
-        {detail && <SubmissionDetailView detail={detail} deleting={deleting} onDelete={removeDetail} />}
+        {detail && (
+          <SubmissionDetailView
+            detail={detail}
+            deleting={deleting}
+            onDelete={removeDetail}
+            rescoring={rescoringOne}
+            onRescore={rescoreDetail}
+          />
+        )}
       </div>
     );
   }
@@ -445,6 +537,7 @@ export function Submissions({ onApiError }: Props) {
                                 <th>Persona</th>
                                 <th>Duration</th>
                                 <th>Overall score</th>
+                                <th>New score</th>
                                 <th>Emailed</th>
                               </tr>
                             </thead>
@@ -469,6 +562,15 @@ export function Submissions({ onApiError }: Props) {
                                       <span className="chip">{s.overallScore}%</span>
                                     )}
                                   </td>
+                                  <td className="score-cell">
+                                    {!s.hasRescore ? (
+                                      <span className="small">none</span>
+                                    ) : s.rescoreOverall === null ? (
+                                      <span className="not-assessed">n/a</span>
+                                    ) : (
+                                      <span className="chip">{s.rescoreOverall}%</span>
+                                    )}
+                                  </td>
                                   <td>{s.emailedAt !== null ? "Yes" : "No"}</td>
                                 </tr>
                               ))}
@@ -491,8 +593,17 @@ export function Submissions({ onApiError }: Props) {
           </table>
         </div>
       )}
+      {rescoreNote && <p className="admin-help">{rescoreNote}</p>}
       {list && selected.size > 0 && (
         <div className="btn-row" style={{ marginTop: "0.8rem" }}>
+          <button className="btn btn-secondary" type="button" onClick={bulkRescore} disabled={rescoring !== null}>
+            {rescoring
+              ? `Scoring ${rescoring.done} of ${rescoring.total}…`
+              : `Score ${selected.size} selected`}
+          </button>
+          <Help label="Score selected">
+            <p>Scores the selected interviews with the current rubric and prompts. The original scores stay, and no email is sent.</p>
+          </Help>
           <button
             className="btn btn-secondary"
             type="button"
@@ -514,9 +625,17 @@ interface SubmissionDetailViewProps {
   detail: SubmissionDetail;
   deleting: boolean;
   onDelete: () => void;
+  rescoring: boolean;
+  onRescore: () => void;
 }
 
-function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailViewProps) {
+function SubmissionDetailView({
+  detail,
+  deleting,
+  onDelete,
+  rescoring,
+  onRescore,
+}: SubmissionDetailViewProps) {
   const assessed = detail.scores.filter((s) => s.score !== null).length;
   const notAssessedCount = detail.scores.length - assessed;
   const overallPoints = computeOverallPoints(detail.scores);
@@ -694,6 +813,27 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
       </div>
       )}
 
+      <div className="card no-print">
+        <h3>
+          Scoring
+          <Help label="Scoring">
+            <p>Scores this interview from its transcript with the current rubric and prompts. The original above never changes, and a new score replaces the previous one.</p>
+          </Help>
+        </h3>
+        <div className="btn-row">
+          <button className="btn btn-secondary" type="button" onClick={onRescore} disabled={rescoring}>
+            {rescoring ? "Scoring…" : "Score with current rubric"}
+          </button>
+        </div>
+        {!detail.rescore && !rescoring && (
+          <p className="admin-help">No new score yet. No email is sent when you score.</p>
+        )}
+      </div>
+
+      {detail.rescore && (
+        <RescoreCard rescore={detail.rescore} original={detail.scores} originalOverall={detail.overallScore} />
+      )}
+
       <div className="card">
       <h3>Transcript</h3>
       <div className="transcript">
@@ -728,6 +868,127 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
     </div>
   );
 }
+function scoreText(s: CriterionScore | undefined): string {
+  if (!s) return "";
+  return s.score === null ? "n/a" : `${s.score} / ${s.max ?? 5}`;
+}
+
+interface RescoreCardProps {
+  rescore: Rescore;
+  original: CriterionScore[];
+  originalOverall: number | null;
+}
+
+/**
+ * The new score next to the original. Rows follow the new score's rubric; a
+ * criterion that did not exist at the time of the interview shows an empty
+ * original cell, and one since removed is listed under it.
+ *
+ * Rows pair on id AND name. The dashboard lets an id keep living under a new
+ * meaning (the 2026-09 rubric put "Questions are clear" on the old `probing`
+ * id), and pairing on the id alone would set an old Probing score beside it.
+ */
+const criterionKey = (s: CriterionScore) => `${s.id}\u0000${s.name}`;
+
+function RescoreCard({ rescore, original, originalOverall }: RescoreCardProps) {
+  const byId = new Map(original.map((s) => [criterionKey(s), s]));
+  const current = new Set(rescore.scores.map(criterionKey));
+  const dropped = original.filter((s) => !current.has(criterionKey(s)));
+  const diff =
+    rescore.overallScore !== null && originalOverall !== null
+      ? Math.round((rescore.overallScore - originalOverall) * 10) / 10
+      : null;
+
+  return (
+    <div className="card rescore-card">
+      <h3>
+        New score, {formatUnixOrMs(rescore.createdAt)}:{" "}
+        {rescore.overallScore === null ? (
+          <span className="not-assessed">n/a</span>
+        ) : (
+          <span className="chip">{rescore.overallScore}%</span>
+        )}
+        {diff !== null && (
+          <span className="small">
+            {" "}
+            ({diff > 0 ? "+" : ""}
+            {diff} points against the original {originalOverall}%)
+          </span>
+        )}
+      </h3>
+      <p className="admin-help">
+        Model {rescore.model} · {rescore.rubric.length} criteria ·{" "}
+        {rescore.personaVersionId !== null
+          ? "persona as saved before the interview"
+          : "current persona (no older version saved)"}
+        {rescore.createdBy ? ` · by ${rescore.createdBy}` : ""}
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Criterion</th>
+            <th>Original</th>
+            <th>New score</th>
+            <th>Justification (new score)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rescore.scores.map((s) => (
+            <tr key={s.id}>
+              <td>{s.name}</td>
+              <td className="score-cell">{scoreText(byId.get(criterionKey(s))) || <span className="small">not in rubric then</span>}</td>
+              <td className="score-cell">
+                {s.score === null ? <span className="not-assessed">n/a</span> : <span className="chip">{scoreText(s)}</span>}
+              </td>
+              <td>{s.justification}</td>
+            </tr>
+          ))}
+          {dropped.map((s) => (
+            <tr key={`dropped-${s.id}`}>
+              <td>{s.name}</td>
+              <td className="score-cell">{scoreText(s)}</td>
+              <td className="score-cell">
+                <span className="small">not in rubric now</span>
+              </td>
+              <td></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rescore.feedback && (
+        <details className="rescore-details">
+          <summary>Feedback from the new scoring</summary>
+          <p><strong>Summary.</strong> {rescore.feedback.summary}</p>
+          <p><strong>Strengths.</strong></p>
+          <ul>{rescore.feedback.strengths.map((t, i) => <li key={i}>{t}</li>)}</ul>
+          <p><strong>Areas to improve.</strong></p>
+          <ul>{rescore.feedback.improvements.map((t, i) => <li key={i}>{t}</li>)}</ul>
+          <p><strong>What the student did not reach.</strong> {rescore.feedback.missedDepth}</p>
+        </details>
+      )}
+      <details className="rescore-details">
+        <summary>What produced this score</summary>
+        {rescore.rubric.map((c) => (
+          <div key={c.id} className="rescore-criterion">
+            <p>
+              <strong>{c.name}</strong> <span className="small">(1 to {c.scaleMax}{c.needsGroundTruth ? ", uses the hidden core" : ""})</span>
+            </p>
+            <p className="small">{c.description}</p>
+          </div>
+        ))}
+        <p><strong>Per-criterion prompt</strong></p>
+        <pre className="prompt-preview">{rescore.prompts.criterion}</pre>
+        {rescore.prompts.feedback !== null && (
+          <>
+            <p><strong>Feedback prompt</strong></p>
+            <pre className="prompt-preview">{rescore.prompts.feedback}</pre>
+          </>
+        )}
+      </details>
+    </div>
+  );
+}
+
 /**
  * The submission as a Markdown file, for the instructor's records. The
  * includeFeedback flag removes the rubric and the feedback, so the file can
