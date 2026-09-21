@@ -900,6 +900,57 @@ td.num {
   margin-top: 0.9rem;
 }
 
+/* "Your interviews": a student's own earlier reports (2026-09-21), on the home
+   screen and under a freshly submitted report. Hairline rows like the metrics
+   table; the score takes the accent, as the overall score does. */
+.history h2 {
+  margin-bottom: 0.4rem;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.history-row:first-child {
+  border-top: none;
+}
+
+.history-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-score {
+  font-weight: 650;
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-download {
+  flex: none;
+  padding: 8px 16px;
+  font-size: 0.88rem;
+}
+
 /* Transcript-consent question on the results screen (instructor request,
    2026-09-18). One block holds the English and the Dutch wording, and the
    submit button stays disabled until one of the two answers is chosen.

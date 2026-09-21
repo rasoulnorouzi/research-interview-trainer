@@ -261,6 +261,20 @@ code with `E_DAILY_LIMIT_EXCEEDED`, `POST /api/auth/request` answers `503`:
 (no `EMAIL_LIMITS_TOKEN`, or Cloudflare did not answer within 3 s). The
 login screen shows it in the student's own time zone.
 
+### GET /api/my-submissions
+
+The logged-in student's own interviews, newest first (2026-09-21).
+
+**Authentication.** Session cookie required; `401` without one. The student
+is the one the cookie names; the request cannot ask for anyone else.
+
+**Response**, `{ submissions: MySubmission[] }` (`shared/types.ts`): the
+interviewee, the date, the duration, the metrics, the transcript, the
+consent answer, and the scores, feedback and overall. With
+`generate_feedback` or `share_report_with_student` off **at the time of the
+request**, `scores` is empty and `feedback` and `overall` are null for every
+row, old ones included, matching what `POST /api/report` would return.
+
 ### POST /api/report
 
 Scores a finished interview, stores it, and emails it.

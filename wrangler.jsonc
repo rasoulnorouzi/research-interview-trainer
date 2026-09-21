@@ -55,5 +55,8 @@
     // EMAIL_LIMITS_TOKEN in worker/db.ts). An id, not a secret.
     "CF_ACCOUNT_ID": "ef71fbe7795df43f5adddf5abdd8f4a7"
   },
+  // Hourly retry of report emails that could not be sent (worker/report.ts,
+  // resendUnsentReports). Minute 17, off the top of the hour.
+  "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true }
 }

@@ -6,7 +6,7 @@ import { handleAdmin } from "./admin";
 import { handleAuthLogout, handleAuthRequest, handleAuthVerify, handleMe, handleRedeem, identify } from "./auth";
 import { accessConfigured, identifyInstructor } from "./access";
 import { json, PERSONA_OPEN_TO_COHORT, type Env } from "./db";
-import { handleReport, handleSession } from "./report";
+import { handleMySubmissions, handleReport, handleSession, resendUnsentReports } from "./report";
 import type { PersonaSummary } from "../shared/types";
 
 type Handler = (request: Request, env: Env) => Response | Promise<Response>;
@@ -22,9 +22,23 @@ const ROUTES: [method: string, path: string, handler: Handler][] = [
   ["GET", "/api/personas", handlePersonas],
   ["POST", "/api/session", handleSession],
   ["POST", "/api/report", handleReport],
+  // The eighth student route (2026-09-21): a student's own past interviews.
+  // Read-only; the instructor chose it knowing CLAUDE.md treats growth past
+  // seven student routes as the point to stop and think.
+  ["GET", "/api/my-submissions", handleMySubmissions],
 ];
 
 export default {
+  // Hourly (the cron in wrangler.jsonc): send report emails that could not go
+  // out when the report was made, usually because the daily quota was spent.
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      resendUnsentReports(env).catch((err) => {
+        console.error("report email retry crashed:", err instanceof Error ? err.message : "unknown");
+      }),
+    );
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     // One try/catch around every handler. This is the last-resort guard against
     // an exception carrying the OpenAI key, a query, or a student's data into a

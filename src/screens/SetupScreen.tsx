@@ -3,6 +3,7 @@ import { PersonaSummary } from "../types";
 import { api } from "../api";
 import { StartConfig } from "../App";
 import { DEFAULT_PANEL_TEXT, PanelText } from "../panel";
+import { MyInterviews } from "../components/MyInterviews";
 
 const LS_PERSONA = "riv.lastPersona";
 // Left behind by the pre-backend build, when the student supplied their own
@@ -141,6 +142,8 @@ export function SetupScreen({ onStart, initialError, panel }: Props) {
           </>
         )}
       </div>
+
+      <MyInterviews hideWhenEmpty />
     </div>
   );
 }

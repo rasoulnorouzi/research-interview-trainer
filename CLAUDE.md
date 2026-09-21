@@ -308,6 +308,18 @@ its Markdown export. The wording has one definition,
 dashboard. An existing database needs one `ALTER TABLE` before the code
 deploy (`DEPLOYMENT.md`).
 
+**Students can look back at their own interviews (instructor request,
+2026-09-21).** "Your interviews" lists them with the date, the interviewee,
+the overall score when sharing allows it, and a Download button that
+rebuilds the same Markdown report. It sits on the home screen (hidden until
+there is one) and under a freshly submitted report
+(`src/components/MyInterviews.tsx`). It reads `GET /api/my-submissions`,
+the **eighth student route**: the instructor chose it knowing constraint 4
+treats growth past seven as the point to stop and think. The route is
+read-only, takes the student from the session cookie, never from the
+request, and applies the share rule of `POST /api/report` as it stands
+NOW, so turning sharing off hides old scores too.
+
 The results screen no longer scores automatically: a student clicks
 "Submit interview for scoring" on `ResultsScreen.tsx`, and only that click
 triggers `POST /api/report`. Login failures are explicit rather than a
@@ -371,6 +383,8 @@ src/
   personas.ts                 3 layered personas + SHARED_DISCLOSURE_MECHANICS (seed origin, see below)
   criteria.ts                 8 seeded rubric criteria (seed origin, see below)
   index.css                   The entire stylesheet, plain CSS
+  components/
+    MyInterviews.tsx          "Your interviews": a student's own past reports, each downloadable
   components/ui/
     voice-powered-orb.tsx     WebGL orb (ogl): interview, login, dashboard hero; reads levels, never the mic
   lib/
@@ -839,7 +853,15 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   When a login code fails that way, `POST /api/auth/request` answers `503`
   with `retryAt`, read from that limits API through the optional,
   read-only `EMAIL_LIMITS_TOKEN` secret, and the login screen shows the
-  reset in the student's own time (2026-09-21). The window is rolling, not
+  reset in the student's own time (2026-09-21). **A report email that
+  cannot be sent is retried every hour** (the cron in `wrangler.jsonc`,
+  `resendUnsentReports()` in `worker/report.ts`): it reads the live quota,
+  spends only what is left above a 10% reserve kept for login codes, takes
+  reports from the last 7 days with `emailed_at` NULL, uses the current
+  sharing and recipient settings, and stops at the first
+  `E_DAILY_LIMIT_EXCEEDED`. Without the quota it tries 20 emails blind.
+  One known imperfection: a report whose student copy went out but whose
+  assessor copy did not is resent whole, so that student gets two emails. The window is rolling, not
   a fixed hour, so it cannot be hard-coded. Without the secret the message
   still says the wait is hours and points to the instructor.
   Sends to addresses verified in the account are free and uncapped;
