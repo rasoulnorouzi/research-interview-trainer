@@ -38,6 +38,20 @@ export interface EmailAttachment {
   contentType: string;
 }
 
+/**
+ * A failed send, carrying the mail service's own error code when it gave
+ * one (for Cloudflare, E_DAILY_LIMIT_EXCEEDED and the like). Callers use the
+ * code to tell a student something specific instead of a generic failure.
+ */
+export class MailError extends Error {
+  code: string | null;
+  constructor(code: string | null, message: string) {
+    super(message);
+    this.name = "MailError";
+    this.code = code;
+  }
+}
+
 /** One email, as this module hands it to whatever carries the mail. */
 export interface OutgoingEmail {
   to: string[];

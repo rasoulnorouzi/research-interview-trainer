@@ -18,8 +18,8 @@
 // do not extend the same candour to the verify path, which still answers with a
 // single message for every failure.
 
-import { json, mailer, readJsonBody, type Env, type RosterIdentity } from "./db";
-import { sendLoginCode } from "./email";
+import { emailQuotaResetsAt, json, mailer, readJsonBody, type Env, type RosterIdentity } from "./db";
+import { MailError, sendLoginCode } from "./email";
 import type { MeResponse } from "../shared/types";
 
 const COOKIE_NAME = "riv_session";
@@ -158,6 +158,13 @@ export async function handleAuthRequest(request: Request, env: Env): Promise<Res
   } catch (err) {
     // The address and the transport failure, never the code itself.
     console.error("login code send failed for", email, err instanceof Error ? err.message : String(err));
+    // The daily quota is not "try again in a minute": it holds for hours. Say
+    // so, with the reset time when Cloudflare will tell us, so a student is
+    // not left retrying a door that stays shut until evening.
+    if (err instanceof MailError && err.code === "E_DAILY_LIMIT_EXCEEDED") {
+      const retryAt = await emailQuotaResetsAt(env);
+      return json(503, { error: "Login emails have reached today's limit.", retryAt });
+    }
     return json(502, { error: "The code email could not be sent. Try again in a minute." });
   }
   return json(200, { ok: true });

@@ -1,7 +1,7 @@
 // Worker plumbing shared by every module: the environment binding, the
 // settings read, and the two HTTP helpers. See BACKEND-PLAN.md §3.
 //
-import type { MailSender } from "./email";
+import { MailError, type MailSender } from "./email";
 
 // There is no ORM and no query builder. Handlers write their own SQL with
 // .prepare(...).bind(...), which keeps the schema portable to plain SQLite or
@@ -23,6 +23,14 @@ export interface Env {
   ACCESS_AUD: string;
   /** The sender, as "Name <address>" or a bare address. */
   EMAIL_FROM: string;
+  /**
+   * Read-only token for the account's email limits, so a student blocked by
+   * the daily quota can be told when it resets. Optional: without it the
+   * message simply has no time. `wrangler secret put EMAIL_LIMITS_TOKEN`.
+   */
+  EMAIL_LIMITS_TOKEN?: string;
+  /** The Cloudflare account the limits are read from. A var, not a secret. */
+  CF_ACCOUNT_ID?: string;
   /**
    * The university AI gateway (Tilburg.AI, OpenAI-compatible), ending in /v1
    * with no trailing slash. Set in wrangler.jsonc; .dev.vars may override it
@@ -166,9 +174,38 @@ export function mailer(env: Env): MailSender {
           : {}),
       });
     } catch (err) {
-      const code = (err as { code?: unknown }).code;
+      const raw = (err as { code?: unknown }).code;
+      const code = typeof raw === "string" ? raw : null;
       const detail = err instanceof Error ? err.message : "unknown error";
-      throw new Error(`Email send failed${typeof code === "string" ? ` (${code})` : ""}: ${detail}`);
+      throw new MailError(code, `Email send failed${code ? ` (${code})` : ""}: ${detail}`);
     }
   };
+}
+
+/**
+ * When the account's daily email quota resets, as an ISO timestamp, or null.
+ *
+ * Cloudflare's send error says only E_DAILY_LIMIT_EXCEEDED; the reset time
+ * lives in the account's limits API, and it moves (it is a rolling daily
+ * window, not a fixed hour), so it cannot be written down in advance. This
+ * needs EMAIL_LIMITS_TOKEN, a token that can only READ the email limits. It
+ * never throws: without the token, or if Cloudflare does not answer within
+ * three seconds, the caller shows its message without a time.
+ */
+export async function emailQuotaResetsAt(env: Env): Promise<string | null> {
+  const token = (env.EMAIL_LIMITS_TOKEN ?? "").trim();
+  const account = (env.CF_ACCOUNT_ID ?? "").trim();
+  if (!token || !account) return null;
+  try {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${account}/email/sending/limits`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { result?: { usage?: { resets_at?: unknown } } };
+    const at = body.result?.usage?.resets_at;
+    return typeof at === "string" && !Number.isNaN(Date.parse(at)) ? at : null;
+  } catch {
+    return null;
+  }
 }

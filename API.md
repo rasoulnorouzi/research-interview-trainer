@@ -250,6 +250,17 @@ body or the browser.
 The 429 case still consumes a grant; a rejected mint attempt is not
 refunded. This is deliberate, and simpler than a compensating write.
 
+**The daily email quota (2026-09-21).** When Cloudflare refuses the login
+code with `E_DAILY_LIMIT_EXCEEDED`, `POST /api/auth/request` answers `503`:
+
+```json
+{ "error": "Login emails have reached today's limit.", "retryAt": "2026-09-21T21:53:11Z" }
+```
+
+`retryAt` is an ISO timestamp, or `null` when the reset time is unknown
+(no `EMAIL_LIMITS_TOKEN`, or Cloudflare did not answer within 3 s). The
+login screen shows it in the student's own time zone.
+
 ### POST /api/report
 
 Scores a finished interview, stores it, and emails it.
