@@ -61,6 +61,16 @@ paths.
 
 - Scoring: `gpt-5.6-terra` answers `200` on `/v1/responses` and
   `/v1/chat/completions`. The scoring port is a base URL change.
+- **The gateway caches identical requests** (tested 2026-09-21). The same
+  request returns the same answer in under 0.1 s, with an
+  `x-litellm-cache-key` header. An unchanged scoring prompt therefore
+  returns the same scores; a repeat is not evidence that the model is
+  stable. The cache lifetime is Tilburg.AI's setting.
+- **`gpt-5.6-terra` refuses `temperature` other than 1, and `top_p`**
+  (`400 "Unsupported value"`, on both endpoints, 2026-09-21). `seed` is
+  accepted but is only a hint for a reasoning model. Scoring cannot be
+  made deterministic, and the instructor declined a workaround that
+  reuses stored scores.
 - Realtime over WebSocket:
   `wss://api.tilburg.ai/v1/realtime?model=gpt-realtime-2.1-mini` runs a full
   session. The model speaks, and `gpt-live-transcribe` streams
@@ -308,8 +318,9 @@ its Markdown export. The wording has one definition,
 dashboard. An existing database needs one `ALTER TABLE` before the code
 deploy (`DEPLOYMENT.md`).
 
-**The instructor can score a stored interview again (2026-09-21, branch
-`rescore`).** The Submissions screen scores selected interviews, or one
+**The instructor can score a stored interview again (2026-09-21, live as
+Worker `522f417a`, tag `release-2026-09-21-rescore`; the instructor
+checked it on production on 2026-09-22).** The Submissions screen scores selected interviews, or one
 from its detail view ("Score again"), with the rubric, prompts and model
 as they are now; `POST /api/admin/submissions/:id/rescore` runs
 `scoreAll` unchanged. The result goes into the `rescores` table, at most
@@ -1042,6 +1053,10 @@ interviews end to end, on OpenAI and then through the gateway: latency,
 transcription, barge-in with the heard-text note, the report. One open
 behaviour: a student who keeps saying "just a test" pulls the interviewee
 into helper talk; no tested rule fixed it (`PROMPTING.md`).
+
+**Verified by the instructor on production (2026-09-22):** "Score again"
+on the dashboard, from the list and from one interview, showing the
+latest scoring only.
 
 **Not yet verified:**
 

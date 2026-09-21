@@ -745,9 +745,20 @@ address bounced or reported spam before; see the suppression list);
 "scoring failed: The AI gateway rate limit was hit." = the gateway key
 is over its rate or budget limit (ask Tilburg.AI);
 "scoring aborted: the rubric has no active criteria" = the rubric was
-emptied (activate an item).
+emptied (activate an item);
+"rescore failed for submission <id>" = **Score again** on the dashboard
+failed for that interview. Nothing changed; the dashboard still shows the
+previous score. Try again in a minute.
 
 ## 13. The AI gateway (Tilburg.AI)
+
+Two gateway facts that affect scoring (tested 2026-09-21):
+
+- The gateway remembers answers. A request it has already seen gets the
+  same answer back at once. So **Score again** with an unchanged rubric,
+  prompts and model gives the same scores.
+- The scoring model has no "temperature 0" setting. The gateway refuses
+  it. Scores can differ a little when the model really scores again.
 
 Since 2026-09-13 the voice and the scoring run on the university's AI
 gateway, Tilburg.AI, not on OpenAI directly. The gateway is LiteLLM in

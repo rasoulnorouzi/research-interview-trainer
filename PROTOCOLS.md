@@ -79,6 +79,11 @@ student route.
   `/admin`, `/api/admin/submissions` and the rescore route 302 (Access),
   the live admin bundle holds "Score again" and "Scored again:".
 
+### Verified on production
+
+2026-09-22: the instructor used **Score again** on the live dashboard and
+confirmed it works: the latest scoring shows, with no second block.
+
 ### Rollback
 
 `npx wrangler rollback 859ec49b-a23e-40d2-a6fa-899f916f3597`. The old code

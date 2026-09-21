@@ -73,7 +73,9 @@ without a Cloudflare account signs in with an emailed code. It manages the
 roster and its cohorts, the personas, the rubric, the AI assessor's own
 instructions, the settings (the gateway key, the models, the time limit,
 the session quota, report sharing, the welcome panel) and the
-submissions.
+submissions. A stored interview can be scored again with the current
+rubric, for example after the rubric changes; the dashboard then shows the
+new score, and the student keeps the score they received.
 [OPERATIONS.md](OPERATIONS.md) explains each screen and the safe values.
 
 ## Running it locally
