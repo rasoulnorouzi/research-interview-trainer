@@ -1758,6 +1758,16 @@ function parseCriterionSnapshot(raw: string): Record<string, unknown> | null {
 
 // ------------------------------------------------------------- submissions
 
+// The dashboard shows ONE score per interview: the latest (instructor
+// decision, 2026-09-21). When the instructor has scored an interview again,
+// its rescores row wins over the submission's own scores in the list, the
+// detail, the averages and the CSV. The submission's first score stays stored,
+// because it is what the student received, and GET /api/my-submissions and
+// the emails keep reading it. At most one rescores row exists per submission
+// (a unique index), so this join never multiplies rows.
+const LATEST_SCORE_JOIN = " LEFT JOIN rescores x ON x.submission_id = s.id";
+const LATEST_OVERALL = "CASE WHEN x.id IS NULL THEN s.overall_score ELSE x.overall_score END AS overall_score";
+
 interface SubmissionListRow {
   id: string;
   student_id: string;
@@ -1768,9 +1778,6 @@ interface SubmissionListRow {
   duration_ms: number;
   overall_score: number | null;
   emailed_at: number | null;
-  /** The new score's overall, null when there is none or nothing was assessable. */
-  rescore_overall?: number | null;
-  rescore_count?: number;
 }
 
 interface SubmissionFilters {
@@ -1823,10 +1830,8 @@ async function listSubmissions(env: Env, url: URL): Promise<Response> {
   // The four big JSON columns are not selected: a list of 500 reports would
   // otherwise carry 500 full transcripts.
   const rows = await env.DB.prepare(
-    "SELECT s.id, s.student_id, r.full_name, r.cohort, s.persona_id, s.started_at, s.duration_ms, s.overall_score, s.emailed_at, " +
-      "(SELECT x.overall_score FROM rescores x WHERE x.submission_id = s.id ORDER BY x.created_at DESC, x.id LIMIT 1) AS rescore_overall, " +
-      "(SELECT COUNT(*) FROM rescores x WHERE x.submission_id = s.id) AS rescore_count " +
-      `FROM submissions s JOIN roster r ON r.student_id = s.student_id${filters.where} ` +
+    `SELECT s.id, s.student_id, r.full_name, r.cohort, s.persona_id, s.started_at, s.duration_ms, ${LATEST_OVERALL}, s.emailed_at ` +
+      `FROM submissions s JOIN roster r ON r.student_id = s.student_id${LATEST_SCORE_JOIN}${filters.where} ` +
       `ORDER BY ${filters.order} LIMIT ${filters.limit}`,
   )
     .bind(...filters.binds)
@@ -1843,9 +1848,6 @@ async function listSubmissions(env: Env, url: URL): Promise<Response> {
       durationMs: row.duration_ms,
       overallScore: row.overall_score,
       emailedAt: row.emailed_at,
-      rescoreOverall: row.rescore_overall ?? null,
-      // 0 or 1: an interview keeps only its latest new score.
-      hasRescore: (row.rescore_count ?? 0) > 0,
     })),
     limit: filters.limit,
   });
@@ -1872,6 +1874,9 @@ async function getSubmission(env: Env, id: string): Promise<Response> {
     >();
   if (!row) return json(404, { error: "No submission with that ID." });
 
+  // The latest scoring wins; see LATEST_SCORE_JOIN.
+  const latest = await getRescore(env, row.id);
+
   return json(200, {
     id: row.id,
     studentId: row.student_id,
@@ -1881,17 +1886,18 @@ async function getSubmission(env: Env, id: string): Promise<Response> {
     startedAt: row.started_at,
     endedAt: row.ended_at,
     durationMs: row.duration_ms,
-    overallScore: row.overall_score,
-    scores: parseJson(row.scores_json),
-    feedback: parseJson(row.feedback_json),
+    overallScore: latest ? latest.overallScore : row.overall_score,
+    scores: latest ? latest.scores : parseJson(row.scores_json),
+    feedback: latest ? latest.feedback : parseJson(row.feedback_json),
+    // When the shown scores come from scoring the interview again; null when
+    // they are the scores the student received.
+    scoredAgainAt: latest ? latest.createdAt : null,
     metrics: parseJson(row.metrics_json),
     transcript: parseJson(row.transcript_json),
     emailedAt: row.emailed_at,
     // Null for interviews submitted before the consent question existed.
     transcriptConsent: row.transcript_consent === null ? null : row.transcript_consent === 1,
     createdAt: row.created_at,
-    // The latest new score, or null. The original scores above never change.
-    rescore: await getRescore(env, row.id),
   });
 }
 
@@ -1956,8 +1962,9 @@ async function bulkDeleteSubmissions(request: Request, env: Env): Promise<Respon
 async function submissionsCsv(env: Env, url: URL): Promise<Response> {
   const filters = submissionFilters(url, SUBMISSION_CSV_DEFAULT, SUBMISSION_CSV_MAX);
   const rows = await env.DB.prepare(
-    "SELECT s.id, s.student_id, r.full_name, r.cohort, s.persona_id, s.started_at, s.duration_ms, s.overall_score, s.emailed_at, s.scores_json " +
-      `FROM submissions s JOIN roster r ON r.student_id = s.student_id${filters.where} ` +
+    `SELECT s.id, s.student_id, r.full_name, r.cohort, s.persona_id, s.started_at, s.duration_ms, ${LATEST_OVERALL}, s.emailed_at, ` +
+      "CASE WHEN x.id IS NULL THEN s.scores_json ELSE x.scores_json END AS scores_json " +
+      `FROM submissions s JOIN roster r ON r.student_id = s.student_id${LATEST_SCORE_JOIN}${filters.where} ` +
       `ORDER BY ${filters.order} LIMIT ${filters.limit}`,
   )
     .bind(...filters.binds)

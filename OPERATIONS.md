@@ -565,28 +565,21 @@ different things, and the export must not blur them.
 Every stored interview keeps its full transcript, so you can score it
 again later, for example after you change the rubric or the prompts.
 
-1. Select one or more interviews with the checkboxes. Click **Score N
-   selected**. Or open one interview and click **Score with current
-   rubric**.
-2. The **New score** column on the list shows the result.
-3. Open the interview. The new score shows each criterion next to the
-   original score. "Not in rubric then" means the criterion did not exist
-   when the interview was first scored. A criterion is paired only when
-   its id and its name are both the same, so a renamed criterion shows as
-   new.
-4. **What produced this score** shows the criteria and the prompts that
-   were used.
+1. Select one or more interviews with the checkboxes and click **Score N
+   selected**. Or open one interview and click **Score again**.
+2. The dashboard then shows the new scores everywhere: in the list, in
+   the averages, in the interview's report and in the CSV. The report
+   says when it was scored again.
 
-An interview has one new score. Scoring it again replaces the previous
-new score. The original score never changes, no email is sent, and the
-student does not see the new score. It uses the persona as it was saved
-before the interview, so a later edit to a persona does not change the
-result.
+The dashboard shows only the latest scoring; there is no history. The
+student is not affected: their history page and the emails keep the
+score they received, and no email is sent. The persona is used as it was
+saved before the interview, so a later edit to a persona does not change
+the result.
 
-The same interview can get a slightly different score each time. The
-scoring model does not accept a setting that removes this variation.
-
-Deleting a submission or a student also deletes its new score.
+If nothing changed in the rubric, the prompts or the model, scoring again
+gives the same scores back at once: the university gateway remembers
+answers to identical requests.
 
 ### Deleting a submission
 

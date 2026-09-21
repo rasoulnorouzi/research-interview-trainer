@@ -412,9 +412,10 @@ OpenAI key on the Settings screen again. The old Worker cannot use the
 gateway key. The `openai_api_key` row of the backup file from step 2 holds
 the OpenAI key.
 
-### Deploying re-scoring to an existing database
+### Deploying "score again" to an existing database
 
-Re-scoring (2026-09-21) adds one table, `rescores`. The new code reads it on
+Scoring again (2026-09-21) adds one table, `rescores`, and a unique index
+on it. The new code reads it on
 every Submissions list, so the table must exist **before** you run
 `wrangler deploy`. The old code does not read it, so adding it first is
 safe.

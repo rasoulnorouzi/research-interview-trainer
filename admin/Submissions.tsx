@@ -5,7 +5,7 @@ import { api, adminUrl } from "./api";
 import { buildZip } from "./zip";
 import { fmtMs } from "../shared/format";
 import { CONSENT_QUESTION_EN, consentAnswer, consentShort } from "../shared/consent";
-import type { CriterionScore, Metrics, QualitativeFeedback, Rescore, TranscriptEntry } from "../shared/types";
+import type { CriterionScore, Metrics, QualitativeFeedback, TranscriptEntry } from "../shared/types";
 
 interface SubmissionListItem {
   id: string;
@@ -17,9 +17,6 @@ interface SubmissionListItem {
   durationMs: number;
   overallScore: number | null;
   emailedAt: number | null;
-  /** The new score's overall. */
-  rescoreOverall: number | null;
-  hasRescore: boolean;
 }
 
 // Scoring runs one interview per request, this many at a time, so a large
@@ -45,8 +42,12 @@ interface SubmissionDetail {
   /** Null for interviews submitted before the consent question existed. */
   transcriptConsent: boolean | null;
   createdAt: number;
-  /** The latest new score, or null. Never changes the original scores above. */
-  rescore: Rescore | null;
+  /**
+   * Set when the scores shown come from scoring the interview again (unix
+   * seconds); null when they are the scores the student received. The
+   * dashboard always shows the latest scoring.
+   */
+  scoredAgainAt: number | null;
 }
 
 interface Props {
@@ -293,8 +294,8 @@ export function Submissions({ onApiError }: Props) {
     const n = ids.length;
     if (
       !confirm(
-        `Score ${n} ${n === 1 ? "interview" : "interviews"} with the current rubric and prompts? ` +
-          "This replaces any earlier new score. The original scores stay, and no email is sent.",
+        `Score ${n} ${n === 1 ? "interview" : "interviews"} again with the current rubric and prompts? ` +
+          "The dashboard then shows the new scores. No email is sent.",
       )
     ) {
       return;
@@ -308,7 +309,7 @@ export function Submissions({ onApiError }: Props) {
       while (next < ids.length) {
         const id = ids[next++];
         try {
-          await api<Rescore>(`/submissions/${encodeURIComponent(id)}/rescore`, { method: "POST" });
+          await api<unknown>(`/submissions/${encodeURIComponent(id)}/rescore`, { method: "POST" });
         } catch (err) {
           progress.failed++;
           onApiError(err);
@@ -321,7 +322,7 @@ export function Submissions({ onApiError }: Props) {
       setRescoring(null);
       setRescoreNote(
         progress.failed === 0
-          ? `Scored ${n} ${n === 1 ? "interview" : "interviews"}. Open one to compare with the original.`
+          ? `Scored ${n} ${n === 1 ? "interview" : "interviews"} again.`
           : `Scored ${n - progress.failed} of ${n}; ${progress.failed} failed. Select them and try again.`,
       );
       load();
@@ -372,8 +373,10 @@ export function Submissions({ onApiError }: Props) {
     setDetailError(null);
     setRescoringOne(true);
     const id = detail.id;
-    api<Rescore>(`/submissions/${encodeURIComponent(id)}/rescore`, { method: "POST" })
-      .then((r) => setDetail((d) => (d && d.id === id ? { ...d, rescore: r } : d)))
+    api<unknown>(`/submissions/${encodeURIComponent(id)}/rescore`, { method: "POST" })
+      // Reloaded rather than patched: the server decides which score is shown.
+      .then(() => api<SubmissionDetail>(`/submissions/${encodeURIComponent(id)}`))
+      .then((d) => setDetail((cur) => (cur && cur.id === id ? d : cur)))
       .catch((err) => {
         setDetailError(err instanceof Error ? err.message : "Could not score this interview.");
         onApiError(err);
@@ -408,7 +411,7 @@ export function Submissions({ onApiError }: Props) {
             onClick={() => {
               setDetail(null);
               setDetailError(null);
-              // The list's New score column may be out of date after scoring here.
+              // The list's scores may be out of date after scoring here.
               load();
             }}
           >
@@ -537,7 +540,6 @@ export function Submissions({ onApiError }: Props) {
                                 <th>Persona</th>
                                 <th>Duration</th>
                                 <th>Overall score</th>
-                                <th>New score</th>
                                 <th>Emailed</th>
                               </tr>
                             </thead>
@@ -560,15 +562,6 @@ export function Submissions({ onApiError }: Props) {
                                       <span className="not-assessed">n/a</span>
                                     ) : (
                                       <span className="chip">{s.overallScore}%</span>
-                                    )}
-                                  </td>
-                                  <td className="score-cell">
-                                    {!s.hasRescore ? (
-                                      <span className="small">none</span>
-                                    ) : s.rescoreOverall === null ? (
-                                      <span className="not-assessed">n/a</span>
-                                    ) : (
-                                      <span className="chip">{s.rescoreOverall}%</span>
                                     )}
                                   </td>
                                   <td>{s.emailedAt !== null ? "Yes" : "No"}</td>
@@ -602,7 +595,7 @@ export function Submissions({ onApiError }: Props) {
               : `Score ${selected.size} selected`}
           </button>
           <Help label="Score selected">
-            <p>Scores the selected interviews with the current rubric and prompts. The original scores stay, and no email is sent.</p>
+            <p>Scores the selected interviews again with the current rubric and prompts, and shows the new scores. No email is sent.</p>
           </Help>
           <button
             className="btn btn-secondary"
@@ -661,6 +654,12 @@ function SubmissionDetailView({
           {formatUnixOrMs(detail.startedAt)} · Duration {fmtMs(detail.durationMs)}
           <br />
           Emailed: {detail.emailedAt !== null ? "Yes" : "No"}
+          {detail.scoredAgainAt !== null && (
+            <>
+              <br />
+              Scored again: {formatUnixOrMs(detail.scoredAgainAt)}
+            </>
+          )}
         </p>
       </div>
 
@@ -686,6 +685,12 @@ function SubmissionDetailView({
           <button className="btn btn-secondary" type="button" onClick={() => window.print()}>
             Print / Save as PDF
           </button>
+          <button className="btn btn-secondary" type="button" onClick={onRescore} disabled={rescoring}>
+            {rescoring ? "Scoring…" : "Score again"}
+          </button>
+          <Help label="Score again">
+            <p>Scores this interview again with the current rubric and prompts, and shows the new scores. No email is sent.</p>
+          </Help>
         </div>
         <p className="admin-help">
           Print opens the browser dialog. Choose &ldquo;Save as PDF&rdquo; there for a PDF file.
@@ -813,27 +818,6 @@ function SubmissionDetailView({
       </div>
       )}
 
-      <div className="card no-print">
-        <h3>
-          Scoring
-          <Help label="Scoring">
-            <p>Scores this interview from its transcript with the current rubric and prompts. The original above never changes, and a new score replaces the previous one.</p>
-          </Help>
-        </h3>
-        <div className="btn-row">
-          <button className="btn btn-secondary" type="button" onClick={onRescore} disabled={rescoring}>
-            {rescoring ? "Scoring…" : "Score with current rubric"}
-          </button>
-        </div>
-        {!detail.rescore && !rescoring && (
-          <p className="admin-help">No new score yet. No email is sent when you score.</p>
-        )}
-      </div>
-
-      {detail.rescore && (
-        <RescoreCard rescore={detail.rescore} original={detail.scores} originalOverall={detail.overallScore} />
-      )}
-
       <div className="card">
       <h3>Transcript</h3>
       <div className="transcript">
@@ -868,127 +852,6 @@ function SubmissionDetailView({
     </div>
   );
 }
-function scoreText(s: CriterionScore | undefined): string {
-  if (!s) return "";
-  return s.score === null ? "n/a" : `${s.score} / ${s.max ?? 5}`;
-}
-
-interface RescoreCardProps {
-  rescore: Rescore;
-  original: CriterionScore[];
-  originalOverall: number | null;
-}
-
-/**
- * The new score next to the original. Rows follow the new score's rubric; a
- * criterion that did not exist at the time of the interview shows an empty
- * original cell, and one since removed is listed under it.
- *
- * Rows pair on id AND name. The dashboard lets an id keep living under a new
- * meaning (the 2026-09 rubric put "Questions are clear" on the old `probing`
- * id), and pairing on the id alone would set an old Probing score beside it.
- */
-const criterionKey = (s: CriterionScore) => `${s.id}\u0000${s.name}`;
-
-function RescoreCard({ rescore, original, originalOverall }: RescoreCardProps) {
-  const byId = new Map(original.map((s) => [criterionKey(s), s]));
-  const current = new Set(rescore.scores.map(criterionKey));
-  const dropped = original.filter((s) => !current.has(criterionKey(s)));
-  const diff =
-    rescore.overallScore !== null && originalOverall !== null
-      ? Math.round((rescore.overallScore - originalOverall) * 10) / 10
-      : null;
-
-  return (
-    <div className="card rescore-card">
-      <h3>
-        New score, {formatUnixOrMs(rescore.createdAt)}:{" "}
-        {rescore.overallScore === null ? (
-          <span className="not-assessed">n/a</span>
-        ) : (
-          <span className="chip">{rescore.overallScore}%</span>
-        )}
-        {diff !== null && (
-          <span className="small">
-            {" "}
-            ({diff > 0 ? "+" : ""}
-            {diff} points against the original {originalOverall}%)
-          </span>
-        )}
-      </h3>
-      <p className="admin-help">
-        Model {rescore.model} · {rescore.rubric.length} criteria ·{" "}
-        {rescore.personaVersionId !== null
-          ? "persona as saved before the interview"
-          : "current persona (no older version saved)"}
-        {rescore.createdBy ? ` · by ${rescore.createdBy}` : ""}
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Criterion</th>
-            <th>Original</th>
-            <th>New score</th>
-            <th>Justification (new score)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rescore.scores.map((s) => (
-            <tr key={s.id}>
-              <td>{s.name}</td>
-              <td className="score-cell">{scoreText(byId.get(criterionKey(s))) || <span className="small">not in rubric then</span>}</td>
-              <td className="score-cell">
-                {s.score === null ? <span className="not-assessed">n/a</span> : <span className="chip">{scoreText(s)}</span>}
-              </td>
-              <td>{s.justification}</td>
-            </tr>
-          ))}
-          {dropped.map((s) => (
-            <tr key={`dropped-${s.id}`}>
-              <td>{s.name}</td>
-              <td className="score-cell">{scoreText(s)}</td>
-              <td className="score-cell">
-                <span className="small">not in rubric now</span>
-              </td>
-              <td></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {rescore.feedback && (
-        <details className="rescore-details">
-          <summary>Feedback from the new scoring</summary>
-          <p><strong>Summary.</strong> {rescore.feedback.summary}</p>
-          <p><strong>Strengths.</strong></p>
-          <ul>{rescore.feedback.strengths.map((t, i) => <li key={i}>{t}</li>)}</ul>
-          <p><strong>Areas to improve.</strong></p>
-          <ul>{rescore.feedback.improvements.map((t, i) => <li key={i}>{t}</li>)}</ul>
-          <p><strong>What the student did not reach.</strong> {rescore.feedback.missedDepth}</p>
-        </details>
-      )}
-      <details className="rescore-details">
-        <summary>What produced this score</summary>
-        {rescore.rubric.map((c) => (
-          <div key={c.id} className="rescore-criterion">
-            <p>
-              <strong>{c.name}</strong> <span className="small">(1 to {c.scaleMax}{c.needsGroundTruth ? ", uses the hidden core" : ""})</span>
-            </p>
-            <p className="small">{c.description}</p>
-          </div>
-        ))}
-        <p><strong>Per-criterion prompt</strong></p>
-        <pre className="prompt-preview">{rescore.prompts.criterion}</pre>
-        {rescore.prompts.feedback !== null && (
-          <>
-            <p><strong>Feedback prompt</strong></p>
-            <pre className="prompt-preview">{rescore.prompts.feedback}</pre>
-          </>
-        )}
-      </details>
-    </div>
-  );
-}
-
 /**
  * The submission as a Markdown file, for the instructor's records. The
  * includeFeedback flag removes the rubric and the feedback, so the file can

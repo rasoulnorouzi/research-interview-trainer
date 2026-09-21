@@ -639,7 +639,8 @@ export async function getRescore(env: Env, submissionId: string): Promise<Rescor
  * instructor can test a changed rubric on real interviews.
  *
  * It keeps ONE new score per interview: scoring again replaces the previous
- * new score (instructor decision, 2026-09-21: no history of these).
+ * one (instructor decision, 2026-09-21: no history), and the dashboard then
+ * shows it in place of the first score.
  *
  * Three things it deliberately does not do. It never changes the submission
  * row: the original scores are what the student and the assessors received.

@@ -310,18 +310,20 @@ deploy (`DEPLOYMENT.md`).
 
 **The instructor can score a stored interview again (2026-09-21, branch
 `rescore`).** The Submissions screen scores selected interviews, or one
-from its detail view, with the rubric, prompts and model as they are now;
-`POST /api/admin/submissions/:id/rescore` runs `scoreAll` unchanged. The
-result goes into the `rescores` table, at most one row per interview (a
-new score replaces the last; the instructor wants no history), and never
-into `submissions`: the original is what the student received. No email,
-never shown to the student. The persona text comes from the
-`persona_versions` row saved before the interview, so a later persona
-edit cannot move an old score. Each row stores the rubric, both prompts
-and the model it used. The detail view pairs criteria on id AND name,
-because the dashboard lets an id take a new meaning. `gpt-5.6-terra`
-refuses `temperature` and `top_p` (400 from the gateway), so a score
-cannot be made deterministic. Every submission delete path deletes
+from its detail view ("Score again"), with the rubric, prompts and model
+as they are now; `POST /api/admin/submissions/:id/rescore` runs
+`scoreAll` unchanged. The result goes into the `rescores` table, at most
+one row per interview (unique index; the instructor wants no history),
+and the admin surface then shows ONLY the latest scoring: list, averages,
+detail, CSV (`LATEST_SCORE_JOIN` in `worker/admin.ts`). The submission
+row is never changed: it is what the student received, and their history
+and the emails keep reading it. No email is sent. The persona text comes
+from the `persona_versions` row saved before the interview; each row
+stores the rubric, both prompts and the model it used. **The gateway
+caches identical requests** (LiteLLM, tested 2026-09-21): an unchanged
+rubric and prompt returns the same scores in under a second, so do not
+read a repeat as proof that the model is stable. `gpt-5.6-terra` refuses
+`temperature` and `top_p`. Every submission delete path deletes
 `rescores` first; the table needs `schema.sql` applied before the deploy.
 
 **Students can look back at their own interviews (instructor request,

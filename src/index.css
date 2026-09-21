@@ -3087,22 +3087,3 @@ body:has(.student-app, .admin-root)::before {
     padding-right: 0;
   }
 }
-
-/* Re-scores on the dashboard's submission detail (2026-09-21). */
-.rescore-details {
-  margin: 0.9rem 0;
-}
-.rescore-details > summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--accent);
-}
-.rescore-details[open] > summary {
-  margin-bottom: 0.6rem;
-}
-.rescore-criterion p {
-  margin: 0.2rem 0;
-}
-.rescore-criterion {
-  margin-bottom: 0.6rem;
-}
