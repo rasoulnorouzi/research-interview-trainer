@@ -6,7 +6,7 @@ import { handleAdmin } from "./admin";
 import { handleAuthLogout, handleAuthRequest, handleAuthVerify, handleMe, handleRedeem, identify } from "./auth";
 import { accessConfigured, identifyInstructor } from "./access";
 import { json, PERSONA_OPEN_TO_COHORT, type Env } from "./db";
-import { handleReport, handleSession, resendUnsentReports } from "./report";
+import { handleMySubmissions, handleReport, handleSession, resendUnsentReports } from "./report";
 import type { PersonaSummary } from "../shared/types";
 
 type Handler = (request: Request, env: Env) => Response | Promise<Response>;
@@ -22,6 +22,10 @@ const ROUTES: [method: string, path: string, handler: Handler][] = [
   ["GET", "/api/personas", handlePersonas],
   ["POST", "/api/session", handleSession],
   ["POST", "/api/report", handleReport],
+  // The eighth student route (2026-09-21): a student's own past interviews.
+  // Read-only; the instructor chose it knowing CLAUDE.md treats growth past
+  // seven student routes as the point to stop and think.
+  ["GET", "/api/my-submissions", handleMySubmissions],
 ];
 
 export default {

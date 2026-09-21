@@ -31,6 +31,7 @@ import type {
   CriterionDefinition,
   CriterionScore,
   Metrics,
+  MySubmission,
   QualitativeFeedback,
   ReportRequest,
   ReportResponse,
@@ -358,6 +359,65 @@ export async function handleReport(request: Request, env: Env): Promise<Response
     ? { scores: scored.scores, feedback: scored.feedback, overall, emailed, shared: true }
     : { scores: [], feedback: null, overall: null, emailed, shared: false };
   return json(200, body);
+}
+
+/**
+ * GET /api/my-submissions: the logged-in student's own interviews, newest
+ * first, so they can look back and download any of them (instructor
+ * request, 2026-09-21). Read-only, and only ever the caller's own rows:
+ * the student id comes from the session cookie, never from the request.
+ *
+ * The share rule is the one POST /api/report applies, read NOW: with
+ * feedback or sharing off, no score, no feedback and no overall leave the
+ * server, for old reports as much as new ones.
+ */
+export async function handleMySubmissions(request: Request, env: Env): Promise<Response> {
+  const session = await identify(request, env);
+  if (!session) return json(401, { error: NOT_LOGGED_IN });
+
+  const settings = await getSettings(env, ["share_report_with_student", "generate_feedback"]);
+  const shared = settings.generate_feedback !== "0" && settings.share_report_with_student !== "0";
+
+  const { results } = await env.DB.prepare(
+    "SELECT s.id, s.started_at, s.duration_ms, s.overall_score, s.scores_json, s.feedback_json, " +
+      "s.metrics_json, s.transcript_json, s.transcript_consent, " +
+      "p.name AS persona_name, p.title AS persona_title, p.research_topic " +
+      "FROM submissions s JOIN personas p ON p.id = s.persona_id " +
+      "WHERE s.student_id = ? ORDER BY s.created_at DESC",
+  )
+    .bind(session.studentId)
+    .all<{
+      id: string;
+      started_at: number;
+      duration_ms: number;
+      overall_score: number | null;
+      scores_json: string;
+      feedback_json: string;
+      metrics_json: string;
+      transcript_json: string;
+      transcript_consent: number | null;
+      persona_name: string;
+      persona_title: string;
+      research_topic: string;
+    }>();
+
+  const submissions: MySubmission[] = results.map((row) => ({
+    id: row.id,
+    personaName: row.persona_name,
+    personaTitle: row.persona_title,
+    researchTopic: row.research_topic,
+    // started_at is stored in seconds; everything the client renders is ms.
+    startedAt: row.started_at * 1000,
+    durationMs: row.duration_ms,
+    metrics: JSON.parse(row.metrics_json) as Metrics,
+    transcript: JSON.parse(row.transcript_json) as TranscriptEntry[],
+    scores: shared ? (JSON.parse(row.scores_json) as CriterionScore[]) : [],
+    feedback: shared ? (JSON.parse(row.feedback_json) as QualitativeFeedback | null) : null,
+    overall: shared ? row.overall_score : null,
+    shared,
+    transcriptConsent: row.transcript_consent === null ? null : row.transcript_consent === 1,
+  }));
+  return json(200, { submissions });
 }
 
 /**

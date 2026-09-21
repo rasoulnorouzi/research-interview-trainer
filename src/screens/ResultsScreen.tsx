@@ -16,6 +16,7 @@ import {
   consentShort,
 } from "../../shared/consent";
 import { api } from "../api";
+import { MyInterviews } from "../components/MyInterviews";
 
 interface Props {
   result: SessionResult;
@@ -439,6 +440,10 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
           New interview
         </button>
       </div>
+
+      {/* Only after a successful submit: before it, the new interview is not
+          in the list yet, and the list would look like it lost one. */}
+      {report && <MyInterviews refreshKey={1} />}
     </div>
   );
 }
@@ -465,7 +470,7 @@ function CountUp({ value }: { value: number }) {
   return <>{Number.isInteger(value) ? Math.round(shown) : shown.toFixed(1)}</>;
 }
 
-function buildMarkdownReport(
+export function buildMarkdownReport(
   result: SessionResult,
   metrics: Metrics,
   persona: PersonaSummary,

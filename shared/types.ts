@@ -109,6 +109,29 @@ export interface QualitativeFeedback {
   summary: string;
 }
 
+/**
+ * One of the student's own earlier interviews, from GET /api/my-submissions
+ * (instructor request, 2026-09-21). With sharing off, `scores` is empty and
+ * `feedback` and `overall` are null, exactly as in the report response: the
+ * CURRENT setting decides, so turning sharing off hides old scores too.
+ */
+export interface MySubmission {
+  id: string;
+  personaName: string;
+  personaTitle: string;
+  researchTopic: string;
+  /** epoch ms */
+  startedAt: number;
+  durationMs: number;
+  metrics: Metrics;
+  transcript: TranscriptEntry[];
+  scores: CriterionScore[];
+  feedback: QualitativeFeedback | null;
+  overall: number | null;
+  shared: boolean;
+  transcriptConsent: boolean | null;
+}
+
 /** Persona fields safe to show a student. Never carries instructions or hiddenCore. */
 export interface PersonaSummary {
   id: string;
