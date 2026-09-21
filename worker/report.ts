@@ -1,7 +1,9 @@
-// The two endpoints that spend the university OpenAI key: minting an interview
-// token (BACKEND-PLAN.md §5) and scoring plus emailing a finished interview
-// (§5, §8) with one independent evaluator call per active criterion. Read §5
-// and §7 before changing anything here.
+// The endpoints that spend the university OpenAI key: minting an interview
+// token (BACKEND-PLAN.md §5), scoring plus emailing a finished interview
+// (§5, §8) with one independent evaluator call per active criterion, and the
+// dashboard's re-score of a stored interview (handleRescore, 2026-09-21),
+// which runs the same scoring and emails nothing. Read §5 and §7 before
+// changing anything here.
 //
 // Both handlers re-check the roster rather than trusting the session cookie
 // alone. `identify` is stateless by design (§9) and does not see a student
@@ -25,6 +27,7 @@ import {
 } from "./email";
 import { mintRealtimeToken } from "./openai";
 import { scoreAll, type ScoringPersona } from "./scoring";
+import { DEFAULT_CRITERION_PROMPT, DEFAULT_FEEDBACK_PROMPT } from "../shared/prompts";
 import { parseRecipients } from "../shared/recipients";
 import { SHARED_DISCLOSURE_MECHANICS } from "../src/personas";
 import type {
@@ -34,6 +37,7 @@ import type {
   MySubmission,
   QualitativeFeedback,
   ReportRequest,
+  Rescore,
   ReportResponse,
   SessionResponse,
   TranscriptEntry,
@@ -274,14 +278,7 @@ export async function handleReport(request: Request, env: Env): Promise<Response
   // earned over points available, as a percentage, because criteria no longer
   // share one scale and a mean of a 5 and a 10 would mean nothing. A report
   // where nothing was assessable has a null overall.
-  let points = 0;
-  let possible = 0;
-  for (const row of scored.scores) {
-    if (row.score === null) continue;
-    points += row.score;
-    possible += row.max ?? 5;
-  }
-  const overall = possible > 0 ? Math.round(((100 * points) / possible) * 10) / 10 : null;
+  const overall = overallPercent(scored.scores);
 
   const submissionId = crypto.randomUUID();
   const durationMs = endedAt - startedAt;
@@ -567,6 +564,227 @@ export async function resendUnsentReports(env: Env): Promise<void> {
     }
   }
   console.log(`report email retry: sent ${sent} of ${results.length} waiting (batch ${batch})`);
+}
+
+/**
+ * The overall score, computed here and never by a model: points earned over
+ * points available, as a percentage with one decimal. Criteria no longer
+ * share one scale, so a mean of a 5 and a 10 would mean nothing, and a
+ * not-assessable criterion is left out rather than counted as zero. Null
+ * when nothing was assessable.
+ */
+function overallPercent(scores: CriterionScore[]): number | null {
+  let points = 0;
+  let possible = 0;
+  for (const row of scores) {
+    if (row.score === null) continue;
+    points += row.score;
+    possible += row.max ?? 5;
+  }
+  return possible > 0 ? Math.round(((100 * points) / possible) * 10) / 10 : null;
+}
+
+interface RescoreRow {
+  id: string;
+  overall_score: number | null;
+  scores_json: string;
+  feedback_json: string;
+  model: string;
+  rubric_json: string;
+  prompts_json: string;
+  persona_version_id: number | null;
+  created_at: number;
+  created_by: string | null;
+}
+
+/** A stored re-score as the dashboard receives it. */
+export function rescoreView(row: RescoreRow): Rescore {
+  const parse = (raw: string): unknown => {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+  const prompts = (parse(row.prompts_json) ?? {}) as { criterion?: string; feedback?: string | null };
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    model: row.model,
+    overallScore: row.overall_score,
+    scores: (parse(row.scores_json) ?? []) as CriterionScore[],
+    feedback: parse(row.feedback_json) as QualitativeFeedback | null,
+    rubric: (parse(row.rubric_json) ?? []) as CriterionDefinition[],
+    prompts: { criterion: prompts.criterion ?? "", feedback: prompts.feedback ?? null },
+    personaVersionId: row.persona_version_id,
+  };
+}
+
+/** The submission's new score, or null when it was never scored again. */
+export async function getRescore(env: Env, submissionId: string): Promise<Rescore | null> {
+  const row = await env.DB.prepare(
+    "SELECT id, overall_score, scores_json, feedback_json, model, rubric_json, prompts_json, persona_version_id, " +
+      "created_at, created_by FROM rescores WHERE submission_id = ? ORDER BY created_at DESC, id LIMIT 1",
+  )
+    .bind(submissionId)
+    .first<RescoreRow>();
+  return row ? rescoreView(row) : null;
+}
+
+/**
+ * POST /api/admin/submissions/:id/rescore (instructor request, 2026-09-21).
+ * Scores a stored interview again from its transcript, with the rubric, the
+ * prompts, the model and the feedback switch as they are NOW, so the
+ * instructor can test a changed rubric on real interviews.
+ *
+ * It keeps ONE new score per interview: scoring again replaces the previous
+ * one (instructor decision, 2026-09-21: no history), and the dashboard then
+ * shows it in place of the first score.
+ *
+ * Three things it deliberately does not do. It never changes the submission
+ * row: the original scores are what the student and the assessors received.
+ * It sends no email. And it does not use today's persona text for the
+ * criteria that need the hidden core: it uses the persona as it was saved
+ * before the interview, so a later edit to a character cannot move an old
+ * score. Only when no saved version predates the interview does it fall
+ * back to the current row, and the stored row says which it was.
+ *
+ * The scoring itself is scoreAll, unchanged: one independent call per
+ * criterion, the injection guard, all-or-nothing. Admin-only, so the
+ * Access check in index.ts has already run.
+ */
+export async function handleRescore(env: Env, submissionId: string, instructorEmail: string): Promise<Response> {
+  const submission = await env.DB.prepare(
+    "SELECT id, persona_id, started_at, transcript_json FROM submissions WHERE id = ?",
+  )
+    .bind(submissionId)
+    .first<{ id: string; persona_id: string; started_at: number; transcript_json: string }>();
+  if (!submission) return json(404, { error: "No submission with that ID." });
+
+  let transcript: TranscriptEntry[];
+  try {
+    transcript = JSON.parse(submission.transcript_json) as TranscriptEntry[];
+  } catch {
+    return json(422, { error: "This submission's transcript cannot be read." });
+  }
+  if (!Array.isArray(transcript) || transcript.length === 0) {
+    return json(422, { error: "This submission has no transcript to score." });
+  }
+
+  // started_at is unix seconds, but rows from before the seconds fix hold
+  // milliseconds (see formatUnixOrMs in admin/Submissions.tsx).
+  const startedAtSeconds =
+    submission.started_at > 1e11 ? Math.floor(submission.started_at / 1000) : submission.started_at;
+
+  let persona: ScoringPersona | null = null;
+  let personaVersionId: number | null = null;
+  const version = await env.DB.prepare(
+    "SELECT id, snapshot FROM persona_versions WHERE persona_id = ? AND saved_at <= ? " +
+      "ORDER BY saved_at DESC, id DESC LIMIT 1",
+  )
+    .bind(submission.persona_id, startedAtSeconds)
+    .first<{ id: number; snapshot: string }>();
+  if (version) {
+    try {
+      const snap = JSON.parse(version.snapshot) as Record<string, unknown>;
+      if (typeof snap.name === "string" && snap.name.length > 0) {
+        persona = {
+          name: snap.name,
+          title: typeof snap.title === "string" ? snap.title : "",
+          researchTopic: typeof snap.research_topic === "string" ? snap.research_topic : "",
+          hiddenCore: typeof snap.hidden_core === "string" && snap.hidden_core.length > 0 ? snap.hidden_core : null,
+        };
+        personaVersionId = version.id;
+      }
+    } catch {
+      // An unreadable snapshot falls through to the current row below.
+    }
+  }
+  if (!persona) {
+    // Any state: a persona switched off since the interview still scores.
+    const current = await env.DB.prepare(
+      "SELECT name, title, research_topic, hidden_core FROM personas WHERE id = ?",
+    )
+      .bind(submission.persona_id)
+      .first<{ name: string; title: string; research_topic: string; hidden_core: string | null }>();
+    if (!current) return json(409, { error: "The persona of this interview no longer exists." });
+    persona = {
+      name: current.name,
+      title: current.title,
+      researchTopic: current.research_topic,
+      hiddenCore: current.hidden_core,
+    };
+  }
+
+  const criteria = await loadCriteria(env);
+  if (criteria.length === 0) return json(409, { error: "The rubric has no active criteria." });
+
+  const settings = await getSettings(env, [
+    "scoring_model",
+    "openai_api_key",
+    "generate_feedback",
+    "scoring_criterion_prompt",
+    "scoring_feedback_prompt",
+  ]);
+  const apiKey = settings.openai_api_key ?? "";
+  if (!apiKey) return json(503, { error: "No AI gateway key is saved. Add one on the Settings screen." });
+
+  const generateFeedback = settings.generate_feedback !== "0";
+  const model = settings.scoring_model || DEFAULT_SCORING_MODEL;
+  // Resolved here as scoreAll resolves them, so the stored copy is the text
+  // the evaluators really received, not an empty row meaning "default".
+  const criterionTemplate = settings.scoring_criterion_prompt?.trim() || DEFAULT_CRITERION_PROMPT;
+  const feedbackTemplate = settings.scoring_feedback_prompt?.trim() || DEFAULT_FEEDBACK_PROMPT;
+
+  let scored;
+  try {
+    scored = await scoreAll({ baseUrl: env.AI_BASE_URL, apiKey }, model, persona, transcript, criteria, generateFeedback, {
+      criterion: criterionTemplate,
+      feedback: feedbackTemplate,
+    });
+  } catch (err) {
+    console.error("rescore failed for submission", submissionId, err instanceof Error ? err.message : "unknown");
+    return json(502, { error: "Scoring failed. Try again in a minute." });
+  }
+
+  const row: RescoreRow = {
+    id: crypto.randomUUID(),
+    overall_score: overallPercent(scored.scores),
+    scores_json: JSON.stringify(scored.scores),
+    feedback_json: JSON.stringify(scored.feedback),
+    model,
+    rubric_json: JSON.stringify(criteria),
+    prompts_json: JSON.stringify({
+      criterion: criterionTemplate,
+      feedback: generateFeedback ? feedbackTemplate : null,
+    }),
+    persona_version_id: personaVersionId,
+    created_at: Math.floor(Date.now() / 1000),
+    created_by: instructorEmail,
+  };
+  // One batch, so the old new score is never gone without the new one.
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM rescores WHERE submission_id = ?").bind(submission.id),
+    env.DB.prepare(
+      "INSERT INTO rescores (id, submission_id, overall_score, scores_json, feedback_json, model, rubric_json, " +
+        "prompts_json, persona_version_id, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(
+      row.id,
+      submission.id,
+      row.overall_score,
+      row.scores_json,
+      row.feedback_json,
+      row.model,
+      row.rubric_json,
+      row.prompts_json,
+      row.persona_version_id,
+      row.created_at,
+      row.created_by,
+    ),
+  ]);
+
+  return json(200, rescoreView(row));
 }
 
 interface CriterionRow {

@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Toggle } from "./Toggle";
+import { Help } from "./Help";
 import { api, adminUrl } from "./api";
 import { buildZip } from "./zip";
 import { fmtMs } from "../shared/format";
@@ -17,6 +18,10 @@ interface SubmissionListItem {
   overallScore: number | null;
   emailedAt: number | null;
 }
+
+// Scoring runs one interview per request, this many at a time, so a large
+// selection neither floods the gateway nor fails as one block.
+const RESCORE_PARALLEL = 2;
 
 interface SubmissionDetail {
   id: string;
@@ -37,6 +42,12 @@ interface SubmissionDetail {
   /** Null for interviews submitted before the consent question existed. */
   transcriptConsent: boolean | null;
   createdAt: number;
+  /**
+   * Set when the scores shown come from scoring the interview again (unix
+   * seconds); null when they are the scores the student received. The
+   * dashboard always shows the latest scoring.
+   */
+  scoredAgainAt: number | null;
 }
 
 interface Props {
@@ -143,6 +154,9 @@ export function Submissions({ onApiError }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  // Progress of a bulk scoring run: done of total, and how many failed.
+  const [rescoring, setRescoring] = useState<{ done: number; total: number; failed: number } | null>(null);
+  const [rescoreNote, setRescoreNote] = useState<string | null>(null);
 
   // Which student rows are open. The list shows one row per student.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -269,6 +283,52 @@ export function Submissions({ onApiError }: Props) {
       .finally(() => setBulkDownloading(false));
   };
 
+  /**
+   * Every selected interview scored again with today's rubric and prompts,
+   * one request per interview, a few at a time. One failure does not stop
+   * the rest; the note at the end says how many failed.
+   */
+  const bulkRescore = () => {
+    if (!list || selected.size === 0) return;
+    const ids = list.filter((s) => selected.has(s.id)).map((s) => s.id);
+    const n = ids.length;
+    if (
+      !confirm(
+        `Score ${n} ${n === 1 ? "interview" : "interviews"} again with the current rubric and prompts? ` +
+          "The dashboard then shows the new scores. No email is sent.",
+      )
+    ) {
+      return;
+    }
+    setListError(null);
+    setRescoreNote(null);
+    const progress = { done: 0, total: n, failed: 0 };
+    setRescoring({ ...progress });
+    let next = 0;
+    const worker = async () => {
+      while (next < ids.length) {
+        const id = ids[next++];
+        try {
+          await api<unknown>(`/submissions/${encodeURIComponent(id)}/rescore`, { method: "POST" });
+        } catch (err) {
+          progress.failed++;
+          onApiError(err);
+        }
+        progress.done++;
+        setRescoring({ ...progress });
+      }
+    };
+    Promise.all(Array.from({ length: Math.min(RESCORE_PARALLEL, n) }, worker)).then(() => {
+      setRescoring(null);
+      setRescoreNote(
+        progress.failed === 0
+          ? `Scored ${n} ${n === 1 ? "interview" : "interviews"} again.`
+          : `Scored ${n - progress.failed} of ${n}; ${progress.failed} failed. Select them and try again.`,
+      );
+      load();
+    });
+  };
+
   const bulkDelete = () => {
     if (selected.size === 0) return;
     const n = selected.size;
@@ -306,6 +366,24 @@ export function Submissions({ onApiError }: Props) {
       .finally(() => setDetailLoading(false));
   };
 
+  const [rescoringOne, setRescoringOne] = useState(false);
+
+  const rescoreDetail = () => {
+    if (!detail) return;
+    setDetailError(null);
+    setRescoringOne(true);
+    const id = detail.id;
+    api<unknown>(`/submissions/${encodeURIComponent(id)}/rescore`, { method: "POST" })
+      // Reloaded rather than patched: the server decides which score is shown.
+      .then(() => api<SubmissionDetail>(`/submissions/${encodeURIComponent(id)}`))
+      .then((d) => setDetail((cur) => (cur && cur.id === id ? d : cur)))
+      .catch((err) => {
+        setDetailError(err instanceof Error ? err.message : "Could not score this interview.");
+        onApiError(err);
+      })
+      .finally(() => setRescoringOne(false));
+  };
+
   const removeDetail = () => {
     if (!detail) return;
     if (!confirm("Delete this submission permanently? The emailed copies are not affected.")) return;
@@ -327,13 +405,30 @@ export function Submissions({ onApiError }: Props) {
     return (
       <div>
         <p className="no-print">
-          <button className="btn btn-secondary" type="button" onClick={() => setDetail(null)}>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            onClick={() => {
+              setDetail(null);
+              setDetailError(null);
+              // The list's scores may be out of date after scoring here.
+              load();
+            }}
+          >
             Back to submissions
           </button>
         </p>
         {detailLoading && <p className="small">Loading…</p>}
         {detailError && <div className="banner-error">{detailError}</div>}
-        {detail && <SubmissionDetailView detail={detail} deleting={deleting} onDelete={removeDetail} />}
+        {detail && (
+          <SubmissionDetailView
+            detail={detail}
+            deleting={deleting}
+            onDelete={removeDetail}
+            rescoring={rescoringOne}
+            onRescore={rescoreDetail}
+          />
+        )}
       </div>
     );
   }
@@ -491,8 +586,17 @@ export function Submissions({ onApiError }: Props) {
           </table>
         </div>
       )}
+      {rescoreNote && <p className="admin-help">{rescoreNote}</p>}
       {list && selected.size > 0 && (
         <div className="btn-row" style={{ marginTop: "0.8rem" }}>
+          <button className="btn btn-secondary" type="button" onClick={bulkRescore} disabled={rescoring !== null}>
+            {rescoring
+              ? `Scoring ${rescoring.done} of ${rescoring.total}…`
+              : `Score ${selected.size} selected`}
+          </button>
+          <Help label="Score selected">
+            <p>Scores the selected interviews again with the current rubric and prompts, and shows the new scores. No email is sent.</p>
+          </Help>
           <button
             className="btn btn-secondary"
             type="button"
@@ -514,9 +618,17 @@ interface SubmissionDetailViewProps {
   detail: SubmissionDetail;
   deleting: boolean;
   onDelete: () => void;
+  rescoring: boolean;
+  onRescore: () => void;
 }
 
-function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailViewProps) {
+function SubmissionDetailView({
+  detail,
+  deleting,
+  onDelete,
+  rescoring,
+  onRescore,
+}: SubmissionDetailViewProps) {
   const assessed = detail.scores.filter((s) => s.score !== null).length;
   const notAssessedCount = detail.scores.length - assessed;
   const overallPoints = computeOverallPoints(detail.scores);
@@ -542,6 +654,12 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
           {formatUnixOrMs(detail.startedAt)} · Duration {fmtMs(detail.durationMs)}
           <br />
           Emailed: {detail.emailedAt !== null ? "Yes" : "No"}
+          {detail.scoredAgainAt !== null && (
+            <>
+              <br />
+              Scored again: {formatUnixOrMs(detail.scoredAgainAt)}
+            </>
+          )}
         </p>
       </div>
 
@@ -567,6 +685,12 @@ function SubmissionDetailView({ detail, deleting, onDelete }: SubmissionDetailVi
           <button className="btn btn-secondary" type="button" onClick={() => window.print()}>
             Print / Save as PDF
           </button>
+          <button className="btn btn-secondary" type="button" onClick={onRescore} disabled={rescoring}>
+            {rescoring ? "Scoring…" : "Score again"}
+          </button>
+          <Help label="Score again">
+            <p>Scores this interview again with the current rubric and prompts, and shows the new scores. No email is sent.</p>
+          </Help>
         </div>
         <p className="admin-help">
           Print opens the browser dialog. Choose &ldquo;Save as PDF&rdquo; there for a PDF file.

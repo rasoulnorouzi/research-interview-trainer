@@ -560,6 +560,27 @@ submission. Each rubric criterion gets its own column. A criterion that
 was not assessable exports as an empty cell, never as a zero: the two are
 different things, and the export must not blur them.
 
+### Score an interview again
+
+Every stored interview keeps its full transcript, so you can score it
+again later, for example after you change the rubric or the prompts.
+
+1. Select one or more interviews with the checkboxes and click **Score N
+   selected**. Or open one interview and click **Score again**.
+2. The dashboard then shows the new scores everywhere: in the list, in
+   the averages, in the interview's report and in the CSV. The report
+   says when it was scored again.
+
+The dashboard shows only the latest scoring; there is no history. The
+student is not affected: their history page and the emails keep the
+score they received, and no email is sent. The persona is used as it was
+saved before the interview, so a later edit to a persona does not change
+the result.
+
+If nothing changed in the rubric, the prompts or the model, scoring again
+gives the same scores back at once: the university gateway remembers
+answers to identical requests.
+
 ### Deleting a submission
 
 Open a submission's detail view to find its **Delete submission**

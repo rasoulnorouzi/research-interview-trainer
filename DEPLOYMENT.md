@@ -412,6 +412,22 @@ OpenAI key on the Settings screen again. The old Worker cannot use the
 gateway key. The `openai_api_key` row of the backup file from step 2 holds
 the OpenAI key.
 
+### Deploying "score again" to an existing database
+
+Scoring again (2026-09-21) adds one table, `rescores`, and a unique index
+on it. The new code reads it on
+every Submissions list, so the table must exist **before** you run
+`wrangler deploy`. The old code does not read it, so adding it first is
+safe.
+
+```bash
+npx wrangler d1 execute riv-trainer --remote --file=schema.sql
+npm run build && npx wrangler deploy
+```
+
+`schema.sql` uses `CREATE TABLE IF NOT EXISTS`, so this adds `rescores` and
+does not touch any other table.
+
 ### Deploying the transcript-consent question to an existing database
 
 The consent question (2026-09-18) adds one column to `submissions`.

@@ -132,6 +132,30 @@ export interface MySubmission {
   transcriptConsent: boolean | null;
 }
 
+/**
+ * A stored interview scored again later by the instructor (2026-09-21); the
+ * dashboard calls it the "new score". One per interview, replaced by the
+ * next. Admin-only: it never reaches a student. It carries what produced it, so a
+ * score can be traced to the rubric and the prompts that gave it.
+ */
+export interface Rescore {
+  id: string;
+  /** unix seconds */
+  createdAt: number;
+  createdBy: string | null;
+  model: string;
+  overallScore: number | null;
+  scores: CriterionScore[];
+  /** Null when the feedback switch was off at the time. */
+  feedback: QualitativeFeedback | null;
+  /** The active criteria, in full, as they were used. */
+  rubric: CriterionDefinition[];
+  /** The templates as used; feedback is null when no feedback was written. */
+  prompts: { criterion: string; feedback: string | null };
+  /** The persona_versions row the evaluators saw; null = the current persona. */
+  personaVersionId: number | null;
+}
+
 /** Persona fields safe to show a student. Never carries instructions or hiddenCore. */
 export interface PersonaSummary {
   id: string;
