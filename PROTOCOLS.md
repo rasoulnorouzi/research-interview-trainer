@@ -7,6 +7,86 @@ one instruction per action.
 
 ---
 
+## 2026-09-21 (third) — Score stored interviews again
+
+Branch `rescore`, merged into `main`. Tagged `release-2026-09-21-rescore`.
+One new table, `rescores`, with a unique index. Admin routes only; no
+student route.
+
+### What changed
+
+1. **Score again.** On the Submissions screen the instructor selects
+   interviews and clicks **Score N selected**, or opens one and clicks
+   **Score again**. The stored transcript is scored with the rubric, the
+   prompts and the model as they are now (`POST
+   /api/admin/submissions/:id/rescore`, `scoreAll` unchanged).
+2. **The dashboard shows only the latest scoring**: the list, the student
+   averages, the detail, the CSV and the Markdown download. The detail
+   says "Scored again: date".
+3. Every submission delete path (one, bulk, and deleting a student)
+   deletes the `rescores` row first.
+
+### Decisions
+
+- **Why:** Tamarinde asked whether stored transcripts could be scored
+  later, because testing focused on the characters and the rubric needs
+  more testing.
+- **No history and no side-by-side view** (instructor, twice). One
+  `rescores` row per interview; scoring again replaces it.
+- **The submission row is never changed.** It is what the student
+  received; the student's history and the emails keep reading it.
+- **The persona text** is the `persona_versions` row saved before the
+  interview, so a later persona edit cannot move an old score.
+- Each row stores the rubric, both prompts and the model it used, for
+  tracing. The dashboard does not show them.
+- **Temperature 0 is not possible.** The gateway refuses `temperature`
+  other than 1 and `top_p` for `gpt-5.6-terra`, on `/responses` and on
+  `/chat/completions`. It accepts `seed`, which reasoning models treat as
+  a hint only. The instructor declined a stored-score workaround.
+
+### Tests done (local, production gateway key)
+
+- A live scoring run: 8.5 s, 13 criteria, persona version from before
+  the interview. The submission row was unchanged afterwards.
+- Bulk scoring of two interviews from the browser, two at a time.
+- One row per interview: scoring twice left one row; the unique index
+  refused a second insert.
+- The list, the detail and the CSV showed the latest scoring; interviews
+  not scored again showed their first score; the student-side row kept
+  its first score.
+- Deletes: single, bulk and student delete each removed the `rescores`
+  row with the submission.
+- Errors: unknown submission 404, wrong method 405.
+- **Finding: the gateway caches identical requests.** The same "random
+  number" prompt returned 583217 three times, the repeats in 0.07 s and
+  0.09 s with an `x-litellm-cache-key` header. Scoring again with an
+  unchanged rubric therefore returns the same scores within a second. An
+  earlier claim here that the model was stable (47.7% four times) was the
+  cache, not the model.
+- Found and fixed during the round: the first side-by-side view paired
+  criteria by id alone, and the 2026-09 rubric reuses old ids for new
+  criteria. The view was removed with the history.
+
+### Deploy
+
+- Backup `backup-new-2026-09-21c.sql` (1.53 MB, gitignored). Time Travel
+  bookmark `00000039-00000000-000050ed-84ac554e4914a18e4524046e89dfe1e7`.
+- `schema.sql` applied remotely before the code: `rescores`,
+  `idx_rescores_one` present; 7 submissions untouched.
+- Worker version `522f417a-c795-4848-81c1-e94d53aec86f`. Schedule
+  `17 * * * *` still registered.
+- Smoke tests: `/` 200, `/api/me` 401, `/api/my-submissions` 401,
+  `/admin`, `/api/admin/submissions` and the rescore route 302 (Access),
+  the live admin bundle holds "Score again" and "Scored again:".
+
+### Rollback
+
+`npx wrangler rollback 859ec49b-a23e-40d2-a6fa-899f916f3597`. The old code
+does not read `rescores`, so the table can stay; the dashboard then shows
+first scores again.
+
+---
+
 ## 2026-09-21 (second) — Email retry and the student's own history
 
 Branches `email-retry` and `submission-history`, merged into `main`
