@@ -121,8 +121,17 @@ npx wrangler secret put SESSION_SECRET
 ```
 
 Wrangler prompts for the value on stdin. `SESSION_SECRET` signs the
-student login cookie. It is the only secret: mail needs no key, because
-Cloudflare Email Service sends through the `send_email` binding.
+student login cookie. Mail needs no key, because Cloudflare Email Service
+sends through the `send_email` binding.
+
+Optional: `EMAIL_LIMITS_TOKEN`, an API token with only **Account > Email
+Sending > Read**. When the daily email quota is reached, the Worker uses
+it to tell a blocked student when login codes work again. Without it the
+message has no time.
+
+```bash
+npx wrangler secret put EMAIL_LIMITS_TOKEN
+```
 
 **Caution.** The gateway key is not a Worker secret. It is not set with
 `wrangler secret put`. Step 7 sets it a different way.

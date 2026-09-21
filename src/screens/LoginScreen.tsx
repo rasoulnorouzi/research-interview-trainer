@@ -1,11 +1,29 @@
 import { useEffect, useState } from "react";
 import { MeResponse } from "../types";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { VoicePoweredOrb } from "../components/ui/voice-powered-orb";
 import { ORB_HUE } from "./InterviewScreen";
 
 interface Props {
   onLoggedIn: (me: MeResponse) => void;
+}
+
+/**
+ * The daily email quota is reached (503 from /api/auth/request). The server
+ * sends the reset time when Cloudflare gives it; it is shown in the student's
+ * own clock, because a UTC time is one more thing to get wrong. Without a
+ * time the message still says the wait is hours, not a minute.
+ */
+function emailLimitMessage(err: unknown): string | null {
+  if (!(err instanceof ApiError) || err.status !== 503) return null;
+  const at = typeof err.data?.retryAt === "string" ? new Date(err.data.retryAt) : null;
+  if (at && !Number.isNaN(at.getTime())) {
+    const sameDay = at.toDateString() === new Date().toDateString();
+    const time = at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const when = sameDay ? time : `${at.toLocaleDateString([], { weekday: "long" })} ${time}`;
+    return `Login emails have reached today's limit. You can request a code again after ${when} (your time). Need to log in sooner? Ask your instructor.`;
+  }
+  return "Login emails have reached today's limit. Try again later today, or ask your instructor.";
 }
 
 /** Mirrors the server's 1-per-60s rate limit on /api/auth/request. */
@@ -51,7 +69,7 @@ export function LoginScreen({ onLoggedIn }: Props) {
       // failed send, or an unreachable network. It is shown where the address
       // was typed, so a typo can be corrected in place. A resend from the code
       // step lands here too and leaves that step where it is.
-      setError((err as Error).message);
+      setError(emailLimitMessage(err) ?? (err as Error).message);
     }
     setBusy(false);
   };

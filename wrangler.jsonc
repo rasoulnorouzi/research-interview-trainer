@@ -50,7 +50,10 @@
     // The university AI gateway (Tilburg.AI: LiteLLM in front of Azure OpenAI).
     // Every AI call goes here, and the browser's WebRTC call address is built
     // from it. The testing gateway is https://api.testing.tilburg.ai/v1.
-    "AI_BASE_URL": "https://api.tilburg.ai/v1"
+    "AI_BASE_URL": "https://api.tilburg.ai/v1",
+    // The account whose email limits a blocked login reports (see
+    // EMAIL_LIMITS_TOKEN in worker/db.ts). An id, not a secret.
+    "CF_ACCOUNT_ID": "ef71fbe7795df43f5adddf5abdd8f4a7"
   },
   "observability": { "enabled": true }
 }

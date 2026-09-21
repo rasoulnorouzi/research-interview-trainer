@@ -836,6 +836,12 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   low daily send limit that grows on its own; `GET
   /accounts/<id>/email/sending/limits` reports it, and
   `E_DAILY_LIMIT_EXCEEDED` in the logs is what hitting it looks like.
+  When a login code fails that way, `POST /api/auth/request` answers `503`
+  with `retryAt`, read from that limits API through the optional,
+  read-only `EMAIL_LIMITS_TOKEN` secret, and the login screen shows the
+  reset in the student's own time (2026-09-21). The window is rolling, not
+  a fixed hour, so it cannot be hard-coded. Without the secret the message
+  still says the wait is hours and points to the instructor.
   Sends to addresses verified in the account are free and uncapped;
   everything else counts against the 3,000 a month the Workers Paid plan
   includes.
@@ -850,8 +856,8 @@ Computed locally in `metrics.ts`, always shown even if every AI call fails.
   still named `openai_api_key` (it held the OpenAI key until 2026-09-13).
   The gateway address is not a secret either: it is the `AI_BASE_URL` var
   in `wrangler.jsonc`, overridden in `.dev.vars` for local tests. `wrangler
-  secret put` is for `SESSION_SECRET` alone since mail stopped needing a
-  key. The gateway key is
+  secret put` is for `SESSION_SECRET`, plus the optional read-only
+  `EMAIL_LIMITS_TOKEN` since 2026-09-21. The gateway key is
   bootstrapped once by hand into D1 (`DEPLOYMENT.md` §2 step 7) and rotated
   afterward from the dashboard, which validates it live before saving and
   never displays it in full (`GET /api/admin/settings` masks it to

@@ -8,10 +8,13 @@ export const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** The server's JSON body, for fields beyond `error` (for example `retryAt`). */
+  data: Record<string, unknown> | null;
+  constructor(status: number, message: string, data: Record<string, unknown> | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -36,7 +39,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       body && typeof body.error === "string"
         ? body.error
         : `The server returned an error (HTTP ${res.status}).`;
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, body && typeof body === "object" ? body : null);
   }
   return body as T;
 }
