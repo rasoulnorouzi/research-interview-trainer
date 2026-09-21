@@ -197,13 +197,15 @@ export function ResultsScreen({ result, persona, onNewInterview }: Props) {
 
         {report && (
           <div className="banner-success rise">
+            {/* An unsent email is retried every hour by the Worker, so "will
+                follow" is a promise the app keeps, not a hope. */}
             {report.shared !== false
               ? report.emailed
-                ? "Your interview was submitted and scored. The report was emailed to you and your instructor."
-                : "Your interview was submitted and scored. The report email could not be sent, but your instructor has the report."
+                ? "Your interview was submitted and scored. The report was emailed to you and your instructor; it can take a few minutes to arrive."
+                : "Your interview was submitted and scored. Your report is below. The email copy will follow automatically, which can take a few hours; you can also download it now."
               : report.emailed
-                ? "Your interview was submitted. Your instructor received the scored report, and your transcript was emailed to you."
-                : "Your interview was submitted. Your instructor received the scored report."}
+                ? "Your interview was submitted. Your instructor received the scored report, and your transcript was emailed to you; it can take a few minutes to arrive."
+                : "Your interview was submitted. Your instructor has the scored report. The email with your transcript will follow automatically, which can take a few hours."}
           </div>
         )}
       </div>

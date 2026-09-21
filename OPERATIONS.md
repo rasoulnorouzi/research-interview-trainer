@@ -709,6 +709,12 @@ has a problem":
 5. If only login is broken: **Break-glass** unblocks the student now;
    investigate afterwards.
 
+"report email retry: sent X of Y waiting" = the hourly job sent the
+emails of X reports that could not be mailed when they were made; "no room
+in today's quota" = it waited, keeping the last 10% of the daily limit for
+login codes. A report older than 7 days is never retried; its email is
+lost, but the report itself is still in Submissions.
+
 Common log lines and their meaning: "login code send failed" = the mail
 service refused the send. The line carries a code:
 `E_SENDER_NOT_VERIFIED` (the sending domain is not onboarded in this

@@ -193,6 +193,19 @@ export function mailer(env: Env): MailSender {
  * three seconds, the caller shows its message without a time.
  */
 export async function emailQuotaResetsAt(env: Env): Promise<string | null> {
+  return (await emailQuotaStatus(env))?.resetsAt ?? null;
+}
+
+/**
+ * The account's daily email quota as Cloudflare reports it right now: the
+ * limit, how many were sent in the current window, and when it resets.
+ * Read live every time, so a raised limit takes effect with no code change.
+ * Null when it cannot be read (no token, a revoked one, or no answer within
+ * three seconds); callers must then work without it.
+ */
+export async function emailQuotaStatus(
+  env: Env,
+): Promise<{ limit: number; sent: number; resetsAt: string | null } | null> {
   const token = (env.EMAIL_LIMITS_TOKEN ?? "").trim();
   const account = (env.CF_ACCOUNT_ID ?? "").trim();
   if (!token || !account) return null;
@@ -202,9 +215,15 @@ export async function emailQuotaResetsAt(env: Env): Promise<string | null> {
       { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) },
     );
     if (!res.ok) return null;
-    const body = (await res.json()) as { result?: { usage?: { resets_at?: unknown } } };
+    const body = (await res.json()) as {
+      result?: { quota?: { value?: unknown }; usage?: { sent?: unknown; resets_at?: unknown } };
+    };
+    const limit = Number(body.result?.quota?.value);
+    const sent = Number(body.result?.usage?.sent);
+    if (!Number.isFinite(limit) || !Number.isFinite(sent)) return null;
     const at = body.result?.usage?.resets_at;
-    return typeof at === "string" && !Number.isNaN(Date.parse(at)) ? at : null;
+    const resetsAt = typeof at === "string" && !Number.isNaN(Date.parse(at)) ? at : null;
+    return { limit, sent, resetsAt };
   } catch {
     return null;
   }
