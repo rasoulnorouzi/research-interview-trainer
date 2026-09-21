@@ -7,6 +7,74 @@ one instruction per action.
 
 ---
 
+## 2026-09-21 (second) — Email retry and the student's own history
+
+Branches `email-retry` and `submission-history`, merged into `main`
+together. Tagged `release-2026-09-21-history`. No schema change. One new
+Cron Trigger (`17 * * * *`) and one new student route.
+
+### What changed
+
+1. **Unsent report emails are retried every hour** by
+   `resendUnsentReports()`: reports from the last 7 days with `emailed_at`
+   NULL, sent with the current sharing and recipient settings.
+2. **The results screen** says the email can take a few minutes, or, when
+   it could not be sent, that it will follow automatically and the report
+   can be downloaded now.
+3. **"Your interviews"** on the student's home screen (hidden until there
+   is one) and under a freshly submitted report, each row downloadable as
+   the full Markdown report. It reads `GET /api/my-submissions`.
+
+### Decisions
+
+- **The retry reads the live quota** and spends only what is above a 10%
+  reserve kept for login codes, because a student who cannot log in is
+  worse off than one whose email arrives an hour later. A raised limit
+  needs no change. Without the quota it tries 20 emails blind and stops at
+  the first "limit reached".
+- **The eighth student route**, chosen by the instructor knowing CLAUDE.md
+  treats growth past seven as the point to stop and think. It is read-only
+  and takes the student from the session cookie.
+- **The history follows the sharing setting as it is when the student
+  looks**, not as it was on the day. Switching sharing on later therefore
+  reveals past scores, which can serve as releasing all scores at once.
+  The instructor was told and kept it.
+- Known imperfection: a report whose student copy went out but whose
+  assessor copy failed is resent whole.
+
+### Tests done
+
+- The live quota read 200/day. With a fake database the retry sent all
+  waiting reports with room, kept the reserve at 180 of 200, read a raised
+  limit of 2000, sent exactly two reports when four emails were left, and
+  stopped cleanly when the limit hit mid-batch.
+- Through the real Cron handler against the local D1 schema: the recent
+  unsent report was sent and marked, an August one was left alone.
+- History: 401 without a login; each student saw only their own
+  interviews (3 and 7); with AI feedback off, and separately with sharing
+  off, no score, feedback or overall came through, and the downloaded
+  file held only consent, speaking metrics and transcript plus the notice
+  that the instructor has the full report; with both on, the full report.
+- After the deploy: `/` 200, `/api/me` 401, `/api/my-submissions` 401,
+  `/admin` 302, the new texts in the live bundle, and the schedule
+  `17 * * * *` registered on the Worker.
+
+### Deploy
+
+- Backup first: `backup-new-2026-09-21b.sql` (gitignored).
+- `npm run build && npx wrangler deploy`. Worker version
+  `859ec49b-a23e-40d2-a6fa-899f916f3597`.
+
+### Rollback
+
+- `npx wrangler rollback 5884bd95-a1f3-4a2a-9e9d-76d3a4b87c8a`. The Cron
+  Trigger is part of the Worker's configuration; after a rollback, remove
+  it with a deploy of the old `wrangler.jsonc` if the old code must not be
+  called hourly (the old code has no scheduled handler, so the calls would
+  only log an error).
+
+---
+
 ## 2026-09-21 — The daily email limit tells students when codes work again
 
 Branch `email-limit-message`, one commit, merged into `main`. Tagged
