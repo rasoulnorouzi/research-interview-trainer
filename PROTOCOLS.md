@@ -7,6 +7,57 @@ one instruction per action.
 
 ---
 
+## 2026-09-21 — The daily email limit tells students when codes work again
+
+Branch `email-limit-message`, one commit, merged into `main`. Tagged
+`release-2026-09-21`. No schema change. One new secret,
+`EMAIL_LIMITS_TOKEN`, and one new var, `CF_ACCOUNT_ID`.
+
+### What changed
+
+When Cloudflare refuses a login code with `E_DAILY_LIMIT_EXCEEDED`,
+`POST /api/auth/request` answers `503` with `retryAt`, and the login
+screen says when codes work again, in the student's own time, and points
+to the instructor. It used to say "Try again in a minute".
+
+### Decisions
+
+- **The time comes from Cloudflare's limits API at the moment of failure.**
+  The send error carries no time, and the window is rolling (15:17 UTC on
+  2026-09-19, 21:53 UTC on 2026-09-21), so it cannot be written down.
+- **Local time, not UTC**, because converting is one more thing a student
+  can get wrong.
+- **The lookup never throws.** Without the token, with a bad one, or after
+  a 3 second timeout, `retryAt` is null and the message still says the wait
+  is hours.
+- The token was created at **Edit** level; Read would be enough. It lives
+  only as a Worker secret. Lowering it later needs no redeploy.
+
+### Tests done
+
+- A throwing fake binding produced a `MailError` carrying the code.
+- The real limits API, called with the token, returned
+  `2026-09-21T21:53:11Z`. No token and a bad token both returned null.
+- The login screen, fed the Worker's 503, read "after 11:53 PM (your
+  time)" in a browser set to Europe/Amsterdam.
+- After the deploy: `/` 200, `/api/me` 401, `/admin` 302, an unknown
+  address still gets the roster message, and the live bundle carries the
+  new text. The real quota was not exhausted to test it end to end.
+
+### Deploy
+
+- Backup first: `backup-new-2026-09-21.sql` (1.5 MB, holds the key,
+  gitignored).
+- `wrangler secret put EMAIL_LIMITS_TOKEN`, then `npm run build && npx
+  wrangler deploy`. Worker version `5884bd95-a1f3-4a2a-9e9d-76d3a4b87c8a`.
+
+### Rollback
+
+- `npx wrangler rollback aee893e7-55d5-44d5-b028-e4e72567d749`. The old
+  code ignores the new secret and var.
+
+---
+
 ## 2026-09-18 (evening) — Production moves to its own account and domain
 
 Two branches merged into `main`: `cf-email-service` (the move) and
