@@ -23,7 +23,7 @@ const ROUTES: [method: string, path: string, handler: Handler][] = [
   ["POST", "/api/session", handleSession],
   ["POST", "/api/report", handleReport],
   // The eighth student route (2026-09-21): a student's own past interviews.
-  // Read-only; the instructor chose it knowing CLAUDE.md treats growth past
+  // Read-only; the instructor chose it knowing the project treats growth past
   // seven student routes as the point to stop and think.
   ["GET", "/api/my-submissions", handleMySubmissions],
 ];

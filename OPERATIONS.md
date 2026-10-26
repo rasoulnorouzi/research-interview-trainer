@@ -155,7 +155,7 @@ them by hand; do not rely on a re-import to do it.
 
 Rotate the gateway key from the dashboard, not from the command line,
 after the first bootstrap in [`DEPLOYMENT.md`](DEPLOYMENT.md) section 2.
-New keys come from Tilburg.AI (Robert Smolders).
+New keys come from Tilburg.AI.
 
 1. Open **Settings**.
 2. Enter the new key in the key field.
@@ -745,13 +745,24 @@ address bounced or reported spam before; see the suppression list);
 "scoring failed: The AI gateway rate limit was hit." = the gateway key
 is over its rate or budget limit (ask Tilburg.AI);
 "scoring aborted: the rubric has no active criteria" = the rubric was
-emptied (activate an item).
+emptied (activate an item);
+"rescore failed for submission <id>" = **Score again** on the dashboard
+failed for that interview. Nothing changed; the dashboard still shows the
+previous score. Try again in a minute.
 
 ## 13. The AI gateway (Tilburg.AI)
 
+Two gateway facts that affect scoring (tested 2026-09-21):
+
+- The gateway remembers answers. A request it has already seen gets the
+  same answer back at once. So **Score again** with an unchanged rubric,
+  prompts and model gives the same scores.
+- The scoring model has no "temperature 0" setting. The gateway refuses
+  it. Scores can differ a little when the model really scores again.
+
 Since 2026-09-13 the voice and the scoring run on the university's AI
 gateway, Tilburg.AI, not on OpenAI directly. The gateway is LiteLLM in
-front of Azure OpenAI (Sweden Central). Tilburg.AI (Robert Smolders)
+front of Azure OpenAI (Sweden Central). Tilburg.AI
 issues the keys and runs the gateway. There are two gateways, each with
 its own key:
 
@@ -779,6 +790,6 @@ failed". "The AI gateway rate limit was hit." means the key is over its
 limit; ask Tilburg.AI to raise it.
 
 **Go back to OpenAI for a while.** If the gateway is down for a long time,
-the previous release still runs on OpenAI. `PROTOCOLS.md` (2026-09-13,
-Rollback) has the two steps: roll the Worker back, then paste the OpenAI
-key on the Settings screen.
+the previous release still runs on OpenAI. Roll the Worker back
+(`npx wrangler rollback <version id>`), then paste the OpenAI key on the
+Settings screen.

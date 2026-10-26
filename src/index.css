@@ -17,7 +17,7 @@
 
    No external fonts. Since 2026-09-15 both apps use the orb design (the
    blocks near the end of this file), which adds gradients and motion on
-   purpose; see CLAUDE.md, constraint 2.
+   purpose.
    ========================================================================= */
 
 /* --- Light (default) ---------------------------------------------------- */
@@ -1385,7 +1385,7 @@ textarea.admin-large {
 
 /* ===========================================================================
    STUDENT APP, the orb design (built 2026-09-14, shipped 2026-09-15).
-   The instructor's revised design rule (CLAUDE.md, constraint 2): a calmer,
+   The instructor's revised design rule: a calmer,
    more cinematic look: Apple-like type
    and spacing, a translucent floating header, soft entrance motion, and a
    WebGL orb that follows the voices during the interview. Everything is

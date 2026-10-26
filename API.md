@@ -2,7 +2,7 @@
 
 This document is the normative contract for the Research Interview
 Trainer's backend. It is written for a developer reimplementing the
-backend on a different stack. [`BACKEND-PLAN.md`](BACKEND-PLAN.md) section
+backend on a different stack. `BACKEND-PLAN.md` section
 9 names FastAPI on a university VM as the anticipated move.
 
 The contract described here is the implementation in `worker/`, not the
@@ -755,7 +755,7 @@ The implementation differs from the original plan in these ways.
    `scaleMax` (2 to 10) and a 20-active cap. `overall` changed from a
    plain mean to a percentage of points earned over points possible,
    because criteria no longer share one scale. See
-   [`BACKEND-PLAN.md`](BACKEND-PLAN.md) sections 3 and 7 for the added
+   `BACKEND-PLAN.md` sections 3 and 7 for the added
    schema, and section 6 above for the admin surface.
 6. **A student hard delete cascades over their reports.** The plan's
    never-orphan rule (section 7 there) said a student with stored
