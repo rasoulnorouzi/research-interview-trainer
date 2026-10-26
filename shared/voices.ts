@@ -7,7 +7,7 @@
 //
 // The three built-in personas use marin (Elena), cedar (Tom) and coral
 // (Jasmine); marin and cedar are the most natural of these and go to the two
-// personas that must not sound performed. See CLAUDE.md, "The persona system".
+// personas that must not sound performed.
 export const REALTIME_VOICES = [
   "alloy",
   "ash",

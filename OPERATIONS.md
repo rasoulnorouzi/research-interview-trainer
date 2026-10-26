@@ -155,7 +155,7 @@ them by hand; do not rely on a re-import to do it.
 
 Rotate the gateway key from the dashboard, not from the command line,
 after the first bootstrap in [`DEPLOYMENT.md`](DEPLOYMENT.md) section 2.
-New keys come from Tilburg.AI (Robert Smolders).
+New keys come from Tilburg.AI.
 
 1. Open **Settings**.
 2. Enter the new key in the key field.
@@ -762,7 +762,7 @@ Two gateway facts that affect scoring (tested 2026-09-21):
 
 Since 2026-09-13 the voice and the scoring run on the university's AI
 gateway, Tilburg.AI, not on OpenAI directly. The gateway is LiteLLM in
-front of Azure OpenAI (Sweden Central). Tilburg.AI (Robert Smolders)
+front of Azure OpenAI (Sweden Central). Tilburg.AI
 issues the keys and runs the gateway. There are two gateways, each with
 its own key:
 
@@ -790,6 +790,6 @@ failed". "The AI gateway rate limit was hit." means the key is over its
 limit; ask Tilburg.AI to raise it.
 
 **Go back to OpenAI for a while.** If the gateway is down for a long time,
-the previous release still runs on OpenAI. `PROTOCOLS.md` (2026-09-13,
-Rollback) has the two steps: roll the Worker back, then paste the OpenAI
-key on the Settings screen.
+the previous release still runs on OpenAI. Roll the Worker back
+(`npx wrangler rollback <version id>`), then paste the OpenAI key on the
+Settings screen.

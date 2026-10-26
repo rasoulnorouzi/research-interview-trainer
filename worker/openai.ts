@@ -91,7 +91,7 @@ function statusError(status: number): Error {
 /**
  * `fetch`, repeated once on a 404. One upstream behind the Tilburg gateway
  * answers a bare nginx 404 to any path, most often to the first request after
- * a quiet spell (found 2026-09-11, CLAUDE.md "Azure migration"). It never
+ * a quiet spell (found 2026-09-11). It never
  * reaches the model, so sending the same request again is safe and usually
  * lands on a healthy upstream. A genuine 404 simply comes back twice. Every
  * body sent from here is a string, so it can be sent twice.

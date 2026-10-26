@@ -129,20 +129,15 @@ Worker and the browser use plain `fetch` and WebRTC.
 
 | File | What it covers |
 |---|---|
-| [CLAUDE.md](CLAUDE.md) | Architecture, design constraints, the gateway, gotchas. Read it before you change code. |
 | [API.md](API.md) | The HTTP contract of the Worker, student and admin routes |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | First deploy, update deploys, rollback |
 | [OPERATIONS.md](OPERATIONS.md) | Running a cohort day to day |
-| [PROTOCOLS.md](PROTOCOLS.md) | Each release: what changed, decisions, tests, deploy, rollback |
 | [PROMPTING.md](PROMPTING.md) | Persona and evaluator prompts, the prompt-injection guard |
-| [BACKEND-PLAN.md](BACKEND-PLAN.md) | The original backend design (history) |
-| [OPENAI-MIGRATION.md](OPENAI-MIGRATION.md) | The move from Gemini to OpenAI (history) |
 
 ## Deployment
 
 The app deploys as a Cloudflare Worker: `npm run build && npx wrangler
-deploy`. See [DEPLOYMENT.md](DEPLOYMENT.md) first, and the newest section
-of [PROTOCOLS.md](PROTOCOLS.md) for the last release.
+deploy`. See [DEPLOYMENT.md](DEPLOYMENT.md) first.
 
 The `legacy-client` branch keeps the earlier pure client-side build, where
 a student pasted their own OpenAI API key and the app deployed to GitHub

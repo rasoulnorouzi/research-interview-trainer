@@ -2,8 +2,7 @@
 //
 // This branch targets the NEW account (the one that owns
 // qualitativeinterviewskills.com). The account, the database and the
-// sending domain all differ from the 2026-09-15 production deployment;
-// PROTOCOLS.md records the move.
+// sending domain all differ from the 2026-09-15 production deployment.
 //
 // Secrets are NOT here. Set with `wrangler secret put <NAME>`:
 //   SESSION_SECRET   HMAC key for the signed session cookie (§6)

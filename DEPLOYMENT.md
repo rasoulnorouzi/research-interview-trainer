@@ -4,7 +4,7 @@ This document tells you how to deploy the Research Interview Trainer to
 Cloudflare. It is for the instructor or an assistant who runs the deploy.
 
 The app is one Cloudflare Worker. The Worker serves the built React app and
-the `/api/*` backend from one origin. Read [`BACKEND-PLAN.md`](BACKEND-PLAN.md)
+the `/api/*` backend from one origin. Read `BACKEND-PLAN.md`
 first if you have not, for the design this deployment implements.
 
 ## 1. What you need
@@ -13,12 +13,12 @@ Gather these before you start.
 
 | Item | Value for this project |
 |---|---|
-| Cloudflare account ID | `ef71fbe7795df43f5adddf5abdd8f4a7` (production since 2026-09-18). The old one was `d47f04214378f82cee8294125ebf2c0b`. |
+| Cloudflare account ID | `ef71fbe7795df43f5adddf5abdd8f4a7` (production since 2026-09-18) |
 | Domain | `qualitativeinterviewskills.com`, zone `1925d88527d4f93e101a8245404fde04` |
 | D1 database | `riv-trainer`, id `81264e33-443c-45ec-8593-3db6c01acd16`, region WEUR (already created) |
 | Node.js | version 22 |
 | Email | Cloudflare Email Service, sending domain onboarded in the same account |
-| Instructor email for Access | `r.norouzinikjeh@tilburguniversity.edu` |
+| Instructor email for Access | the instructor's university address |
 
 ### Cloudflare API token
 
@@ -229,7 +229,7 @@ the token Access produces.
 
 1. Create a policy named "Instructor".
 2. Set the action to **Allow**.
-3. Add a rule: **Emails** includes `r.norouzinikjeh@tilburguniversity.edu`.
+3. Add a rule: **Emails** includes the instructor's university address.
 4. Add any other instructor or teaching-assistant addresses the same way.
 
 **7. Save the application.**
@@ -355,7 +355,7 @@ Service.
 ### The Resend history
 
 Until 2026-09-18 this app sent through Resend, with a `RESEND_API_KEY`
-secret and the verified domain `rslnorouzi.site`. That secret is no
+secret and a separately verified sending domain. That secret is no
 longer read. Delete it from any deployment that still carries it:
 
 ```bash

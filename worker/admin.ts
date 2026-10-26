@@ -1957,7 +1957,7 @@ async function bulkDeleteSubmissions(request: Request, env: Env): Promise<Respon
  * GET /api/admin/submissions.csv — one row per submission, one extra column
  * per rubric criterion, in the order the scores were stored. A criterion that
  * was not assessable is an empty cell, not a zero: they are different things
- * (CLAUDE.md, scoring).
+ * (see worker/scoring.ts).
  */
 async function submissionsCsv(env: Env, url: URL): Promise<Response> {
   const filters = submissionFilters(url, SUBMISSION_CSV_DEFAULT, SUBMISSION_CSV_MAX);
