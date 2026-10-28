@@ -45,7 +45,7 @@ export const INTERVIEW_MODEL_OPTIONS: ModelChoice[] = [
 // The model that turns the student's speech into the live transcript. Only
 // models that stream words WHILE the student is speaking may appear here
 // (hard design constraint 3): a model that transcribes after the committed
-// turn is the exact Gemini-era limitation the OpenAI migration removed.
+// turn must never be added.
 // Verified live on 2026-08-31 by driving a realtime session with synthesized
 // speech and counting `conversation.item.input_audio_transcription.delta`
 // events that arrived before the commit: gpt-live-transcribe 31,
