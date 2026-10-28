@@ -66,6 +66,22 @@ cohorts.
 3. Choose an interviewee, allow microphone access, and start.
 4. When you finish, click "Submit interview for scoring".
 
+## Open version, for anyone
+
+Anyone can try the trainer without a university account at
+**https://rasoulnorouzi.github.io/research-interview-trainer/**.
+
+1. Get an OpenAI API key at https://platform.openai.com/api-keys. You pay
+   OpenAI for your own interviews.
+2. Open the link, paste the key, choose an interviewee and the models,
+   allow microphone access, and start.
+3. At the end you get the same kind of report: speaking metrics, rubric
+   scores and feedback. You can download it as Markdown.
+
+The key stays in your browser and goes only to OpenAI; this version has no
+server. It is the earlier build, from the `legacy-client` branch: it has no
+login, no dashboard and no emailed report, and it gets no new features.
+
 ## For the instructor
 
 The dashboard is at `/admin`, behind Cloudflare Access; an instructor
@@ -139,6 +155,5 @@ Worker and the browser use plain `fetch` and WebRTC.
 The app deploys as a Cloudflare Worker: `npm run build && npx wrangler
 deploy`. See [DEPLOYMENT.md](DEPLOYMENT.md) first.
 
-The `legacy-client` branch keeps the earlier pure client-side build, where
-a student pasted their own OpenAI API key and the app deployed to GitHub
-Pages. It is kept only as a fallback.
+The open version (see above) is the `legacy-client` branch, deployed to
+GitHub Pages by that branch's own workflow.
