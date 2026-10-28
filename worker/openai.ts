@@ -60,8 +60,8 @@ const ERR_GENERIC = "The AI gateway request failed.";
 // and enforced against that list by worker/admin.ts. Every model on that list
 // streams the student's transcript while they are still speaking; models that
 // only transcribe after a committed turn (gpt-transcribe, gpt-4o-transcribe,
-// gpt-4o-mini-transcribe, whisper-1 — all tested 2026-08-31) are the exact
-// Gemini limitation this migration exists to remove, and must never be added.
+// gpt-4o-mini-transcribe, whisper-1 — all tested 2026-08-31) must never be
+// added.
 
 /**
  * Semantic turn detection: a model decides when the student has finished a

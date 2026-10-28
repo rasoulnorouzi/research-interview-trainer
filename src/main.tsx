@@ -2,6 +2,6 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// No StrictMode: its dev-mode double-mount would open the Gemini Live
+// No StrictMode: its dev-mode double-mount would open the realtime
 // session and microphone twice.
 createRoot(document.getElementById('root')!).render(<App />);

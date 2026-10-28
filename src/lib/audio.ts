@@ -2,8 +2,7 @@
  * Speech measurement.
  *
  * WebRTC carries the microphone and the interviewee's voice natively, so this
- * file no longer encodes, decodes or schedules any audio — the PCM helpers and
- * the hand-rolled player that the Gemini build needed are gone.
+ * file never encodes, decodes or schedules any audio.
  *
  * What remains is measurement. Speaking time must never be derived from
  * transcript timestamps: that produced a permanent 0:00 for the student and a

@@ -7,8 +7,8 @@ import { SpeechMeter, createSpeechMeter } from "./audio";
 // gateway since 2026-09-11), so the address lives in one place.
 //
 // Streams the student's transcript while they are still speaking. The other
-// option, "gpt-transcribe", only transcribes after a committed turn — which is
-// the exact Gemini limitation this migration exists to remove. Do not swap it.
+// option, "gpt-transcribe", only transcribes after a committed turn, which
+// breaks the live transcript. Do not swap it.
 // The transcript is no longer shown during the interview (instructor decision,
 // 2026-09-11), only in the report, but the streaming transcriber stays.
 // The Worker sets this at mint time; the copy here is only for the fallback
